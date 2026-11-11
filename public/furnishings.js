@@ -71,7 +71,7 @@ export function propsFor(room) {
         put('books',-2.6,2.49,{y:.55});
         break;
       case 'operations':
-        set('rack',[[-2.72,2.46],[-1.68,2.46]]);
+        for (const x of [-2.72,-1.68]) put('rack',x,2.46,{turn:-Math.PI/2});
         put('shelf',2.03,2.6);
         put('monitor',2.55,.42,{y:.77,turn:-Math.PI/2});
         put('desk',2.58,.42,{turn:-Math.PI/2});
