@@ -2,6 +2,46 @@
 
 Kantor virtual 3D privat milik **Dika**. Antarmuka berbahasa Indonesia dan jadwal menggunakan WIB.
 
+## Database cloud dan Vercel
+
+Proyek Supabase `ruskorcdlkylqfqevmrm` mempunyai skema privat `anshel`:
+
+- `anshel.setting` menyimpan jadwal dan pengaturan.
+- `anshel.tasks` menyimpan antrean, sewa eksekusi, SHA-256, dan isi artefak teks.
+- `anshel.audit` menyimpan riwayat kejadian.
+- `anshel.sessions` serta `anshel.login_limits` mengamankan login cloud.
+
+Skema tidak diekspos ke API publik Supabase. Backend Vercel mengaksesnya lewat koneksi PostgreSQL server-side, dengan transaksi untuk antrean dan idempotensi. File SQLite lokal tetap tersedia sebagai salinan sumber, tidak dihapus.
+
+### Pengaturan Vercel
+
+Di Vercel → proyek Anshel → Settings → Environment Variables, isi:
+
+| Nama | Isi |
+| --- | --- |
+| `DATABASE_URL` | Connection string **Transaction pooler** dari Supabase → Connect, port `6543` |
+| `OWNER_PASSWORD` | Kata sandi pemilik yang panjang dan acak, minimal 24 karakter |
+| `WORKER_TOKEN` | Rahasia acak terpisah untuk worker, minimal 24 karakter |
+| `N8N_TOKEN` | Rahasia acak lain untuk n8n Cloud, jika integrasi digunakan |
+| `TELEGRAM_USER_ID` dan `TELEGRAM_CHAT_ID` | Opsional, ID privat Telegram saat integrasi aktif |
+
+Pilih lingkungan **Production**. Jangan taruh connection string, password atau token pada GitHub, `.env.example`, atau kode JavaScript browser. Pada Vercel, gunakan Node.js 24.x dan deploy ulang setelah menyimpan variabel. `vercel.json` membangun aset Three.js/font dan meneruskan `/api/*` ke Web API cloud.
+
+Uji `https://anshel-virtual.vercel.app/api/session`. Jika backend sudah terhubung dan belum login, responsnya JSON `{"authenticated":false}`, bukan halaman `404`. Kemudian masuk lewat halaman kantor, buat tugas, dan periksa antreannya. Tanpa workflow AI cloud yang sudah aktif, tugas akan tetap mengantre; migrasi database sendiri belum menjalankan AI.
+
+### Pindahkan data SQLite yang sudah ada
+
+Ini **satu kali saja** pada perangkat yang menyimpan `data/office.sqlite`. Jangan menjalankan worker atau server lokal saat membuat cadangan. Jalankan `npm.cmd run backup` terlebih dahulu, lalu gunakan salinan database konsisten yang dihasilkan atau file SQLite sumber ketika prosesnya sudah berhenti.
+
+Atur `DATABASE_URL` sebagai environment variable hanya pada terminal lokal saat migrasi (jangan commit ke repositori), kemudian:
+
+```powershell
+npm.cmd ci
+npm.cmd run migrate:sqlite -- "D:\Web Project\VirtualOffice\anshel-virtual-tech\data\office.sqlite"
+```
+
+Importer menolak sumber yang tidak ada, memeriksa checksum artefak, menolak target yang sudah berisi data, lalu memindahkan isi ketiga tabel dalam **satu transaksi**. Bila terjadi kesalahan, transaksi dibatalkan. Setelah sukses, hapus variabel `DATABASE_URL` dari terminal. Jika SQLite ternyata tidak mempunyai tugas, tidak ada pekerjaan yang perlu dipindahkan.
+
 ## Jalankan lokal
 
 Gunakan Node.js 24.12 atau yang lebih baru dan browser dengan WebGL 2. Di PowerShell, jalankan dari direktori proyek:

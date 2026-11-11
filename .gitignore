@@ -10,3 +10,5 @@ data/
 .asset-import/
 coverage/
 *.log
+public/lib/
+public/fonts/
