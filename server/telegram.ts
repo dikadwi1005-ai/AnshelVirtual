@@ -11,7 +11,7 @@ const help = 'Perintah: /tugas divisi | instruksi, /diagnostik, /status, /pegawa
 const translate = key => divisions.find(item => item.id === (aliases[key.toLowerCase()] ?? key.toLowerCase()))?.id;
 const taskList = tasks => tasks.map(task => [task.id, task.status, task.description.slice(0,85)].join(' · ')).join('\n');
 
-export function telegram(store, data, env) {
+export async function telegram(store, data, env) {
   if (!env.TELEGRAM_USER_ID || !env.TELEGRAM_CHAT_ID) throw new Fault(503,'Telegram belum dikonfigurasi.');
   if (String(data.userId) !== env.TELEGRAM_USER_ID || String(data.chatId) !== env.TELEGRAM_CHAT_ID) {
     throw new Fault(403,'Pengirim Telegram tidak diizinkan.');
@@ -20,7 +20,7 @@ export function telegram(store, data, env) {
   if (typeof data.text !== 'string' || data.text.length > 2050 || !/^\d{1,24}$/.test(updateId)) throw new Fault(400,'Pesan Telegram tidak valid.');
   const message = data.text.trim();
   const [command, id, target] = message.split(/\s+/);
-  const state = store.state();
+  const state = await store.state();
   const actor = 'Dika · Telegram';
   if (command === '/start' || command === '/bantuan') return help;
   if (command === '/status' || command === '/laporan' || /laporkan|pekerjaan hari ini/i.test(message)) {
@@ -31,17 +31,17 @@ export function telegram(store, data, env) {
     return divisions.map(item => item.employee+' · '+item.name+' · '+(state.running.some(task => task.division === item.id) ? 'Mengerjakan tugas' : 'Tanpa eksekusi aktif')).join('\n');
   }
   if (command === '/hasil' && id) {
-    const artifact = store.artifact(id);
+    const artifact = await store.artifact(id);
     return 'SHA-256 '+artifact.hash+'\n\n'+artifact.output.slice(0,3200);
   }
   if (id && Object.hasOwn(actions,command)) {
-    return 'Status tugas: '+store.action(id,actions[command],{},actor).status;
+    return 'Status tugas: '+(await store.action(id,actions[command],{},actor)).status;
   }
   if (id && target && command === '/alih') {
-    return 'Divisi tugas: '+store.action(id,'assign',{division:translate(target)},actor).division;
+    return 'Divisi tugas: '+(await store.action(id,'assign',{division:translate(target)},actor)).division;
   }
   if (/semua pegawai istirahat/i.test(message)) {
-    store.settings({mode:'paused'},actor);
+    await store.settings({mode:'paused'},actor);
     return 'Simulasi dan pengambilan tugas baru dijeda.';
   }
   const match = /^\/tugas\s+([^|]+)\|\s*(.+)$/is.exec(message) ??
@@ -50,6 +50,6 @@ export function telegram(store, data, env) {
     {division:'operations',kind:'diagnostic',description:'Periksa lingkungan worker lokal'} :
     match && {division:translate(match[1].trim()),kind:'draft',description:match[2].trim()};
   if (!input?.division) return help;
-  const task = store.create(input,actor,'telegram:'+updateId);
+  const task = await store.create(input,actor,'telegram:'+updateId);
   return 'Tugas '+task.id+' · '+task.status+(input.kind === 'draft' && !state.capabilities.includes('draft') ? '\nWorker AI draf belum tersedia.' : '');
 }
