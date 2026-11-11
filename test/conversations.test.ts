@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { divisions } from '../public/catalog.js';
-import { chooseConversationAnchor, createConversations } from '../public/conversations.js';
+import { chooseConversationAnchor, createConversations, createMonologues } from '../public/conversations.js';
 import { conversationAnchors, obstaclesFor } from '../public/furnishings.js';
 import { rooms } from '../public/layout.js';
 import { navigation } from '../public/navigation.js';
@@ -30,6 +30,26 @@ test('slot percakapan dapat dicapai, terpisah dan menghadap pusat',()=>{
   const pair=new Map([[east.id,{person:divisions[0]}]]);
   assert.equal(chooseConversationAnchor({},pair,()=>true),west);
   assert.equal(chooseConversationAnchor({},reservations,()=>true),null);
+});
+
+test('monolog singkat dapat muncul di meja sendirian, dengan jeda dan tanpa mengganggu tugas',()=>{
+  const person=divisions[0];
+  const actor={person,stage:'seated',actual:'desk',anchor:{},root:{position:{x:0,z:0}}};
+  const plan={activity:'desk',task:null};
+  const office={people:{[person.id]:plan}};
+  const monologues=createMonologues();
+  const groups=new Map();
+  const focus={x:0,z:0};
+  assert.equal(monologues.update(4,[actor],groups,office,focus),null);
+  const first=monologues.update(1,[actor],groups,office,focus);
+  assert.equal(first?.speaker,actor);
+  assert.equal(first?.solo,true);
+  assert.equal(monologues.update(3,[actor],groups,office,focus),null);
+  assert.equal(monologues.update(10,[actor],groups,office,focus),null);
+  assert.notEqual(monologues.update(5,[actor],groups,office,focus)?.text,first?.text);
+  plan.task={status:'queued'};
+  assert.equal(monologues.update(.05,[actor],groups,office,focus),null);
+  assert.equal(monologues.update(30,[actor],groups,office,focus),null);
 });
 
 test('percakapan bergiliran dan bubar saat peserta terakhir mendapat tugas',()=>{

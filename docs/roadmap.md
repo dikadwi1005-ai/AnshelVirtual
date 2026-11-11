@@ -94,3 +94,13 @@ Rekaman Chrome menunjukkan Alya meninggalkan atrium, berjalan ke meja Manajemen,
 Rekaman 1152 × 720 berasal dari frame Chrome yang menyertakan bubble. Overview siang mencatat median interval frame 11,1 ms dan p90 11,2 ms dari 90 sampel pada Radeon terintegrasi D3D11.
 
 **Sisa Phase 1.** Lounge PS5 dengan animasi gameplay dan pemeriksaan visual akhir.
+
+## Checkpoint Phase 1 · Monolog, lounge PS5, dan pemeriksaan visual
+
+**Implemented.** `public/conversations.js` menambahkan monolog pendek saat pegawai sendiri di meja, mengambil kopi, membaca, bersantai, menunggu teman atau berjalan di teras. Antarmuka memakai satu bubble dengan jeda antarmonolog. Dialog berasal dari variasi kalimat yang ditulis dalam proyek. OpenAI Responses API dapat ditambahkan dari server untuk variasi generatif jika Dika memilih mengaktifkannya. [Dokumentasi resmi OpenAI](https://developers.openai.com/api/docs/quickstart).
+
+Lounge memakai satu konsol orisinal bergaya PS5, dua controller yang berpindah dari meja ke tangan pemain, sofa dua tempat, dan TV yang memutar Anshel Circuit. Balapan dibuat di `public/lounge-game.js` dan digambar langsung pada layar TV. Pemain berjalan ke sofa, memakai pose duduk chibi, dan bereaksi ketika lintasan mencapai checkpoint. TV memutar demo jika pemain belum duduk. `public/lounge.js` membuat konsol, controller, dekorasi dan pencahayaan. Tidak ada footage atau aset konsol pihak ketiga yang ditambahkan.
+
+**Tested dan Visually Verified.** 23 tes lulus. Chrome memverifikasi monolog di meja, jeda bubble, perubahan frame TV, klik layar TV, dua pemain mencapai sofa dengan controller berbeda dan bereaksi pada checkpoint. Pemeriksaan visual mencakup seluruh kantor satu lantai pada siang dan malam, close-up Manajemen, Pengembangan, Kreatif & Desain, Produksi Video, SEO, IT & Operasional, ruang Dika dan lounge. Pemeriksaan memicu perubahan warna lantai lorong, dinding aksen dan keseimbangan cahaya siang agar furnitur serta karakter lebih mudah dibedakan. Bukti visual memakai database uji dan simulasi pemain di Chrome. Uji ponsel memakai viewport 390 × 844. Perangkat sentuh fisik dan penilaian Dika atas tampilan akhir masih terbuka.
+
+Sofa santai diperlebar untuk mengatasi tangan yang menembus sandaran lengan dengan pose chibi yang sama. Chrome menguji Fullscreen API, denah penuh di viewport ponsel, fokus TV dengan dua pemain, dan alur Alya dari menerima tugas sampai kembali bersosialisasi. Rekaman lounge 1152 × 720 diputar ulang di Chrome. Overview siang pada Radeon terintegrasi D3D11 mencatat median interval frame sekitar 11,1 ms.

@@ -16,7 +16,6 @@ export const furniture = {
   stool:['stoolbar',.43,.43,.66], rug:['rugrectangle',3.3,2.45,.016],
   lamp:['lamproundfloor',.42,.45,1.67], bench:['benchcushion',1.4,.63,.48],
   toilet:['toilet',.68,.80,.77], sink:['bathroomsink',.67,.49,.86],
-  arcade:['arcade/arcade-machine',.72,.89,1.63],
   rack:['technology/server-rack',.80,.87,1.92],
   tree:['nature/tree-default',1.8,1.8,2.65], smallTree:['nature/tree-small',1.15,1.15,1.82],
 };
@@ -38,9 +37,9 @@ export const station = room => ({
 export function propsFor(room) {
   const items = [];
   const front = room.front===1 ? 0 : Math.PI;
-  const put = (type,x,depth,{y=0,turn=0,key,tone} = {}) => items.push({
+  const put = (type,x,depth,{y=0,turn=0,key,tone,size} = {}) => items.push({
     type, at:point(room,x,depth), y, angle:front+turn, id:key ? room.id+'-'+key : null,
-    accent:tone ?? room.accent, wood:themes[room.id] ?? 'medium',
+    accent:tone ?? room.accent, wood:themes[room.id] ?? 'medium',size,
   });
   const desk = (x,depth,configuration) => {
     put('desk',x,depth);
@@ -156,11 +155,15 @@ export function propsFor(room) {
       put('largePlant',-2.9,-2.1);
       break;
     case 'gaming':
-      for (const x of [-2.6,-1.32,0,1.32,2.6]) put('arcade',x,2.25);
       put('couch',2.83,-.56,{turn:-Math.PI/2,key:'sofa'});
-      put('rug',2.15,-.62,{turn:Math.PI/2});
-      put('cabinet',.92,-.62,{turn:Math.PI/2});
-      put('tv',.92,-.62,{y:.55,turn:Math.PI/2});
+      put('rug',2.15,-.62,{turn:Math.PI/2,tone:'#625189'});
+      put('cabinet',.83,-.62,{turn:Math.PI/2});
+      put('tv',.80,-.62,{y:.55,turn:Math.PI/2,size:[1.60,.28,.96]});
+      put('coffeeTable',1.0,-2.21);
+      put('shelf',-2.58,2.38);
+      put('books',-2.69,2.36,{y:1.24});
+      put('lamp',2.5,1.55);
+      put('plant',-2.83,-1.68);
       break;
     case 'pantry':
       for (const x of [-1.45,0,1.45]) {
@@ -172,7 +175,7 @@ export function propsFor(room) {
       set('stool',[[2.28,-1.23],[2.27,.54],[3.22,-.35]]);
       break;
     case 'relaxation':
-      put('couch',0,1.94,{key:'sofa'});
+      put('couch',0,1.94,{key:'sofa',size:[3.15,.94,.88]});
       put('rug',0,1.26);
       put('lounge',-2.55,.76,{turn:Math.PI/3});
       put('lounge',2.55,.76,{turn:-Math.PI/3});
@@ -245,7 +248,7 @@ export function partitions(room) {
 }
 
 export function propBounds(prop) {
-  const [,width,depth] = furniture[prop.type];
+  const [width,depth] = prop.size ?? furniture[prop.type].slice(1);
   const cosine=Math.abs(Math.cos(prop.angle)), sine=Math.abs(Math.sin(prop.angle));
   const rx=(width*cosine+depth*sine)/2, rz=(width*sine+depth*cosine)/2;
   return [prop.at[0]-rx,prop.at[1]-rz,prop.at[0]+rx,prop.at[1]+rz];
@@ -277,16 +280,14 @@ export function activityAnchors(person,activity) {
   }];
   const options = {
     coffee:()=>[-1.45,0,1.45].map((x,i)=>localAnchor(roomById.pantry,x,1.34,0,'interact-right','coffee-'+i)),
-    arcade:()=>[-2.6,-1.32,0,1.32,2.6].map((x,i)=>localAnchor(roomById.gaming,x,1.36,Math.PI,'interact-right','arcade-'+i)),
+    game:()=>gamingSeats('game-play'),
     rest:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'sit','rest-'+i,{
       height:.42, approach:point(roomById.relaxation,x,.90), support:'relaxation-sofa',
     })),
     read:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'sit','rest-'+i,{
       height:.42, approach:point(roomById.relaxation,x,.90), support:'relaxation-sofa',
     })),
-    tv:()=>[-1.05,-.12].map((z,i)=>localAnchor(roomById.gaming,2.78,z,-Math.PI/2,'sit','tv-'+i,{
-      height:.42, approach:point(roomById.gaming,1.99,z), support:'gaming-sofa',
-    })),
+    tv:()=>gamingSeats('sit'),
     talk:()=>conversationAnchors.flat(),
     meeting:()=>[-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,.22,Math.PI,'sit','meeting-'+i,{
       height:.42, approach:point(roomById.meeting,x,-.58), support:'meeting-seat-'+(i?'right':'left'),
@@ -296,4 +297,10 @@ export function activityAnchors(person,activity) {
       .map(room=>localAnchor(room,0,-1.62,room.front===1?Math.PI:0,'emote-yes','visit-'+room.id)),
   };
   return options[activity]?.() ?? [];
+}
+
+function gamingSeats(clip) {
+  return [-1.14,-.01].map((depth,slot)=>localAnchor(roomById.gaming,2.71,depth,-Math.PI/2,clip,'gaming-seat-'+slot,{
+    height:.47,approach:point(roomById.gaming,1.98,depth),support:'gaming-sofa',controller:slot,
+  }));
 }

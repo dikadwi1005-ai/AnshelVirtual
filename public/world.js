@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { doorway, entrance, footprint, point, roomOutline, rooms } from './layout.js';
 import { createDisplays } from './displays.js';
 import { furniture, obstaclesFor, partitions, propsFor } from './furnishings.js';
+import { addLounge } from './lounge.js';
 import { emission, finish, floorMaterial, objectMaterial, radialTexture } from './materials.js';
 
 const loader = new GLTFLoader();
@@ -58,7 +59,7 @@ function walkway(parent,points,width) {
     sides[0].push([x+tangent.z*width/2,z-tangent.x*width/2]);
     sides[1].push([x-tangent.z*width/2,z+tangent.x*width/2]);
   }
-  paving(parent,sides[0].concat(sides[1].reverse()),.007,floorMaterial('tile','#b3a99a'),2.7);
+  paving(parent,sides[0].concat(sides[1].reverse()),.007,floorMaterial('tile','#9096a0'),2.7);
 }
 
 const glass=new THREE.MeshStandardMaterial({
@@ -70,8 +71,8 @@ function architecture(parent,room) {
   paving(parent,roomOutline(room),.016,
     floorMaterial(room.finish,room.floor),room.finish==='oak'?2.1:2.6);
 
-  const wall=finish('#c6c1b4');
-  const trim=finish('#414f50',.52,.12);
+  const wall=finish(room.wall ?? '#b4b8b5');
+  const trim=finish('#354551',.52,.12);
   const panel=finish(room.accent,.65);
   for (const {box:bounds,type} of partitions(room)) {
     const [x0,z0,x1,z1]=bounds;
@@ -108,7 +109,8 @@ function architecture(parent,room) {
   box(parent,[doorway,.018,.43],[x,.026,z],panel).castShadow=false;
 }
 async function placeProp(parent,prop,room,displays) {
-  const [name,width,depth,height]=furniture[prop.type];
+  const [name,...dimensions]=furniture[prop.type];
+  const [width,depth,height]=prop.size ?? dimensions;
   const path=name.includes('/') ? name : 'furniture/'+name;
   const {scene,bounds,size}=await model(path);
   const group=new THREE.Group();
@@ -172,7 +174,7 @@ function contactShadows(parent,props,map) {
   const instances=new THREE.InstancedMesh(flat,material,grounded.length);
   const matrix=new THREE.Object3D();
   for (const [i,prop] of grounded.entries()) {
-    const [,width,depth]=furniture[prop.type];
+    const [width,depth]=prop.size ?? furniture[prop.type].slice(1);
     matrix.position.set(prop.at[0],.027,prop.at[1]);
     matrix.scale.set(width*1.55,1,depth*1.7);
     matrix.rotation.y=prop.angle;
@@ -192,7 +194,7 @@ export async function buildWorld(scene,shadowTexture) {
   const base=new THREE.Mesh(baseGeometry,finish('#505957',.72));
   base.position.y=-.63;
   core.add(base);
-  paving(core,footprint,0,floorMaterial('tile','#97968b'),2.9);
+  paving(core,footprint,0,floorMaterial('tile','#707b88'),2.9);
   walkway(core,[[0,21.1],[-1.45,16],[-1.8,11],[-2.2,7],[-.5,3],[2.9,-1],[5.7,-5.5],[6.6,-11.2]],2.15);
   walkway(core,[[-15.7,8],[-14.8,4],[-13.6,-.6],[-8.3,-3.4],[-4.8,-2.8],[-1.5,.4]],1.7);
   const warmMap=radialTexture(true);
@@ -226,5 +228,5 @@ export async function buildWorld(scene,shadowTexture) {
   batchStatic(core);
   contactShadows(core,[...propLists.values()].flat(),shadowTexture);
   const obstacles=rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)));
-  return {errors,warmGlow,obstacles,displays};
+  return {errors,warmGlow,obstacles,displays,showDockedControllers:addLounge(scene)};
 }

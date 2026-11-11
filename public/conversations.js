@@ -89,3 +89,46 @@ export function createConversations() {
     },
   };
 }
+
+const reflections={
+  desk:['Aku cek urutannya dulu.','Satu langkah dulu, baru lanjut.','Rapiin catatan sebentar, ah.'],
+  coffee:['Waktunya isi ulang kopi.','Aromanya enak juga.'],
+  rest:['Duduk sebentar rasanya enak.','Tarik napas dulu.'],
+  read:['Bagian ini menarik.','Aku baca satu bagian lagi.'],
+  stroll:['Terasnya adem hari ini.','Enak juga jalan sebentar.'],
+  talk:['Aku tunggu sebentar di sini.','Hmm, nanti aku mampir ke meja lagi.'],
+};
+
+export function createMonologues() {
+  let turn=null, remaining=5, sequence=0, previous=null;
+  return {
+    update(delta,actors,groups,office,focus) {
+      const eligible=actor=>{
+        const plan=office?.people?.[actor.person.id];
+        const group=groups.get(actor.anchor.conversation);
+        return focus && !plan?.task && plan?.activity===actor.actual && reflections[actor.actual] &&
+          (actor.stage==='arrived' || actor.stage==='seated') && (group?.length ?? 0)<2 &&
+          Math.hypot(actor.root.position.x-focus.x,actor.root.position.z-focus.z)<5;
+      };
+      remaining-=delta;
+      if (turn && (remaining<=0 || !eligible(turn.speaker))) {
+        turn=null;
+        remaining=13+sequence%5*2;
+      }
+      if (!turn && remaining<=0) {
+        const candidates=actors.filter(eligible);
+        const other=candidates.filter(actor=>actor!==previous);
+        const pool=other.length ? other : candidates;
+        if (pool.length) {
+          const speaker=pool[sequence%pool.length];
+          const lines=reflections[speaker.actual];
+          turn={speaker,text:lines[sequence%lines.length],solo:true};
+          previous=speaker;
+          remaining=2.9;
+          sequence++;
+        } else remaining=1;
+      }
+      return turn;
+    },
+  };
+}

@@ -25,26 +25,26 @@ export const wings = {
 const neighborhoods = [
   {
     wing:'studio', areas:[
-      {id:'video', x:-18.9,z:-14, width:8.3,depth:7.4,front:1, style:'pod', accent:'#9274ba',floor:'#a29ab5',finish:'carpet',daylight:true},
-      {id:'creative', x:-9.75,z:-14.3, width:8.3,depth:8,front:1, style:'open', accent:'#d47447',floor:'#ac815f',finish:'oak',daylight:true},
+      {id:'video', x:-18.9,z:-14, width:8.3,depth:7.4,front:1, style:'pod', accent:'#a073dc',floor:'#765b90',wall:'#443653',finish:'carpet',daylight:true},
+      {id:'creative', x:-9.75,z:-14.3, width:8.3,depth:8,front:1, style:'open', accent:'#dc6d54',floor:'#ac815f',finish:'oak',daylight:true},
       {id:'social', x:-14.2,z:-5.55, width:9.1,depth:6.5,front:1, style:'open', accent:'#bb6888',floor:'#bc969e',finish:'carpet'},
     ],
   },
   {
     wing:'technical', areas:[
       {id:'research', x:.7,z:-16.2, width:9.4,depth:6.6,front:1, style:'nook', accent:'#518773',floor:'#a2856d',finish:'oak',daylight:true},
-      {id:'development', x:13.9,z:-14.9, width:11,depth:8.3,front:1, style:'open', accent:'#4d82b3',floor:'#829aa8',finish:'carpet',daylight:true},
-      {id:'marketing', x:8.9,z:-6.1, width:7.7,depth:6.45,front:1, style:'open', accent:'#4b9386',floor:'#a1b0a2',finish:'carpet'},
+      {id:'development', x:13.9,z:-14.9, width:11,depth:8.3,front:1, style:'open', accent:'#4388de',floor:'#526d87',wall:'#304861',finish:'carpet',daylight:true},
+      {id:'marketing', x:8.9,z:-6.1, width:7.7,depth:6.45,front:1, style:'open', accent:'#37a890',floor:'#548077',finish:'carpet'},
       {id:'qa', x:19.0,z:-6.2, width:8.5,depth:6.6,front:1, style:'open', accent:'#7293be',floor:'#9faebc',finish:'carpet'},
-      {id:'operations', x:18.75,z:1.95, width:8.4,depth:7.5,front:-1, style:'pod', accent:'#4b9d9c',floor:'#819697',finish:'carpet'},
+      {id:'operations', x:18.75,z:1.95, width:8.4,depth:7.5,front:-1, style:'pod', accent:'#51afbd',floor:'#657c83',wall:'#394b59',finish:'carpet'},
     ],
   },
   {
     wing:'business', areas:[
-      {id:'management', x:2.6,z:8.0, width:8.4,depth:6.35,front:-1, style:'nook', accent:'#b88742',floor:'#b59872',finish:'oak'},
-      {id:'executive', x:8.85,z:17.2, width:9,depth:7.3,front:-1, style:'pod', accent:'#ad7742',floor:'#aa8669',finish:'oak',label:'Ruang Dika'},
+      {id:'management', x:2.6,z:8.0, width:8.4,depth:6.35,front:-1, style:'nook', accent:'#c4974d',floor:'#b59872',wall:'#304055',finish:'oak'},
+      {id:'executive', x:8.85,z:17.2, width:9,depth:7.3,front:-1, style:'pod', accent:'#be894c',floor:'#aa8669',wall:'#394456',finish:'oak',label:'Ruang Dika'},
       {id:'administration', x:11.75,z:9.05, width:8.5,depth:6.5,front:-1, style:'open', accent:'#6995a7',floor:'#a8b5b7',finish:'tile'},
-      {id:'finance', x:20.05,z:9.9, width:7.1,depth:6.4,front:-1, style:'nook', accent:'#879c5a',floor:'#a6a483',finish:'oak'},
+      {id:'finance', x:20.05,z:9.9, width:7.1,depth:6.4,front:-1, style:'nook', accent:'#aaad67',floor:'#8c7d60',wall:'#354d43',finish:'oak'},
       {id:'hr', x:18.4,z:17.4, width:8.3,depth:6.4,front:-1, style:'open', accent:'#be7880',floor:'#b79581',finish:'oak'},
     ],
   },
@@ -53,7 +53,7 @@ const neighborhoods = [
       {id:'hub', x:0,z:0, width:10,depth:8.15,front:1, style:'hub', accent:'#398a81',floor:'#b9a385',finish:'oak',label:'Atrium Kolaborasi'},
       {id:'meeting', x:0,z:-8.5, width:8.1,depth:6.15,front:1, style:'pod', accent:'#509391',floor:'#ab9c80',finish:'oak',label:'Pod Rapat'},
       {id:'relaxation', x:-10.25,z:1.7, width:8.1,depth:6.4,front:1, style:'open', accent:'#c38858',floor:'#b29981',finish:'oak',label:'Ruang Santai'},
-      {id:'gaming', x:-19.15,z:2.15, width:8.35,depth:6.8,front:1, style:'nook', accent:'#9376b6',floor:'#9d8eae',finish:'carpet',label:'Lounge Game'},
+      {id:'gaming', x:-19.15,z:2.15, width:8.35,depth:6.8,front:1, style:'nook', accent:'#9f78cf',floor:'#74658e',wall:'#483d5e',finish:'carpet',label:'Lounge PS5'},
       {id:'pantry', x:-9.35,z:8.55, width:8.9,depth:6.35,front:-1, style:'open', accent:'#c48051',floor:'#c0a38a',finish:'tile',label:'Pantri & Kopi'},
       {id:'reception', x:-1.45,z:15.85, width:10.4,depth:7.6,front:-1, style:'open', accent:'#51968c',floor:'#adb7a6',finish:'tile',label:'Resepsionis'},
       {id:'restroom', x:-10.3,z:17.35, width:6.9,depth:6.4,front:-1, style:'service', accent:'#739da5',floor:'#afb9ba',finish:'tile',label:'Toilet'},

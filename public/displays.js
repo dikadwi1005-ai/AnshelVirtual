@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { divisions } from './catalog.js';
 import { displayModes, displayState } from './display-state.js';
+import { drawLoungeGame } from './lounge-game.js';
 
 const supported=new Set(['monitor','laptop','tv']);
 const templates={
@@ -192,7 +193,8 @@ export function createDisplays() {
     attach(mesh,original,prop,room) {
       if (!supported.has(prop.type) || original.name!=='metal') return false;
       const profile=profiles[room.id] ?? shared;
-      const key=room.person?room.id:'shared';
+      const game=room.id==='gaming' && prop.type==='tv';
+      const key=room.person || game ? room.id : 'shared';
       let screen=screens.get(key);
       if (!screen) {
         const canvas=document.createElement('canvas');
@@ -201,10 +203,11 @@ export function createDisplays() {
         const texture=new THREE.CanvasTexture(canvas);
         texture.colorSpace=THREE.SRGBColorSpace;
         const material=new THREE.MeshBasicMaterial({map:texture,toneMapped:false});
-        screen={context:canvas.getContext('2d'),texture,material,profile,accent:room.accent,division:room.person?.id,stamp:'',
+        screen={context:canvas.getContext('2d'),texture,material,profile,game,accent:room.accent,division:room.person?.id,stamp:'',
           snapshot:displayState(null,room.person?.id)};
         screens.set(key,screen);
-        draw(screen,{mode:'idle'},0);
+        if (game) drawLoungeGame(screen.context,0,0);
+        else draw(screen,{mode:'idle'},0);
       }
       mesh.geometry=screenGeometry(mesh.geometry);
       mesh.material=screen.material;
@@ -215,9 +218,21 @@ export function createDisplays() {
     sync(office) {
       for (const screen of screens.values()) screen.snapshot=displayState(office,screen.division);
     },
-    update(now,zoom) {
+    update(now,zoom,game,gameVisible) {
       const step=zoom>=2 ? Math.floor(now/180):0;
       for(const screen of screens.values()) {
+        if (screen.game) {
+          const players=game?.players.size ?? 0;
+          const time=players ? game.elapsed : now/1000;
+          const frame=gameVisible ? Math.floor(time*24) : 0;
+          const stamp=players+':'+frame;
+          if (stamp!==screen.stamp) {
+            screen.stamp=stamp;
+            drawLoungeGame(screen.context,frame/24,players);
+            screen.texture.needsUpdate=true;
+          }
+          continue;
+        }
         const {snapshot}=screen;
         const stamp=snapshot.mode+':'+snapshot.kind+':'+(snapshot.mode==='running'?step:0);
         if (stamp===screen.stamp) continue;

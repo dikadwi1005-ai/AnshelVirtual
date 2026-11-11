@@ -98,6 +98,7 @@ async function refresh(force = false) {
     const signature = JSON.stringify([value.phase,value.mode,value.schedule,value.worker,value.capabilities,value.tasks,value.audit,value.counts,value.projects]);
     const changes = office?.signature !== signature;
     clockOffset = value.now-Date.now();
+    clock();
     office = {...value, signature};
     scene?.state(office);
     const completed = latestAudit===null ? null : value.audit.find(item=>item.id>latestAudit && item.action==='completed');
@@ -206,17 +207,25 @@ function renderOffice() {
 }
 
 const deviceLabels={monitor:'monitor',laptop:'laptop',tv:'TV'};
+const gameLabel=()=>{
+  const players=scene?.gamePlayers() ?? 0;
+  return players ? players+' pemain' : 'Mode demo';
+};
 
 function renderWorkstation() {
   const {room:id,type}=workstation;
   const room=roomById[id];
   const snapshot=displayState(office,id);
   const task=workstationTask(office,id);
-  title(room.label,'Layar workstation');
+  title(room.label,id==='gaming'?'Anshel Circuit':'Layar workstation');
   const focusButtons=(scene?.displayTypes(id) ?? []).map(device=>
     '<button type="button" data-focus-display="'+device+'" aria-pressed="'+(device===type)+'">Fokus '+deviceLabels[device]+'</button>');
   const controls='<div class="context-actions">'+focusButtons.join('')+'</div>';
   const content=$('panel-content');
+  if (id==='gaming') {
+    content.innerHTML=controls+'<dl class="stats"><div><dt>Permainan</dt><dd id="game-status">'+gameLabel()+'</dd></div></dl>';
+    return;
+  }
   if (!task) {
     content.innerHTML=controls+stats([['Layar',displayModes[snapshot.mode]]])+'<p class="status-text">Belum ada tugas untuk area ini.</p>';
     return;
@@ -484,7 +493,11 @@ const clock = () => {
 };
 clock();
 setInterval(clock,1000);
-setInterval(()=>{if (panel==='office' && selected) updateEmployee();},180);
+setInterval(()=>{
+  if (panel==='office' && selected) updateEmployee();
+  const gameStatus=$('game-status');
+  if (gameStatus && gameStatus.textContent!==gameLabel()) gameStatus.textContent=gameLabel();
+},180);
 api('session').then(value=>value.authenticated?enter():showLogin()).catch(error=>{
   showLogin();
   $('login-error').textContent=error.message;

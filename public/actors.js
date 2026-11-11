@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { divisions } from './catalog.js';
-import { chooseConversationAnchor, createConversations } from './conversations.js';
+import { chooseConversationAnchor, createConversations, createMonologues } from './conversations.js';
 import { employeeFigure } from './employee-look.js';
 import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, station } from './furnishings.js';
 import { roomById } from './layout.js';
+import { gamepad } from './lounge.js';
+import { isGameReaction } from './lounge-game.js';
 import { flatMesh, model } from './world.js';
 
 const speed=1.72;
@@ -78,6 +80,11 @@ export async function createActors(scene,nav,shadowMap,initial) {
   }));
   const reservations=new Map();
   const conversations=createConversations();
+  const monologues=createMonologues();
+  const game={elapsed:0,players:new Set()};
+  const pads=[gamepad(),gamepad()];
+  const gripLeft=new THREE.Vector3(), gripRight=new THREE.Vector3();
+  let solo=null;
   const actors=[];
   const errors=[];
   for (const [index,result] of settled.entries()) {
@@ -98,9 +105,12 @@ export async function createActors(scene,nav,shadowMap,initial) {
       const drive=result.value.animations.find(clip=>clip.name==='drive') ?? sit;
       clips.set('desk-work',mixer.clipAction(seatedClip(sit,drive,'desk-work',[-.13,-.20,-.14,-.13],[-.20,-.12,-.17,-.20])));
       clips.set('desk-cheer',mixer.clipAction(seatedClip(sit,drive,'desk-cheer',[-.20,-.94,-.75,-.20],[-.20,-.80,-.94,-.20])));
+      clips.set('game-play',mixer.clipAction(seatedClip(sit,drive,'game-play',[0,.05,-.035,0],[0,-.035,.05,0])));
+      clips.set('game-react',mixer.clipAction(seatedClip(sit,drive,'game-react',[-.04,-.27,-.22,-.04],[-.04,-.24,-.19,-.04])));
     }
     const plan=initial?.people?.[person.id];
     const actor={person,root,figure,shadowMesh,mixer,clips,stature:profile.stature,action:null,animation:'idle',path:[],
+      hands:[figure.getObjectByName('arm-left'),figure.getObjectByName('arm-right')],
       stage:'idle',seatProgress:0,activity:plan?.activity ?? 'desk',reaction:0,wait:0,retry:0};
     const anchor=chooseAnchor(actor,actor.activity,reservations,nav) ?? station(roomById[person.id]);
     reservations.set(anchor.id,actor);
@@ -231,6 +241,7 @@ export async function createActors(scene,nav,shadowMap,initial) {
       const working=actor.actual==='work' && seated && plan?.executing;
       const turn=actor.stage==='arrived' && conversations.turns.get(actor.anchor.conversation);
       const speaking=turn?.speaker===actor;
+      const speakingAlone=solo?.speaker===actor && actor.stage==='arrived' && actor.anchor.clip==='idle' && !plan?.task;
       const conversation=actor.stage==='arrived' && actor.anchor.conversation;
       if (conversation) {
         const facing=turn ? location(speaking?turn.other:turn.speaker) : actor.anchor.center;
@@ -239,7 +250,9 @@ export async function createActors(scene,nav,shadowMap,initial) {
         const turnAngle=angleDifference(angle,actor.root.rotation.y);
         actor.root.rotation.y+=THREE.MathUtils.clamp(turnAngle,-delta*3,delta*3);
       }
-      const clip=speaking?'speak':reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.anchor.clip;
+      const gaming=seated && actor.actual==='game';
+      const clip=gaming ? (isGameReaction(game.elapsed)?'game-react':'game-play') :
+        speaking || speakingAlone ? 'speak' : reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.anchor.clip;
       play(actor,clip);
       actor.reaction=Math.max(0,actor.reaction-delta);
     }
@@ -248,9 +261,29 @@ export async function createActors(scene,nav,shadowMap,initial) {
     actor.shadowMesh.position.z=actor.root.position.z;
   }
 
+  function updateGame(delta) {
+    game.players.clear();
+    for (const actor of actors) {
+      if (actor.stage!=='seated' || actor.actual!=='game') continue;
+      const slot=actor.anchor.controller;
+      const pad=pads[slot];
+      if (!pad) continue;
+      game.players.add(slot);
+      if (pad.parent!==actor.root) actor.root.add(pad);
+      actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.019));
+      actor.hands[1].localToWorld(gripRight.set(-.138,-.080,.019));
+      const grip=actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5));
+      pad.position.set(grip.x,grip.y+.042,grip.z+.105);
+      pad.rotation.x=actor.animation==='game-react' ? -.23 : -.08;
+    }
+    for (const [slot,pad] of pads.entries()) if (!game.players.has(slot)) pad.removeFromParent();
+    game.elapsed=game.players.size ? game.elapsed+delta : 0;
+  }
+
   return {
-    errors,actors,turns:conversations.turns,
-    update(delta,state) {
+    errors,actors,turns:conversations.turns,game,
+    get solo() { return solo; },
+    update(delta,state,focus) {
       if (state?.phase==='paused') return;
       const groups=new Map();
       for (const actor of actors) {
@@ -262,6 +295,8 @@ export async function createActors(scene,nav,shadowMap,initial) {
       }
       conversations.update(delta,groups,state);
       for (const actor of actors) advance(actor,delta,state);
+      solo=monologues.update(delta,actors,groups,state,focus);
+      updateGame(delta);
     },
     celebrate(id) {
       const actor=actors.find(item=>item.person.id===id);

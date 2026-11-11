@@ -5,6 +5,7 @@ import { activities, divisions } from '../public/catalog.js';
 import { activityAnchors, furniture, obstaclesFor, partitions, propBounds, propsFor, station } from '../public/furnishings.js';
 import { doorway, entrance, insideRoom, roomById, rooms, withinSite } from '../public/layout.js';
 import { agentRadius, navigation, segmentHits } from '../public/navigation.js';
+import { isGameReaction } from '../public/lounge-game.js';
 
 const obstacles=rooms.flatMap(room=>obstaclesFor(room));
 const nav=navigation(obstacles);
@@ -37,7 +38,7 @@ test('satu tapak kantor berisi 12 area divisi, atrium, dan jalur yang terhubung'
 });
 
 test('12 workstation dapat dicapai dari area santai dan divisi lain tanpa memotong penghalang',()=>{
-  const origins=['arcade','coffee','meeting','talk','visit'];
+  const origins=['game','coffee','meeting','talk','visit'];
   for (const person of divisions) {
     const target=station(roomById[person.id]);
     for (const activity of origins) {
@@ -93,6 +94,19 @@ test('jejak furnitur utama tidak bertumpuk dan tetap di dalam ruang',()=>{
       }
     }
   }
+});
+
+test('lounge mempunyai satu TV dan dua tempat duduk yang dibagi dengan penonton',()=>{
+  const props=propsFor(roomById.gaming);
+  assert.equal(props.filter(prop=>prop.type==='tv').length,1);
+  assert.equal(props.filter(prop=>prop.type==='couch').length,1);
+  assert.equal(props.some(prop=>prop.type==='arcade'),false);
+  const games=activityAnchors(divisions[0],'game');
+  const viewers=activityAnchors(divisions[0],'tv');
+  assert.deepEqual(games.map(slot=>slot.id),viewers.map(slot=>slot.id));
+  assert.deepEqual(games.map(slot=>slot.controller),[0,1]);
+  assert.ok(games.every(slot=>slot.clip==='game-play' && slot.angle===-Math.PI/2));
+  assert.deepEqual([0,3.99,4,4.89,4.91,12].map(isGameReaction),[false,false,true,true,false,true]);
 });
 
 test('SQLite menentukan antrean offline, eksekusi, dan pelepasan tugas untuk rencana karakter',()=>{

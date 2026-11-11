@@ -1,7 +1,7 @@
 import { divisions } from './catalog.js';
 
 const cycle = 110_000;
-const alternatives = ['coffee','arcade','rest','talk','meeting','visit','read','tv','stroll','nap'];
+const alternatives = ['coffee','game','rest','talk','meeting','visit','read','tv','stroll','nap'];
 
 export function employeePlans(now, phase, running, assigned = []) {
   return Object.fromEntries(divisions.map(person => {

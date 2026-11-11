@@ -10,7 +10,7 @@ const overview=new THREE.Vector3(30,57,55);
 const center=new THREE.Vector3(0,.35,0);
 const day={
   backdrop:'#536572', key:'#ffebd3', sky:'#e2edf4', ground:'#b9a899',
-  sun:2.08, ambient:1.46, interior:.31, glow:.17, exposure:.97,
+  sun:2.22, ambient:1.35, interior:.31, glow:.16, exposure:.97,
 };
 const evening={
   backdrop:'#273346', key:'#ccd8ff', sky:'#9aaad4', ground:'#9c795e',
@@ -87,7 +87,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
   }
   new ResizeObserver(resize).observe(host);
   camera.position.copy(overview);
-  camera.zoom=host.clientWidth<650?1.65:1;
+  camera.zoom=1;
   controls.target.copy(center);
   controls.update();
   resize();
@@ -122,7 +122,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
     if (!view) return;
     following=null;
     const target=view.center;
-    const direction=view.normal.setY(.66).normalize().multiplyScalar(16);
+    const direction=view.normal.setY(room==='gaming'?1.2:.66).normalize().multiplyScalar(16);
     cameraMove={target,position:target.clone().add(direction),zoom:host.clientWidth<650?40:33};
   }
 
@@ -178,8 +178,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
     const narrow=width<700;
     for (const {room,element,anchors} of roomLabels) {
       const focused=selected===room.id;
-      const relevant=focused || (!narrow && camera.zoom<1.55) ||
-        (camera.zoom>1.48 && Math.hypot(controls.target.x-room.x,controls.target.z-room.z)<7.8);
+      const relevant=camera.zoom<18 && (focused || (!narrow && camera.zoom<1.55) ||
+        (camera.zoom>1.48 && Math.hypot(controls.target.x-room.x,controls.target.z-room.z)<7.8));
       const labelWidth=Math.min(135,42+room.label.length*4);
       let position=null;
       if (relevant) {
@@ -206,12 +206,15 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
     const width=host.clientWidth, height=host.clientHeight;
     let closest=null, distance=7.5, x, y;
     if (population && camera.zoom>2.15 && state?.phase!=='paused') {
-      for (const turn of population.turns.values()) {
+      const candidates=[...population.turns.values()];
+      if (population.solo) candidates.push(population.solo);
+      candidates.sort((a,b)=>Number(a!==shownTurn)-Number(b!==shownTurn));
+      for (const turn of candidates) {
         const actor=turn.speaker;
         const position=actor.root.position;
         const range=Math.hypot(position.x-controls.target.x,position.z-controls.target.z);
-        if (range>=distance) continue;
-        temp.copy(position).y+=actor.stature+.15;
+        if (range>=distance || (turn.solo && closest)) continue;
+        temp.copy(position).y+=actor.stature+(actor.stage==='seated'?-.19:.15);
         temp.project(camera);
         const left=(.5+temp.x*.5)*width, top=(.5-temp.y*.5)*height;
         if (left<42 || left>width-42 || top<146 || top>height-84) continue;
@@ -219,6 +222,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
         distance=range;
         x=left;
         y=top;
+        if (turn===shownTurn) break;
       }
     }
     bubble.hidden=!closest;
@@ -291,11 +295,15 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
     if (!host.clientWidth || document.hidden) return;
     if (population) {
       const steps=Math.max(1,Math.ceil(delta/.05));
-      for (let step=0;step<steps;step++) population.update(delta/steps,state);
+      const speechFocus=camera.zoom>2.15 ? controls.target : null;
+      for (let step=0;step<steps;step++) population.update(delta/steps,state,speechFocus);
+      world?.showDockedControllers(population.game.players);
     }
     updateCamera(delta);
     refreshLighting(delta);
-    world?.displays.update(now,camera.zoom);
+    const lounge=roomById.gaming;
+    const gameVisible=camera.zoom>=2 && Math.hypot(controls.target.x-lounge.x,controls.target.z-lounge.z)<10;
+    world?.displays.update(now,camera.zoom,population?.game,gameVisible);
     renderer.render(scene,camera);
     updateLabels();
     updateSpeech();
@@ -304,6 +312,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
   return {
     load,reset,focusRoom,focusEmployee,focusDisplay,
     displayTypes(room) { return world?.displays.types(room) ?? []; },
+    gamePlayers() { return population?.game.players.size ?? 0; },
     state(value) {
       if (!value) return;
       if (auditCursor!==null) {
