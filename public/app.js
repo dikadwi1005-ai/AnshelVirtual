@@ -1,4 +1,5 @@
 import { activities, divisions, timezone } from './catalog.js';
+import { employeeProfile } from './employee-profiles.js';
 import { rooms, roomById, wings } from './layout.js';
 
 const $ = id => document.getElementById(id);
@@ -166,8 +167,10 @@ function updateEmployee() {
 function renderOffice() {
   const person = team(selected);
   if (person) {
+    const profile=employeeProfile(person.id);
     title(person.name,person.employee);
-    $('panel-content').innerHTML = stats([['Jabatan',person.role],['Keahlian',person.specialty],['Kepribadian',person.personality]])+
+    $('panel-content').innerHTML = stats([['Jabatan',person.role],['Keahlian',person.specialty],['Kepribadian',person.personality],
+      ['Tampilan',profile.presentation],['Pakaian',profile.outfit]])+
       '<div id="employee-status"></div><div class="context-actions"><button id="focus-employee" type="button">Fokus karyawan</button><button id="follow" type="button">'+
       (scene?.isFollowing(selected)?'Berhenti mengikuti':'Ikuti dengan kamera')+'</button></div>'+
       '<p class="section-label">Tugas terbaru</p>'+renderTasks(office.tasks.filter(task=>task.division===person.id).slice(0,3),false);

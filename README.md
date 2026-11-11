@@ -50,4 +50,6 @@ Tes integrasi membuka koneksi loopback sementara. Cadangan memakai snapshot SQLi
 
 ## Cakupan versi ini
 
+[Audit dan roadmap Phase 0–7](docs/roadmap.md) memuat baseline, kriteria penerimaan, rencana migrasi cloud, dan status checkpoint.
+
 Eksekusi yang tersedia ialah diagnostik lokal dan draf melalui kontrak Ollama. Pengujian model Ollama yang terpasang serta pengujian workflow pada akun n8n Cloud dan Telegram masih diperlukan. Interaksi permainan memakai arkade dan area TV. Prop genggam, animasi wajah, pekerjaan spesialis dengan alat eksternal, notifikasi Telegram per tugas, dan memori sosial persisten masih menjadi pekerjaan lanjutan.

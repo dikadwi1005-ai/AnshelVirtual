@@ -1,6 +1,12 @@
 node_modules/
 data/
 .env
+.env.*
+!.env.example
+.vercel/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 .asset-import/
 coverage/
 *.log

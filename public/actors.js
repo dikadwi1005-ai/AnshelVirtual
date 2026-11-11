@@ -1,13 +1,11 @@
 import * as THREE from 'three';
-import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { divisions } from './catalog.js';
+import { employeeFigure } from './employee-look.js';
+import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, station } from './furnishings.js';
 import { roomById } from './layout.js';
 import { flatMesh, model } from './world.js';
 
-const rigs=['female-a','male-b','female-c','female-d','male-a','female-e',
-  'male-d','female-f','male-c','female-b','male-e','male-f'];
-const stature=1.62;
 const speed=1.72;
 const personalSpace=.58;
 const sitBlend=.42;
@@ -57,18 +55,21 @@ function location(actor) { return [actor.root.position.x,actor.root.position.z];
 
 export async function createActors(scene,nav,shadowMap,initial) {
   const shadow=new THREE.MeshBasicMaterial({map:shadowMap,transparent:true,depthWrite:false,opacity:.70,toneMapped:false});
-  const settled=await Promise.allSettled(divisions.map(person=>model('people/character-'+rigs[person.index])));
+  const settled=await Promise.allSettled(divisions.map(async person=>{
+    const profile=employeeProfile(person.id);
+    const asset=await model('people/character-'+profile.asset);
+    return {figure:employeeFigure(asset,person.id),animations:asset.animations,employeeId:profile.id};
+  }));
   const reservations=new Map();
   const actors=[];
   const errors=[];
   for (const [index,result] of settled.entries()) {
     if (result.status==='rejected') { errors.push(result.reason); continue; }
     const person=divisions[index];
-    const figure=clone(result.value.scene);
-    figure.scale.setScalar(stature/result.value.size.y);
+    const {figure}=result.value;
     const root=new THREE.Group();
     root.add(figure);
-    root.name=person.id;
+    root.name=result.value.employeeId;
     scene.add(root);
     const shadowMesh=flatMesh(scene,.98,.84,[0,0],.031,shadow);
     const mixer=new THREE.AnimationMixer(figure);
