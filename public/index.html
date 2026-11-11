@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#183c35">
+  <title>Anshel Virtual Tech</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/office.css">
+  <script type="importmap">{"imports":{"three":"/lib/three/build/three.module.js","three/addons/":"/lib/three/examples/jsm/"}}</script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><strong>Anshel <span>Virtual Tech</span></strong></div>
+    <nav aria-label="Navigasi utama">
+      <button class="nav-button active" data-panel="office" type="button">Kantor</button>
+      <button class="nav-button" data-panel="tasks" type="button">Tugas <span id="queue-badge" hidden></span></button>
+      <button class="nav-button" data-panel="projects" type="button">Proyek</button>
+      <button class="nav-button" data-panel="audit" type="button">Aktivitas</button>
+      <button class="nav-button" data-panel="settings" type="button">Pengaturan</button>
+    </nav>
+    <div class="identity"><span class="identity-name"><strong>Dika</strong><small>Pemilik</small></span><button id="logout" class="avatar" title="Keluar" aria-label="Keluar" type="button">D</button></div>
+  </header>
+
+  <main id="workspace" hidden>
+    <section class="heading">
+      <div><h1>Kantor virtual<span>.</span></h1><p>12 divisi <span>·</span> 3 lantai</p></div>
+      <div class="heading-actions"><div class="clock"><strong id="clock">--:--</strong><small>WIB</small></div><button class="primary" id="new-task" type="button">+ Tugas baru</button></div>
+    </section>
+
+    <div class="workspace-grid">
+      <section class="viewport" aria-label="Denah kantor interaktif">
+        <div id="scene"></div>
+        <div class="viewport-top">
+          <span class="tag" id="phase"><i></i><span>Memuat status</span></span>
+          <button class="icon-button full-button" data-camera="fullscreen" aria-label="Layar penuh" title="Layar penuh" type="button"></button>
+        </div>
+        <div id="room-labels"></div>
+        <div id="scene-message" role="status">Memuat kantor 3D…</div>
+        <div class="viewport-bottom">
+          <div class="floors" aria-label="Pilih lantai"></div>
+          <div class="camera" aria-label="Kontrol kamera">
+            <button class="icon-button" data-camera="zoomIn" aria-label="Perbesar" title="Perbesar" type="button"></button>
+            <button class="icon-button" data-camera="zoomOut" aria-label="Perkecil" title="Perkecil" type="button"></button>
+            <button class="icon-button" data-camera="reset" aria-label="Atur ulang kamera" title="Atur ulang kamera" type="button"></button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Panel kantor">
+        <div class="inspector-heading"><div><p id="panel-kicker">Lantai 01</p><h2 id="panel-title">Operasional</h2></div><button id="inspector-back" class="icon-button" type="button" aria-label="Kembali" hidden>←</button></div>
+        <div id="panel-content"></div>
+      </aside>
+    </div>
+    <footer><div class="foot-status"><i id="worker-light"></i><span id="worker-status">Memeriksa worker</span></div><span>Geser untuk memutar · gulir untuk zoom · klik karyawan untuk detail</span></footer>
+  </main>
+
+  <section id="auth" class="auth" aria-labelledby="auth-title" hidden>
+    <form id="login-form">
+      <p class="eyebrow">Kantor privat Dika</p>
+      <h1 id="auth-title">Anshel<br>Virtual Tech<span>.</span></h1>
+      <label for="password">Kata sandi pemilik</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <p id="login-error" class="error" role="alert"></p>
+      <button class="primary" type="submit">Masuk ke kantor →</button>
+    </form>
+  </section>
+
+  <dialog id="task-dialog">
+    <form id="task-form">
+      <div class="dialog-heading"><h2>Tugas baru</h2><button type="button" class="icon-button" data-close aria-label="Tutup">×</button></div>
+      <label>Jenis pekerjaan<select name="kind"><option value="diagnostic">Diagnostik worker lokal</option><option value="draft">Draf AI lokal (Ollama)</option></select></label>
+      <label>Divisi<select name="division" required></select></label>
+      <label>Proyek <span>(opsional)</span><input name="project" maxlength="80" placeholder="Nama proyek"></label>
+      <label>Instruksi<textarea name="description" required maxlength="2000" rows="3"></textarea></label>
+      <label>Prioritas<select name="priority"><option value="0">Normal</option><option value="1">Tinggi</option><option value="2">Mendesak</option></select></label>
+      <label class="checkbox"><input name="urgent" type="checkbox"> Boleh dijalankan di luar jam kerja</label>
+      <p id="task-error" class="error" role="alert"></p>
+      <button class="primary" type="submit">Tambahkan ke antrean</button>
+    </form>
+  </dialog>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>

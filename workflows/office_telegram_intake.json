@@ -1,0 +1,117 @@
+{
+  "name": "Anshel · Telegram intake",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "0d8191fd-ea65-4f95-902b-000000000001",
+      "name": "Pesan Telegram",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "0d8191fd-ea65-4f95-902b-000000000005"
+    },
+    {
+      "parameters": {
+        "jsCode": "const update = $input.first().json;\nconst msg = update.message;\nif (msg?.chat?.type !== 'private' || typeof msg.text !== 'string' || !msg.from?.id) return [];\nreturn [{json:{userId:String(msg.from.id),chatId:String(msg.chat.id),updateId:String(update.update_id),text:msg.text}}];"
+      },
+      "id": "0d8191fd-ea65-4f95-902b-000000000002",
+      "name": "Pesan pribadi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        230,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REPLACE-WITH-AUTHORIZED-HTTPS-HOST/api/integrations/telegram",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "0d8191fd-ea65-4f95-902b-000000000003",
+      "name": "Validasi dan proses",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $('Pesan pribadi').first().json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "0d8191fd-ea65-4f95-902b-000000000004",
+      "name": "Balas ke Dika",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        690,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Pesan Telegram": {
+      "main": [
+        [
+          {
+            "node": "Pesan pribadi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pesan pribadi": {
+      "main": [
+        [
+          {
+            "node": "Validasi dan proses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi dan proses": {
+      "main": [
+        [
+          {
+            "node": "Balas ke Dika",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none"
+  }
+}

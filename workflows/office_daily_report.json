@@ -1,0 +1,96 @@
+{
+  "name": "Anshel · Ringkasan harian",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "0d8191fd-ea65-4f95-902b-000000000006",
+      "name": "Jam laporan WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REPLACE-WITH-AUTHORIZED-HTTPS-HOST/api/integrations/report",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "0d8191fd-ea65-4f95-902b-000000000007",
+      "name": "Ambil ringkasan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        230,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "0d8191fd-ea65-4f95-902b-000000000008",
+      "name": "Balas ke Dika",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        460,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Jam laporan WIB": {
+      "main": [
+        [
+          {
+            "node": "Ambil ringkasan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil ringkasan": {
+      "main": [
+        [
+          {
+            "node": "Balas ke Dika",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none"
+  }
+}
