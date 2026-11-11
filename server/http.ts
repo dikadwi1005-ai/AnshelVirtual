@@ -19,6 +19,7 @@ const mime = {
 const equal = (a,b) => typeof a === 'string' && typeof b === 'string' &&
   timingSafeEqual(createHash('sha256').update(a).digest(),createHash('sha256').update(b).digest());
 const configured = value => typeof value === 'string' && value.length >= 24;
+const validOwnerPassword = value => typeof value === 'string' && value.length >= 12;
 
 async function json(req) {
   if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) throw new Fault(415,'Gunakan JSON.');
@@ -83,7 +84,7 @@ export function officeHandler(store, env = process.env) {
         if (post && req.headers.origin && req.headers.origin !== expectedOrigin) throw new Fault(403,'Asal permintaan ditolak.');
         if (path === '/api/session' && req.method === 'GET') return respond({authenticated:!!authed});
         if (path === '/api/login' && post) {
-          if (!configured(env.OWNER_PASSWORD)) throw new Fault(503,'Isi OWNER_PASSWORD di .env, lalu jalankan ulang server.');
+          if (!validOwnerPassword(env.OWNER_PASSWORD)) throw new Fault(503,'Isi OWNER_PASSWORD minimal 12 karakter di .env, lalu jalankan ulang server.');
           const {password} = await json(req);
           const valid = equal(password,env.OWNER_PASSWORD);
           if (typeof store.recordLogin === 'function') {

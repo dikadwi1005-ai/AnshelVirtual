@@ -20,7 +20,7 @@ Di Vercel → proyek Anshel → Settings → Environment Variables, isi:
 | Nama | Isi |
 | --- | --- |
 | `DATABASE_URL` | Connection string **Transaction pooler** dari Supabase → Connect, port `6543` |
-| `OWNER_PASSWORD` | Kata sandi pemilik yang panjang dan acak, minimal 24 karakter |
+| `OWNER_PASSWORD` | Kata sandi pemilik yang unik dan kuat, minimal 12 karakter |
 | `WORKER_TOKEN` | Rahasia acak terpisah untuk worker, minimal 24 karakter |
 | `N8N_TOKEN` | Rahasia acak lain untuk n8n Cloud, jika integrasi digunakan |
 | `TELEGRAM_USER_ID` dan `TELEGRAM_CHAT_ID` | Opsional, ID privat Telegram saat integrasi aktif |

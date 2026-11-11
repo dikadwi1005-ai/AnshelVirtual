@@ -11,6 +11,7 @@ const ttl = 8 * 3600_000;
 const getStore = () => store ||= createCloudStore();
 const getDialogue = () => dialogue ||= createDialogue(process.env);
 const validSecret = value => typeof value === 'string' && value.length >= 24;
+const validOwnerPassword = value => typeof value === 'string' && value.length >= 12;
 const equal = (a,b) => typeof a === 'string' && typeof b === 'string' &&
   timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest());
 const headers = {
@@ -54,7 +55,7 @@ async function route(request, injectedStore = null, env = process.env) {
 
     if (path === '/api/session' && request.method === 'GET') return respond({authenticated:authed});
     if (path === '/api/login' && post) {
-      if (!validSecret(env.OWNER_PASSWORD)) throw new Fault(503,'OWNER_PASSWORD belum diatur di Vercel.');
+      if (!validOwnerPassword(env.OWNER_PASSWORD)) throw new Fault(503,'OWNER_PASSWORD harus diatur di Vercel dengan minimal 12 karakter.');
       const { password } = await readJson(request);
       const valid = equal(password,env.OWNER_PASSWORD);
       const ip = request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown';

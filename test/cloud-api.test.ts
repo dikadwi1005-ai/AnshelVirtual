@@ -13,7 +13,7 @@ test('Vercel Web API: login, sesi, antrean, dan logout tetap privat',async () =>
     deleteSession:async token => { sessions.delete(token); },
     recordLogin:async () => {},
   };
-  const env = { OWNER_PASSWORD:'owner-test-password-over-24-chars',WORKER_TOKEN:'worker-long-test-token-over-24-chars' };
+  const env = { OWNER_PASSWORD:'ownerpass123',WORKER_TOKEN:'worker-long-test-token-over-24-chars' };
   const api = createCloudApi(cloud,env);
   const call = (path, method='GET', body, extra={}) => api.fetch(new Request('https://anshel.example'+path,{
     method, headers:{...(body?{'Content-Type':'application/json'}:{}),...extra},
@@ -22,6 +22,10 @@ test('Vercel Web API: login, sesi, antrean, dan logout tetap privat',async () =>
   try {
     assert.deepEqual(await (await call('/api/route?path=session')).json(),{authenticated:false});
     assert.equal((await call('/api/state')).status,401);
+    const shortOwnerApi = createCloudApi(cloud,{...env, OWNER_PASSWORD:'ownerpass12'});
+    assert.equal((await shortOwnerApi.fetch(new Request('https://anshel.example/api/login',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:'ownerpass12'}),
+    }))).status,503);
     assert.equal((await call('/api/login','POST',{password:'wrong'})).status,401);
     assert.equal((await call('/api/login','POST',{password:env.OWNER_PASSWORD},{Origin:'https://other.example'})).status,403);
     const login = await call('/api/login','POST',{password:env.OWNER_PASSWORD});

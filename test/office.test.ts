@@ -121,7 +121,7 @@ test('rencana karyawan membedakan tugas dalam antrean dari eksekusi worker',()=>
 
 test('sesi privat, pembatasan origin, token, allowlist Telegram, dan kontrak n8n',async()=>{
   const store=createStore(':memory:',()=>working);
-  const config={OWNER_PASSWORD:'test-owner-long-random-password',WORKER_TOKEN:'test-worker-long-random-token',
+  const config={OWNER_PASSWORD:'ownerpass123',WORKER_TOKEN:'test-worker-long-random-token',
     N8N_TOKEN:'test-n8n-long-random-token',TELEGRAM_USER_ID:'42',TELEGRAM_CHAT_ID:'7'};
   const server=officeServer(store,config);
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
