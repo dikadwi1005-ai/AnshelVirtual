@@ -9,8 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createStore } from '../server/store.ts';
 import { officeServer } from '../server/http.ts';
 import { phase, defaults } from '../server/schedule.ts';
-import { employeePlans, routeBetween } from '../public/behavior.js';
-import { layout } from '../public/layout.js';
+import { employeePlans } from '../public/behavior.js';
 
 const payload = {description:'Periksa SQLite lokal',division:'operations',kind:'diagnostic'};
 const working = Date.parse('2026-11-11T03:15:00Z');
@@ -104,19 +103,20 @@ test('di luar jam kerja hanya tugas darurat yang dapat diambil',()=>{
   } finally { store.close(); }
 });
 
-test('perilaku stabil dan beralih ke tugas nyata, dengan rute koridor antar ruang',()=>{
+test('rencana karyawan membedakan tugas dalam antrean dari eksekusi worker',()=>{
   const a=employeePlans(working,'closed',[]);
   assert.deepEqual(employeePlans(working,'closed',[]),a);
   const task={id:'id',division:'operations',description:'uji'};
   const b=employeePlans(working,'closed',[task]);
   assert.equal(b.operations.activity,'work');
   assert.equal(b.operations.task,task);
+  assert.equal(b.operations.executing,true);
   assert.notEqual(a.operations.activity,'work');
-  assert.deepEqual(routeBetween({room:'a',x:1,z:4},{room:'b',x:3,z:-4},{a:1.57},-.5),
-    [[1,1.57],[1,-.5],[3,-.5],[3,-4]]);
-  const rooms=[0,1,2].flatMap(layout);
-  assert.equal(rooms.length,20);
-  assert.equal(rooms.filter(room=>room.person).length,12);
+  const queued={...task,status:'queued'};
+  assert.deepEqual(employeePlans(working,'closed',[],[queued]).operations,{
+    activity:'desk',task:queued,executing:false,mood:'Siap',energy:80,
+  });
+  assert.deepEqual(employeePlans(working,'closed',[]).operations,a.operations);
 });
 
 test('sesi privat, pembatasan origin, token, allowlist Telegram, dan kontrak n8n',async()=>{

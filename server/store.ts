@@ -74,7 +74,12 @@ export function createStore(path: string, now = Date.now) {
     close:() => db.close(),
     state() {
       if (get("SELECT id FROM tasks WHERE status='running' AND lease_until<=? LIMIT 1",now())) transaction(expireLeases);
-      const running = all("SELECT id,division,description FROM tasks WHERE status='running' AND lease_until>?",now());
+      const running = all("SELECT id,division,description,status FROM tasks WHERE status='running' AND lease_until>?",now());
+      const assigned = all(`SELECT id,division,description,status,kind FROM (
+        SELECT id,division,description,status,kind,
+          row_number() OVER (PARTITION BY division ORDER BY priority DESC,created,rowid) AS rank
+        FROM tasks WHERE status IN ('queued','blocked')
+      ) WHERE rank=1`);
       const officePhase = current();
       const simulation = officePhase === 'paused' ? readSetting('paused_at',null) : null;
       return {
@@ -82,7 +87,7 @@ export function createStore(path: string, now = Date.now) {
         worker: now() - readSetting('worker_at', -Infinity) < 40_000,
         capabilities: readSetting('worker_kinds',[]),
         tasks:all('SELECT * FROM tasks ORDER BY created DESC,rowid DESC LIMIT 150').map(publicTask),
-        running, people:employeePlans(simulation?.at ?? now(),simulation?.phase ?? officePhase,running),
+        running, people:employeePlans(simulation?.at ?? now(),simulation?.phase ?? officePhase,running,assigned),
         counts:Object.fromEntries(all('SELECT status,count(*) AS count FROM tasks GROUP BY status').map(row=>[row.status,row.count])),
         projects:all("SELECT project,status,count(*) AS count FROM tasks WHERE project<>'' GROUP BY project,status ORDER BY project"),
         audit:all('SELECT * FROM audit ORDER BY id DESC LIMIT 60'),

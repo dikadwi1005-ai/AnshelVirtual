@@ -600,6 +600,17 @@
       "path": "public/models/people/character-male-f.glb",
       "validation": "Struktur file dan tekstur lokal diperiksa",
       "sha256": "ed151fc47c5cd6be9693c524e92f045170c965819f4f81b28ed66dcc3c1085bf"
+    },
+    {
+      "name": "server-rack.glb",
+      "creator": "Innerscene",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://www.innerscene.com/tools/library/3d-parts/low-poly-sci-fi-server-4fc9c6da",
+      "format": "GLB",
+      "path": "public/models/technology/server-rack.glb",
+      "validation": "Struktur GLB dan tekstur tertanam diperiksa",
+      "sha256": "6dc8be0d4d43271371e941d1c2150a5fa64bc9ecdca5e5ba2d6430dc623d035e"
     }
   ]
 }

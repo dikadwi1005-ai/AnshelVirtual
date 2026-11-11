@@ -2,12 +2,6 @@ export const company = 'Anshel Virtual Tech';
 export const owner = 'Dika';
 export const timezone = 'Asia/Jakarta';
 
-export const floors = [
-  {name:'Operasional', detail:'Manajemen & operasional', color:'#75a798'},
-  {name:'Studio', detail:'Produk & konten', color:'#d5aa76'},
-  {name:'Strategi', detail:'Riset & pertumbuhan', color:'#8f9ab9'},
-];
-
 export const divisions = [
   ['management','Manajemen','Alya','Manajer AI','Koordinasi dan prioritas','Terstruktur','talk'],
   ['operations','IT & Operasional','Bima','Analis Operasional','Pemantauan sistem','Praktis','arcade'],
@@ -22,10 +16,12 @@ export const divisions = [
   ['qa','Jaminan Mutu','Kirana','Analis QA','Validasi dan pengujian','Cermat','rest'],
   ['finance','Keuangan','Laras','Analis Keuangan','Anggaran dan pemakaian sumber daya','Sistematis','coffee'],
 ].map(([id,name,employee,role,specialty,personality,hobby], index) => ({
-  id,name,employee,role,specialty,personality,hobby,index,floor:Math.floor(index/4),
+  id,name,employee,role,specialty,personality,hobby,index,
 }));
 
 export const activities = {
   desk:'Di meja kerja', coffee:'Mengambil kopi', arcade:'Bermain arkade',
   rest:'Bersantai', talk:'Bersosialisasi', work:'Mengerjakan tugas', idle:'Menunggu',
+  meeting:'Duduk di ruang rapat', visit:'Mengunjungi divisi lain', read:'Membaca di ruang santai',
+  tv:'Menonton TV', stroll:'Jalan-jalan di teras', nap:'Beristirahat di meja', celebrate:'Merayakan hasil',
 };

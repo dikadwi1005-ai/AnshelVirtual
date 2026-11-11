@@ -22,8 +22,11 @@ Buat **Tugas baru → Diagnostik worker lokal** untuk menguji alur dari antrean 
 
 ## Kantor dan tugas
 
-- Tiga lantai, 20 ruang, dan 12 divisi dengan model karyawan beranimasi. Kontrol mencakup rotasi, geser kamera dengan tombol kanan, zoom, ikuti karyawan, pemilihan lantai, dan layar penuh.
-- Saat worker mulai mengeksekusi tugas, rencana karyawan divisi berubah ke tugas dan karakter bergerak menuju meja. Ketika longgar, pilihan aktivitas mengikuti kepribadian dan fasilitas lantai. Rute menggunakan koridor dan titik tujuan. Posisi saat pemuatan ulang dibangun dari rencana terkini.
+- Satu lantai berukuran 44,8 × 38,8 meter, dengan 12 ruang divisi dan 8 ruang bersama. Satu unit dunia sama dengan satu meter. Ukuran furnitur dan pintu ada di `public/furnishings.js` dan `public/layout.js`. Dinding, furnitur, dan jalur memakai jejak geometri yang sama.
+- Tekan label atau pilih **Ruang** untuk memusatkan kamera pada departemen. Klik karyawan untuk melihat detail atau mengikuti pergerakannya. Geser untuk mengorbit, gunakan tombol kanan untuk menggeser kamera, dan gulir untuk zoom. Pada layar sentuh, gunakan satu jari untuk orbit dan dua jari untuk geser atau zoom. Tombol **Lihat seluruh kantor** mengembalikan kamera ke denah lengkap.
+- Ikon bulan/matahari mengganti pencahayaan. Mode **Otomatis · WIB** mengikuti siang dari 06.00 hingga sebelum 18.00. Pilih **Ringan** untuk menonaktifkan bayangan arah matahari sambil mempertahankan bayangan kontak. Tombol **Layar penuh** memakai Fullscreen API. Browser yang mendukung pemasangan aplikasi dapat menggunakan manifest dengan tampilan standalone.
+- Tugas antrean mengarahkan karyawan ke meja. Panel menampilkan **Menunggu worker** saat worker atau kapabilitas terkait belum tersedia. Animasi kerja diputar setelah karakter duduk dan backend mengonfirmasi eksekusi. Log penyelesaian memicu reaksi, lalu karyawan kembali ke rutinitasnya.
+- Rute A* memakai grid dengan radius karakter 0,29 meter, pintu 1,75 meter, dan pengecekan segmen terhadap penghalang. Titik interaksi dipesan oleh satu karyawan. Duduk dan berdiri memakai lintasan pendek dari titik pendekatan ke kursi. Posisi setelah memuat ulang dibangun dari rencana terkini.
 - Pengaturan WIB mencakup jam kerja, libur, jeda, buka, tutup, dan lembur. Jeda menghentikan animasi dan pengambilan tugas baru. Tugas yang sedang berjalan dapat dijeda atau dibatalkan secara terpisah.
 - Tugas, jadwal, log, dan hasil tersimpan di `data/office.sqlite`. Worker melakukan polling dengan token terpisah dan sewa eksekusi. Sewa yang habis memindahkan tugas ke status terhambat. Tugas tersebut dapat diantrekan ulang dari panel.
 - Kolom Proyek pada tugas mengisi ringkasan pada tab Proyek. Pekerjaan terkait Nation City AI dapat dicatat di sini. Adaptor repositori dan akses lintas proyek masih perlu diimplementasikan.
@@ -43,8 +46,8 @@ npm.cmd run backup
 
 Tes integrasi membuka koneksi loopback sementara. Cadangan memakai snapshot SQLite konsisten dan menjalankan `PRAGMA integrity_check`. File cadangan berada di `data/backups`. Untuk pemulihan, hentikan server dan worker, pindahkan database lama beserta file WAL/SHM jika tersedia ke direktori cadangan, lalu salin snapshot terverifikasi menjadi `data/office.sqlite`.
 
-[Manifest aset](ASSETS.json) mencatat pembuat, sumber, lisensi, lokasi, format, dan checksum. Aset Kenney CC0 tersimpan lokal. Three.js, DM Sans, dan Space Grotesk dipasang lewat npm.
+[Manifest aset](ASSETS.json) mencatat pembuat, sumber, lisensi, lokasi, format, dan checksum. Model Kenney dan rak server Innerscene berlisensi CC0 tersimpan lokal. Three.js, DM Sans, dan Space Grotesk dipasang lewat npm.
 
 ## Cakupan versi ini
 
-Eksekusi yang tersedia ialah diagnostik lokal dan draf melalui kontrak Ollama. Pengujian model Ollama yang terpasang serta pengujian workflow pada akun n8n Cloud dan Telegram masih diperlukan. Pekerjaan spesialis dengan alat eksternal, notifikasi per tugas, memori sosial persisten, navigasi antarlantai oleh karyawan, prop genggam, animasi wajah, dan peninjauan performa pada perangkat target masih menjadi pekerjaan lanjutan.
+Eksekusi yang tersedia ialah diagnostik lokal dan draf melalui kontrak Ollama. Pengujian model Ollama yang terpasang serta pengujian workflow pada akun n8n Cloud dan Telegram masih diperlukan. Interaksi permainan memakai arkade dan area TV. Prop genggam, animasi wajah, pekerjaan spesialis dengan alat eksternal, notifikasi Telegram per tugas, dan memori sosial persisten masih menjadi pekerjaan lanjutan.

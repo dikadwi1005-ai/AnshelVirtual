@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL('../',import.meta.url));
 const mime = {
   '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8',
   '.json':'application/json','.glb':'model/gltf-binary','.gltf':'model/gltf+json','.bin':'application/octet-stream',
+  '.webmanifest':'application/manifest+json',
   '.obj':'text/plain','.mtl':'text/plain','.png':'image/png','.jpg':'image/jpeg',
   '.svg':'image/svg+xml','.woff2':'font/woff2','.woff':'font/woff',
 };
@@ -50,7 +51,7 @@ export function officeServer(store, env = process.env) {
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('X-Frame-Options','DENY');
     res.setHeader('Referrer-Policy','no-referrer');
-    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'sha256-hgLgPU7rxmmm7dzXOMwTFrW/dteHLkY65W96LQcueDs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' 'sha256-hgLgPU7rxmmm7dzXOMwTFrW/dteHLkY65W96LQcueDs='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
     const respond = (value,status = 200) => {
       res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});
       res.end(JSON.stringify(value));
