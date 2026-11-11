@@ -1,5 +1,6 @@
 import { copyFile, cp, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { build } from 'esbuild';
 
 const source = name => resolve('node_modules',name);
 const target = name => resolve('public',name);
@@ -14,4 +15,14 @@ for (const [packageName,folder,file] of [
   await copyFile(source('@fontsource-variable/'+packageName+'/files/'+file),
     target('fonts/'+folder+'/files/'+file));
 }
-console.log('Three.js dan font siap disajikan sebagai aset statis di Vercel.');
+await build({
+  entryPoints:[target('scene.js')],
+  outfile:target('scene.bundle.js'),
+  bundle:true,
+  format:'esm',
+  platform:'browser',
+  target:['chrome100','safari15'],
+  minify:true,
+  legalComments:'none',
+});
+console.log('Bundle kantor 3D, Three.js, dan font siap disajikan di Vercel.');

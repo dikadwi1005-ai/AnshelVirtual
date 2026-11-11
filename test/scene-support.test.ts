@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lowGraphics, sceneFailureMessage } from '../public/scene-support.js';
+import { importSceneWithRetry, lowGraphics, sceneFailureMessage } from '../public/scene-support.js';
 
 test('HP mendapat grafis ringan otomatis, pilihan manual dihormati',()=>{
   const phone={compact:true,coarse:true,memory:6};
@@ -16,4 +16,19 @@ test('kesalahan pemuatan model tidak salah dilaporkan sebagai WebGL 2',()=>{
   assert.match(sceneFailureMessage(error),/Model 3D gagal diunduh/);
   assert.doesNotMatch(sceneFailureMessage(error),/WebGL 2/);
   assert.match(sceneFailureMessage(new Error('Error creating WebGL context')),/Konteks grafis 3D gagal dibuat/);
+});
+
+test('impor kantor 3D diulang dengan URL baru saat unduhan awal gagal',async()=>{
+  const paths=[];
+  const importer=async path=>{
+    paths.push(path);
+    if (paths.length===1) throw new Error('Jaringan putus sementara');
+    return {officeScene:'ready'};
+  };
+  const original=console.warn;
+  console.warn=()=>{};
+  try {
+    assert.deepEqual(await importSceneWithRetry(importer,()=>123),{officeScene:'ready'});
+    assert.deepEqual(paths,['./scene.bundle.js','./scene.bundle.js?retry=123']);
+  } finally { console.warn=original; }
 });

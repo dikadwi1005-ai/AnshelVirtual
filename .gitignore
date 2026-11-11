@@ -12,3 +12,4 @@ coverage/
 *.log
 public/lib/
 public/fonts/
+public/scene.bundle.js

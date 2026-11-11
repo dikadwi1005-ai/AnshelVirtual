@@ -2,7 +2,7 @@ import { activities, divisions, timezone } from './catalog.js';
 import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
 import { rooms, roomById, wings } from './layout.js';
-import { lowGraphics, sceneFailureMessage } from './scene-support.js';
+import { importSceneWithRetry, lowGraphics, sceneFailureMessage } from './scene-support.js';
 
 const $ = id => document.getElementById(id);
 const buttons = query => [...document.querySelectorAll(query)];
@@ -82,7 +82,7 @@ async function enter() {
   poller = setInterval(()=>refresh().catch(error=>notice(error.message)),1500);
   if (scene) return;
   try {
-    const {officeScene} = await import('./scene.js');
+    const {officeScene} = await importSceneWithRetry(url=>import(url));
     scene = officeScene($('scene'),$('room-labels'),select,(message)=>{
       $('scene-message').textContent = message;
       $('scene-message').hidden = !message;

@@ -11,3 +11,11 @@ export function sceneFailureMessage(error) {
   }
   return 'Kantor 3D gagal dimuat: '+detail+'. Panel tugas tetap tersedia.';
 }
+
+export async function importSceneWithRetry(importer,now=()=>Date.now()) {
+  try { return await importer('./scene.bundle.js'); }
+  catch(error) {
+    console.warn('Modul kantor 3D gagal diunduh, mencoba ulang',error);
+    return importer('./scene.bundle.js?retry='+now());
+  }
+}
