@@ -41,7 +41,7 @@ export function objectMaterial(source,prop) {
   if (name.includes('bark')) return finish('#745138');
   if (name.includes('glass')) return finish('#537c8d',.23,.15);
   if (name.startsWith('wood')) {
-    if (['plant','succulent'].includes(prop.type)) return finish(name==='wooddark'?'#5e422b':'#bd7358');
+    if (['plant','largePlant','succulent'].includes(prop.type)) return finish(name==='wooddark'?'#5e422b':'#bd7358');
     return finish(woodColors[prop.wood] ?? woodColors.medium,.56);
   }
   if (name.startsWith('carpet')) {

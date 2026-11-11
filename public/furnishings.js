@@ -8,6 +8,7 @@ export const furniture = {
   laptop:['laptop',.36,.28,.24], tv:['televisionmodern',1.38,.28,.82],
   cabinet:['cabinettelevision',1.66,.52,.55], shelf:['bookcaseopen',1.27,.44,1.75],
   books:['books',.30,.22,.24], plant:['pottedplant',.51,.51,1.24], succulent:['plantsmall2',.22,.22,.30],
+  largePlant:['pottedplant',.79,.79,1.65],
   couch:['loungesofa',2.34,.94,.88], lounge:['loungechair',.93,.85,.86],
   coffeeTable:['tablecoffee',1.23,.64,.45], round:['tableround',1.20,1.20,.75],
   long:['table',2.63,1.15,.75], counter:['kitchenbar',1.18,.63,.96],
@@ -62,7 +63,12 @@ export function propsFor(room) {
       case 'development':
         desk(-2.3,1.38,'dual');
         put('chair',-2.3,.38,{turn:Math.PI});
+        desk(2.44,1.38,'dual');
+        put('chair',2.44,.38,{turn:Math.PI});
         set('shelf',[[2.2,2.55]]);
+        media(-4.31,2.91);
+        put('round',-4.02,-.86);
+        put('seat',-4.02,-1.85,{turn:Math.PI});
         break;
       case 'qa':
         desk(2.38,1.45,'dual');
@@ -85,6 +91,8 @@ export function propsFor(room) {
         put('long',-2.25,1.42,{turn:Math.PI/2});
         put('laptop',-2.24,1.56,{y:.75,turn:Math.PI/2});
         put('books',-2.29,.68,{y:.75});
+        put('seat',-3.28,1.13,{turn:Math.PI/2});
+        put('seat',-3.28,2.23,{turn:Math.PI/2});
         put('lounge',2.54,-1.37,{turn:-.7});
         break;
       case 'social':
@@ -119,6 +127,13 @@ export function propsFor(room) {
         put('coffeeTable',-2.47,-.43);
         put('books',-2.47,-.43,{y:.45});
         break;
+      case 'management':
+        put('round',-2.46,.49);
+        put('seat',-2.48,-.51,{turn:Math.PI});
+        put('seat',-2.48,1.48);
+        media(1.75,2.38);
+        put('lamp',-3.12,2.42);
+        break;
       default:
         put('couch',-2.84,.73,{turn:Math.PI/2});
         put('coffeeTable',-1.85,.73,{turn:Math.PI/2});
@@ -129,6 +144,17 @@ export function propsFor(room) {
   }
 
   switch(room.id) {
+    case 'hub':
+      put('rug',-2.8,1.2,{turn:Math.PI/2,tone:'#517e76'});
+      put('couch',-3.65,1.2,{turn:Math.PI/2});
+      put('lounge',-1.9,2.95,{turn:-Math.PI*.73});
+      put('coffeeTable',-2.55,1.68,{turn:Math.PI/2});
+      put('round',2.8,-1.4);
+      put('seat',2.8,-2.5,{turn:Math.PI});
+      put('seat',3.8,-1.36,{turn:-Math.PI/2});
+      put('largePlant',3.15,2.25);
+      put('largePlant',-2.9,-2.1);
+      break;
     case 'gaming':
       for (const x of [-2.6,-1.32,0,1.32,2.6]) put('arcade',x,2.25);
       put('couch',2.83,-.56,{turn:-Math.PI/2,key:'sofa'});
@@ -194,10 +220,18 @@ export function partitions(room) {
   const z0 = room.z-room.depth/2, z1 = room.z+room.depth/2;
   const back = room.front===1 ? z0 : z1;
   const gap = doorway/2;
+  const rear={box:[x0,back-h,x1,back+h],type:'back'};
+  if (room.style==='hub') return [];
+  if (room.style==='open') return room.daylight ? [rear] : [];
+  if (room.style==='nook' || room.style==='garden') {
+    const reach=room.depth*.54;
+    const [start,end]=room.front===1 ? [z0,z0+reach] : [z1-reach,z1];
+    return [rear,{box:[x0-h,start,x0+h,end],type:'side'}];
+  }
   const walls = [
     {box:[x0-h,z0,x0+h,z1],type:'side'},
     {box:[x1-h,z0,x1+h,z1],type:'side'},
-    {box:[x0,back-h,x1,back+h],type:'back'},
+    rear,
     {box:[x0,doorZ-h,doorX-gap,doorZ+h],type:'front'},
     {box:[doorX+gap,doorZ-h,x1,doorZ+h],type:'front'},
   ];
@@ -209,11 +243,6 @@ export function partitions(room) {
   }
   return walls;
 }
-
-export const lobbyProps = [-13,13].flatMap(x=>[
-  {type:'bench',at:[x-.62,0],y:0,angle:0,accent:'#3cbfb2',wood:'dark',id:null},
-  {type:'plant',at:[x+.56,0],y:0,angle:0,accent:'#3cbfb2',wood:'dark',id:null},
-]);
 
 export function propBounds(prop) {
   const [,width,depth] = furniture[prop.type];
@@ -249,7 +278,12 @@ export function activityAnchors(person,activity) {
     tv:()=>[-1.05,-.12].map((z,i)=>localAnchor(roomById.gaming,2.78,z,-Math.PI/2,'sit','tv-'+i,{
       height:.42, approach:point(roomById.gaming,1.99,z), support:'gaming-sofa',
     })),
-    talk:()=>[-1.18,-.36,.46,1.28].map((x,i)=>localAnchor(roomById.reception,x,-.78,i%2? -Math.PI/2:Math.PI/2,'emote-yes','talk-'+i)),
+    talk:()=>[
+      ...[[-1.16,0],[0,-1.16],[1.16,0],[0,1.16]].map(([x,depth],i)=>
+        localAnchor(roomById.hub,x,depth,Math.atan2(-x,depth),'emote-yes','hub-talk-'+i)),
+      ...[-1.18,-.36,.46,1.28].map((x,i)=>
+        localAnchor(roomById.reception,x,-.78,i%2? -Math.PI/2:Math.PI/2,'emote-yes','talk-'+i)),
+    ],
     meeting:()=>[-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,.22,Math.PI,'sit','meeting-'+i,{
       height:.42, approach:point(roomById.meeting,x,-.58), support:'meeting-seat-'+(i?'right':'left'),
     })),

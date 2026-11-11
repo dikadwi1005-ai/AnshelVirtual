@@ -62,3 +62,13 @@ Inspeksi roster di Chrome membandingkan pose berjalan 12 profil sebelum dan sesu
 **Tested.** 16 tes lulus. Rekaman Chrome 1280 × 720 memperlihatkan Alya meninggalkan area sosial, berjalan, duduk, bereaksi terhadap penyelesaian, lalu kembali bersosialisasi. Browser memeriksa status menunggu worker, status eksekusi, dan unduhan. Eksekusi pada rekaman dikendalikan oleh fixture SQLite melalui kontrak yang sama. Tes integrasi terpisah menjalankan proses worker diagnostik nyata.
 
 **Sisa Phase 1.** Tata ruang organik, pencahayaan, koreksi seating/foot placement, formasi sosial, layar perangkat dan lounge PS5 masih memerlukan implementasi serta audit visual. Model avatar jas Dika dijadwalkan pada Character Mode.
+
+## Checkpoint Phase 1 · Denah dan pencahayaan
+
+**Implemented.** Tapak satu lantai kini memiliki 12 area divisi dan 9 area bersama. Resepsionis, pantri, lounge, dan sayap kerja dihubungkan oleh jalur berbelok yang bertemu di atrium. Pengembangan dan studio desain terbuka. Pod rapat, produksi video, ruang Dika dan IT memiliki partisi kaca, dengan bukaan pintu yang terhubung ke jalur. Material kayu, ubin netral, kain beraksen, dan pencahayaan malam hangat membedakan area. Furnitur dan partisi membentuk penghalang untuk A*. Tapak bersegi dan area yang dirender juga dipakai untuk batas navigasi dan pemilihan area. Kode utama berada di `public/layout.js`, `public/world.js`, `public/furnishings.js`, `public/navigation.js` dan `public/scene.js`.
+
+**Verifikasi lokal.** Jalankan `npm.cmd test`, buka **Ruang → Atrium Kolaborasi**, lalu pakai ikon matahari/bulan. Tes geometri memeriksa keterjangkauan seluruh area, rute ke 12 workstation, batas tapak, pintu, anchor, dan jejak furnitur. Checkpoint memakai aset yang sudah ada di manifest. Kalibrasi duduk, formasi percakapan yang tersinkron, layar perangkat animasi, PS5, dan uji perangkat sentuh fisik masih terbuka.
+
+**Tested dan Visually Verified untuk denah.** Seluruh 16 tes lulus. Chrome menampilkan 21 label pada overview 1440 × 900 dan membuka close-up atrium, pod rapat, Pengembangan, Kreatif & Desain, dan ruang Dika. Median interval frame 11,1 ms dan p90 11,3 ms dari 60 sampel overview siang pada Radeon terintegrasi D3D11. Screenshot malam memakai pengalih pencahayaan. Uji mobile dilakukan pada viewport Chrome 390 × 844.
+
+Rekaman Chrome menunjukkan Alya meninggalkan atrium, berjalan ke meja Manajemen, duduk, bereaksi setelah tugas selesai, lalu kembali ke atrium. Siklus browser memakai fixture SQLite dan menguji status antrean offline, status kerja, unduhan, serta pergerakan. Tes worker diagnostik terpisah menjalankan proses aktual.

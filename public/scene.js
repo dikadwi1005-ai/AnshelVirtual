@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createActors } from './actors.js';
-import { rooms, roomById, site, point } from './layout.js';
+import { insideRoom, rooms, roomById, point } from './layout.js';
 import { radialTexture } from './materials.js';
 import { navigation } from './navigation.js';
 import { buildWorld } from './world.js';
@@ -9,12 +9,12 @@ import { buildWorld } from './world.js';
 const overview=new THREE.Vector3(30,57,55);
 const center=new THREE.Vector3(0,.35,0);
 const day={
-  backdrop:'#3b526b', key:'#ffe8cf', sky:'#d0e5fa', ground:'#af9282',
-  sun:2.35, ambient:1.57, interior:.38, glow:.19, exposure:1.05,
+  backdrop:'#536572', key:'#ffebd3', sky:'#e2edf4', ground:'#b9a899',
+  sun:2.08, ambient:1.46, interior:.31, glow:.17, exposure:.97,
 };
 const evening={
-  backdrop:'#141e34', key:'#aec8ff', sky:'#6a94de', ground:'#524260',
-  sun:.83, ambient:1.12, interior:1.01, glow:.78, exposure:1.14,
+  backdrop:'#273346', key:'#ccd8ff', sky:'#9aaad4', ground:'#9c795e',
+  sun:.80, ambient:1.20, interior:1.16, glow:.76, exposure:1.04,
 };
 
 export function officeScene(host, labels, onSelect, onMessage) {
@@ -71,7 +71,7 @@ export function officeScene(host, labels, onSelect, onMessage) {
     const width=host.clientWidth, height=host.clientHeight;
     if (!width || !height) return;
     const aspect=width/height;
-    const vertical=Math.max(24.7,31.4/aspect);
+    const vertical=Math.max(26.4,34.5/aspect);
     Object.assign(camera,{left:-vertical*aspect,right:vertical*aspect,top:vertical,bottom:-vertical});
     camera.updateProjectionMatrix();
     renderer.setSize(width,height,false);
@@ -158,20 +158,29 @@ export function officeScene(host, labels, onSelect, onMessage) {
     const width=host.clientWidth, height=host.clientHeight;
     const boxes=[];
     const narrow=width<700;
-    for (const {room,element} of roomLabels) {
-      const [x,z]=point(room,0,-room.depth/2-.38);
-      temp.set(x,.56,z).project(camera);
-      const left=(temp.x*.5+.5)*width, top=(.5-temp.y*.5)*height;
+    for (const {room,element,anchors} of roomLabels) {
       const focused=selected===room.id;
-      const inBounds=left>48 && left<width-48 && top>75 && top<height-74;
       const relevant=focused || (!narrow && camera.zoom<1.55) ||
         (camera.zoom>1.48 && Math.hypot(controls.target.x-room.x,controls.target.z-room.z)<7.8);
-      const labelWidth=element.dataset.width || Math.min(135,42+room.label.length*4);
-      const overlaps=boxes.some(item=>Math.abs(item.left-left)<(Number(labelWidth)+item.width)/2 && Math.abs(item.top-top)<24);
-      element.hidden=!(inBounds && relevant && (!overlaps || focused));
-      element.style.transform='translate3d('+Math.round(left)+'px,'+Math.round(top)+'px,0) translate(-50%,-50%)';
+      const labelWidth=Math.min(135,42+room.label.length*4);
+      let position=null;
+      if (relevant) {
+        for (const anchor of anchors) {
+          temp.copy(anchor).project(camera);
+          const left=(temp.x*.5+.5)*width, top=(.5-temp.y*.5)*height;
+          if (left<labelWidth/2+9 || left>width-labelWidth/2-9 || top<75 || top>height-74) continue;
+          const overlaps=boxes.some(item=>Math.abs(item.left-left)<(labelWidth+item.width)/2 && Math.abs(item.top-top)<24);
+          if (overlaps && !focused) continue;
+          position={left,top,width:labelWidth};
+          break;
+        }
+      }
+      element.hidden=!position;
       element.classList.toggle('selected',focused);
-      if (!element.hidden) boxes.push({left,top,width:Number(labelWidth)});
+      if (!position) continue;
+      const {left,top}=position;
+      element.style.transform='translate3d('+Math.round(left)+'px,'+Math.round(top)+'px,0) translate(-50%,-50%)';
+      boxes.push(position);
     }
   }
 
@@ -188,7 +197,12 @@ export function officeScene(host, labels, onSelect, onMessage) {
       element.style.setProperty('--room-accent',room.accent);
       element.addEventListener('click',()=>onSelect(null,room.id));
       labels.append(element);
-      roomLabels.push({element,room});
+      const front=room.style==='hub'?-.5:-room.depth/2-.34;
+      const anchors=[[0,front],[0,-.9],[-room.width*.26,.25],[room.width*.26,.25]].map(([x,depth])=>{
+        const [worldX,worldZ]=point(room,x,depth);
+        return new THREE.Vector3(worldX,.56,worldZ);
+      });
+      roomLabels.push({element,room,anchors});
     }
     renderer.shadowMap.needsUpdate=true;
     loaded=true;
@@ -213,7 +227,7 @@ export function officeScene(host, labels, onSelect, onMessage) {
     }).filter(item=>item.distance<.51**2).sort((a,b)=>a.distance-b.distance)[0];
     if (candidate) { onSelect(candidate.actor.person.id,null); return; }
     if (!ray.ray.intersectPlane(groundPlane,temp)) return;
-    const room=rooms.find(item=>Math.abs(item.x-temp.x)<item.width/2 && Math.abs(item.z-temp.z)<item.depth/2);
+    const room=rooms.find(item=>insideRoom(item,[temp.x,temp.z]));
     if (room) onSelect(null,room.id);
   });
 

@@ -1,4 +1,4 @@
-import { site } from './layout.js';
+import { site, withinSite } from './layout.js';
 
 export const agentRadius = .29;
 const spacing = .27;
@@ -59,7 +59,10 @@ export function navigation(obstacles) {
   const cell=(x,z)=>z*columns+x;
   const position=index=>[minX+(index%columns)*spacing,minZ+Math.floor(index/columns)*spacing];
   const within=(x,z)=>x>=0 && z>=0 && x<columns && z<rows;
-  const boundsCheck=point=>Math.abs(point[0])<=-minX && Math.abs(point[1])<=-minZ;
+  const boundsCheck=point=>withinSite(point,agentRadius);
+  for (let index=0;index<cellCount;index++) {
+    if (!boundsCheck(position(index))) blocked[index]=1;
+  }
   for (const {box} of obstacles) {
     const x0=Math.ceil((box[0]-agentRadius-minX)/spacing), x1=Math.floor((box[2]+agentRadius-minX)/spacing);
     const z0=Math.ceil((box[1]-agentRadius-minZ)/spacing), z1=Math.floor((box[3]+agentRadius-minZ)/spacing);
