@@ -125,13 +125,15 @@ input[type=checkbox]{accent-color:var(--dark)}
   .inspector{max-height:60dvh}
 }
 @media(max-width:700px){
+  nav{gap:0}
+  .nav-button{flex:1;padding:0 4px;font-size:12px}
   main{padding-top:20px}
   .heading{align-items:flex-start}
   .heading-actions{gap:8px;flex-direction:column-reverse;align-items:flex-end}
   .heading-actions .primary{padding:8px 10px}
   .clock strong{font-size:17px}
   .workspace-grid{grid-template-columns:1fr}
-  .viewport{min-height:330px;height:51dvh}
+  .viewport{min-height:320px;height:44dvh}
   .inspector{max-height:none}
   .viewport-top,.viewport-bottom{left:9px;right:9px}
   .viewport-top{top:9px}
