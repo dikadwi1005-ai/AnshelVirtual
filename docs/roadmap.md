@@ -84,3 +84,13 @@ Rekaman Chrome menunjukkan Alya meninggalkan atrium, berjalan ke meja Manajemen,
 **Pose duduk.** Dika memilih pose duduk chibi bawaan, dengan kaki yang boleh menggantung. Pose ini dipertahankan untuk kursi kerja, pod rapat, dan sofa.
 
 **Sisa Phase 1.** Formasi percakapan, lounge PS5 dengan animasi gameplay, serta pengujian visual akhir.
+
+## Checkpoint Phase 1 · Formasi percakapan
+
+**Implemented.** Atrium Kolaborasi, Resepsionis dan Teras Taman masing-masing memiliki empat posisi berdiri. Karakter memesan posisi, berjalan melalui navigasi yang sudah ada, dan mulai berbicara setelah minimal dua peserta tiba. Pasangan memakai posisi berseberangan. Dalam grup, pembicara menghadap lawan bicaranya dan pendengar mengikuti pembicara. Tugas aktif atau antre mengeluarkan pegawai dari percakapan. Dialog ditulis untuk konteks ruangan dan boleh merujuk antrean ketika backend mendeteksi tugas antre. Bubble muncul saat kamera cukup dekat. `public/furnishings.js` mendefinisikan posisi, `public/conversations.js` mengatur kelompok dan giliran, dan `public/actors.js` serta `public/scene.js` menerapkan gerak dan tampilan.
+
+**Tested dan Visually Verified.** 21 tes lulus. Chrome 1440 × 900 memverifikasi pasangan berhadapan, peserta ketiga berjalan masuk dan mendapat giliran, jarak antarpeserta minimal 1,56 m selama pengukuran, serta perpindahan dari percakapan saat peserta mendapat tugas uji. Bubble diperiksa pada viewport 390 × 844. Percakapan berjalan lokal tanpa biaya tambahan. TTS, riwayat persisten, dan relasi antarkaryawan masih masuk Phase 4.
+
+Rekaman 1152 × 720 berasal dari frame Chrome yang menyertakan bubble. Overview siang mencatat median interval frame 11,1 ms dan p90 11,2 ms dari 90 sampel pada Radeon terintegrasi D3D11.
+
+**Sisa Phase 1.** Lounge PS5 dengan animasi gameplay dan pemeriksaan visual akhir.

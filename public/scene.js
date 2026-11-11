@@ -66,6 +66,15 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
   let world, population, state=null, following=null, selected=null, cameraMove=null;
   let mode='auto', night=0, press=null, loaded=false, auditCursor=null;
   const roomLabels=[];
+  const bubble=document.createElement('div');
+  const speakerName=document.createElement('strong'), dialogue=document.createElement('p');
+  bubble.className='speech-bubble';
+  bubble.setAttribute('role','status');
+  bubble.setAttribute('aria-atomic','true');
+  bubble.hidden=true;
+  bubble.append(speakerName,dialogue);
+  labels.append(bubble);
+  let shownTurn=null;
 
   function resize() {
     const width=host.clientWidth, height=host.clientHeight;
@@ -193,6 +202,38 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
     }
   }
 
+  function updateSpeech() {
+    const width=host.clientWidth, height=host.clientHeight;
+    let closest=null, distance=7.5, x, y;
+    if (population && camera.zoom>2.15 && state?.phase!=='paused') {
+      for (const turn of population.turns.values()) {
+        const actor=turn.speaker;
+        const position=actor.root.position;
+        const range=Math.hypot(position.x-controls.target.x,position.z-controls.target.z);
+        if (range>=distance) continue;
+        temp.copy(position).y+=actor.stature+.15;
+        temp.project(camera);
+        const left=(.5+temp.x*.5)*width, top=(.5-temp.y*.5)*height;
+        if (left<42 || left>width-42 || top<146 || top>height-84) continue;
+        closest=turn;
+        distance=range;
+        x=left;
+        y=top;
+      }
+    }
+    bubble.hidden=!closest;
+    if (!closest) return;
+    if (shownTurn!==closest) {
+      shownTurn=closest;
+      speakerName.textContent=closest.speaker.person.employee;
+      dialogue.textContent=closest.text;
+    }
+    const margin=width<560?110:136;
+    const left=THREE.MathUtils.clamp(x,margin,width-margin);
+    bubble.style.transform='translate3d('+Math.round(left)+'px,'+Math.round(y)+'px,0) translate(-50%,-100%)';
+    bubble.style.setProperty('--speech-tail',Math.round(x-left)+'px');
+  }
+
   async function load() {
     if (loaded) return;
     onMessage('Menyiapkan kantor…');
@@ -257,6 +298,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
     world?.displays.update(now,camera.zoom);
     renderer.render(scene,camera);
     updateLabels();
+    updateSpeech();
   });
 
   return {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { divisions } from './catalog.js';
+import { chooseConversationAnchor, createConversations } from './conversations.js';
 import { employeeFigure } from './employee-look.js';
 import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, station } from './furnishings.js';
@@ -40,7 +41,22 @@ function play(actor,name,blend=.18) {
   actor.animation=name;
 }
 
+function speakingClip(idle) {
+  const tracks=idle.tracks.map(track=>track.clone());
+  const gestures={head:[0,.055,-.035,0], 'arm-left':[0,-.26,-.13,0], 'arm-right':[-.12,0,-.22,-.12]};
+  const flex=new THREE.Quaternion(), axis=new THREE.Vector3(1,0,0);
+  for (const [name,angles] of Object.entries(gestures)) {
+    const index=tracks.findIndex(track=>track.name===name+'.quaternion');
+    if (index<0) continue;
+    const base=new THREE.Quaternion().fromArray(tracks[index].values);
+    const values=angles.flatMap(angle=>flex.setFromAxisAngle(axis,angle).multiply(base).toArray());
+    tracks[index]=new THREE.QuaternionKeyframeTrack(name+'.quaternion',[0,.44,.87,1.36],values);
+  }
+  return new THREE.AnimationClip('speak',1.36,tracks);
+}
+
 function chooseAnchor(actor,activity,reservations,nav) {
+  if (activity==='talk') return chooseConversationAnchor(actor,reservations,anchor=>nav.clear(anchor.point,anchor.point));
   const options=activityAnchors(actor.person,activity);
   for (let i=0;i<options.length;i++) {
     const anchor=options[(i+actor.person.index)%options.length];
@@ -58,22 +74,25 @@ export async function createActors(scene,nav,shadowMap,initial) {
   const settled=await Promise.allSettled(divisions.map(async person=>{
     const profile=employeeProfile(person.id);
     const asset=await model('people/character-'+profile.asset);
-    return {figure:employeeFigure(asset,person.id),animations:asset.animations,employeeId:profile.id};
+    return {figure:employeeFigure(asset,person.id),animations:asset.animations,profile};
   }));
   const reservations=new Map();
+  const conversations=createConversations();
   const actors=[];
   const errors=[];
   for (const [index,result] of settled.entries()) {
     if (result.status==='rejected') { errors.push(result.reason); continue; }
     const person=divisions[index];
-    const {figure}=result.value;
+    const {figure,profile}=result.value;
     const root=new THREE.Group();
     root.add(figure);
-    root.name=result.value.employeeId;
+    root.name=profile.id;
     scene.add(root);
     const shadowMesh=flatMesh(scene,.98,.84,[0,0],.031,shadow);
     const mixer=new THREE.AnimationMixer(figure);
     const clips=new Map(result.value.animations.map(clip=>[clip.name,mixer.clipAction(clip)]));
+    const idle=result.value.animations.find(clip=>clip.name==='idle');
+    if (idle) clips.set('speak',mixer.clipAction(speakingClip(idle)));
     const sit=result.value.animations.find(clip=>clip.name==='sit');
     if (sit) {
       const drive=result.value.animations.find(clip=>clip.name==='drive') ?? sit;
@@ -81,7 +100,7 @@ export async function createActors(scene,nav,shadowMap,initial) {
       clips.set('desk-cheer',mixer.clipAction(seatedClip(sit,drive,'desk-cheer',[-.20,-.94,-.75,-.20],[-.20,-.80,-.94,-.20])));
     }
     const plan=initial?.people?.[person.id];
-    const actor={person,root,figure,shadowMesh,mixer,clips,action:null,animation:'idle',path:[],
+    const actor={person,root,figure,shadowMesh,mixer,clips,stature:profile.stature,action:null,animation:'idle',path:[],
       stage:'idle',seatProgress:0,activity:plan?.activity ?? 'desk',reaction:0,wait:0,retry:0};
     const anchor=chooseAnchor(actor,actor.activity,reservations,nav) ?? station(roomById[person.id]);
     reservations.set(anchor.id,actor);
@@ -100,16 +119,20 @@ export async function createActors(scene,nav,shadowMap,initial) {
     actor.activity=activity;
     const anchor=chooseAnchor(actor,activity,reservations,nav);
     if (!anchor) { actor.retry=2; return; }
-    actor.actual=activity;
-    if (actor.anchor===anchor || (actor.anchor?.id===anchor.id && actor.stage!=='departing')) {
+    if (actor.anchor.id===anchor.id) {
+      if (actor.pending) reservations.delete(actor.pending.id);
+      actor.pending=null;
       actor.anchor=anchor;
+      actor.actual=activity;
+      if (actor.stage==='departing') actor.stage='sitting';
       return;
     }
     if (actor.pending && actor.pending.id!==actor.anchor?.id) reservations.delete(actor.pending.id);
     actor.pending=anchor;
+    actor.pendingActivity=activity;
     reservations.set(anchor.id,actor);
     if (actor.stage==='seated' || actor.stage==='sitting') actor.stage='departing';
-    else route(actor);
+    else if (actor.stage!=='departing') route(actor);
   }
 
   function route(actor) {
@@ -125,6 +148,7 @@ export async function createActors(scene,nav,shadowMap,initial) {
     }
     if (actor.anchor && actor.anchor.id!==target.id) reservations.delete(actor.anchor.id);
     actor.anchor=target;
+    actor.actual=actor.pendingActivity;
     actor.pending=null;
     actor.path=path;
     actor.stage='walking';
@@ -187,7 +211,6 @@ export async function createActors(scene,nav,shadowMap,initial) {
   }
 
   function advance(actor,delta,state) {
-    if (state?.phase==='paused') return;
     const plan=state?.people?.[actor.person.id];
     const reacting=actor.reaction>0 && !plan?.task;
     const requested=reacting ? actor.activity : plan?.activity ?? 'desk';
@@ -206,7 +229,17 @@ export async function createActors(scene,nav,shadowMap,initial) {
     } else {
       const seated=actor.stage==='seated';
       const working=actor.actual==='work' && seated && plan?.executing;
-      const clip=reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.anchor.clip;
+      const turn=actor.stage==='arrived' && conversations.turns.get(actor.anchor.conversation);
+      const speaking=turn?.speaker===actor;
+      const conversation=actor.stage==='arrived' && actor.anchor.conversation;
+      if (conversation) {
+        const facing=turn ? location(speaking?turn.other:turn.speaker) : actor.anchor.center;
+        const [x,z]=location(actor);
+        const angle=Math.atan2(facing[0]-x,facing[1]-z);
+        const turnAngle=angleDifference(angle,actor.root.rotation.y);
+        actor.root.rotation.y+=THREE.MathUtils.clamp(turnAngle,-delta*3,delta*3);
+      }
+      const clip=speaking?'speak':reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.anchor.clip;
       play(actor,clip);
       actor.reaction=Math.max(0,actor.reaction-delta);
     }
@@ -216,8 +249,20 @@ export async function createActors(scene,nav,shadowMap,initial) {
   }
 
   return {
-    errors,actors,
-    update(delta,state) { for (const actor of actors) advance(actor,delta,state); },
+    errors,actors,turns:conversations.turns,
+    update(delta,state) {
+      if (state?.phase==='paused') return;
+      const groups=new Map();
+      for (const actor of actors) {
+        const plan=state?.people?.[actor.person.id];
+        const group=actor.anchor.conversation;
+        if (!group || actor.stage!=='arrived' || plan?.activity!=='talk' || plan.task) continue;
+        if (!groups.has(group)) groups.set(group,[]);
+        groups.get(group).push(actor);
+      }
+      conversations.update(delta,groups,state);
+      for (const actor of actors) advance(actor,delta,state);
+    },
     celebrate(id) {
       const actor=actors.find(item=>item.person.id===id);
       if (actor) actor.reaction=1.9;

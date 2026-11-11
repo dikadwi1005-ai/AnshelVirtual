@@ -166,7 +166,7 @@ function updateEmployee() {
   const workStatus=plan.executing?'Eksekusi berjalan':plan.task?.status==='blocked'?'Tugas terhambat':
     plan.task ? (!office.worker || !office.capabilities.includes(plan.task.kind) ? 'Menunggu worker' : 'Dalam antrean') : 'Tanpa tugas aktif';
   const activity=moving ? (plan.task?'Menuju meja kerja':'Berjalan') :
-    plan.task && !plan.executing ? 'Siap di meja' : activities[actor?.activity ?? plan.activity];
+    plan.task && !plan.executing ? 'Siap di meja' : actor?.animation==='speak'?'Sedang berbicara':activities[actor?.activity ?? plan.activity];
   const markup=stats([
     ['Aktivitas',activity],['Status kerja',workStatus],
     ['Suasana hati',plan.mood],['Energi',plan.energy+'%'],

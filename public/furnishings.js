@@ -262,6 +262,15 @@ const localAnchor = (room,x,z,angle,clip,id,extra={}) => ({
   point:point(room,x,z), approach:point(room,x,z), angle, clip, id, height:0, ...extra,
 });
 
+export const conversationAnchors=[['hub',0,0],['reception',0,-1],['garden',-.25,-2.75]].map(([id,x,depth])=>{
+  const room=roomById[id];
+  const center=point(room,x,depth);
+  return [[-1.16,0],[1.16,0],[0,1.16],[0,-1.16]].map(([dx,dz],slot)=>
+    localAnchor(room,x+dx,depth+dz,Math.atan2(-dx,room.front*dz),'idle',id+'-talk-'+slot,{
+      conversation:id,center,slot,
+    }));
+});
+
 export function activityAnchors(person,activity) {
   if (['desk','work','nap'].includes(activity)) return [{
     ...station(roomById[person.id]), clip:activity==='nap'?'crouch':'sit',
@@ -278,12 +287,7 @@ export function activityAnchors(person,activity) {
     tv:()=>[-1.05,-.12].map((z,i)=>localAnchor(roomById.gaming,2.78,z,-Math.PI/2,'sit','tv-'+i,{
       height:.42, approach:point(roomById.gaming,1.99,z), support:'gaming-sofa',
     })),
-    talk:()=>[
-      ...[[-1.16,0],[0,-1.16],[1.16,0],[0,1.16]].map(([x,depth],i)=>
-        localAnchor(roomById.hub,x,depth,Math.atan2(-x,depth),'emote-yes','hub-talk-'+i)),
-      ...[-1.18,-.36,.46,1.28].map((x,i)=>
-        localAnchor(roomById.reception,x,-.78,i%2? -Math.PI/2:Math.PI/2,'emote-yes','talk-'+i)),
-    ],
+    talk:()=>conversationAnchors.flat(),
     meeting:()=>[-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,.22,Math.PI,'sit','meeting-'+i,{
       height:.42, approach:point(roomById.meeting,x,-.58), support:'meeting-seat-'+(i?'right':'left'),
     })),
