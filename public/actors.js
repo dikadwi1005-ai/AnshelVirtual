@@ -71,7 +71,7 @@ function chooseAnchor(actor,activity,reservations,nav) {
 
 function location(actor) { return [actor.root.position.x,actor.root.position.z]; }
 
-export async function createActors(scene,nav,shadowMap,initial) {
+export async function createActors(scene,nav,shadowMap,initial,requestDialogue) {
   const shadow=new THREE.MeshBasicMaterial({map:shadowMap,transparent:true,depthWrite:false,opacity:.70,toneMapped:false});
   const settled=await Promise.allSettled(divisions.map(async person=>{
     const profile=employeeProfile(person.id);
@@ -293,9 +293,10 @@ export async function createActors(scene,nav,shadowMap,initial) {
         if (!groups.has(group)) groups.set(group,[]);
         groups.get(group).push(actor);
       }
-      conversations.update(delta,groups,state);
+      const request=state?.dialogueEnabled ? requestDialogue : null;
+      conversations.update(delta,groups,state,focus,request);
       for (const actor of actors) advance(actor,delta,state);
-      solo=monologues.update(delta,actors,groups,state,focus);
+      solo=monologues.update(delta,actors,groups,state,focus,request);
       updateGame(delta);
     },
     celebrate(id) {

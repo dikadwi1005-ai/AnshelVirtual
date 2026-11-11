@@ -5,6 +5,7 @@ import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, Fault } from './store.ts';
 import { telegram } from './telegram.ts';
+import { createDialogue } from './dialogue.ts';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
 const mime = {
@@ -36,6 +37,7 @@ async function json(req) {
 }
 
 export function officeServer(store, env = process.env) {
+  const dialogue=createDialogue(env);
   const sessions = new Map();
   let attempts = 0;
   let windowStart = Date.now();
@@ -111,7 +113,10 @@ export function officeServer(store, env = process.env) {
           res.setHeader('Set-Cookie',cookie('',0));
           return respond({authenticated:false});
         }
-        if (path === '/api/state' && req.method === 'GET') return respond(store.state());
+        if (path === '/api/state' && req.method === 'GET') return respond({
+          ...store.state(),dialogueEnabled:dialogue.enabled,dialogueStatus:dialogue.status,
+        });
+        if (path === '/api/dialogue' && post) return respond(await dialogue.generate(await json(req)));
         if (path === '/api/tasks' && post) return respond(store.create(await json(req),undefined,req.headers['idempotency-key'] ?? null),201);
         if (path === '/api/settings' && post) return respond(store.settings(await json(req)));
         const match = /^\/api\/tasks\/([a-f0-9-]{36})\/(artifact|action)$/.exec(path);

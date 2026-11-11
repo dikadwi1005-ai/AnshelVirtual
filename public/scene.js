@@ -17,7 +17,7 @@ const evening={
   sun:.80, ambient:1.20, interior:1.16, glow:.76, exposure:1.04,
 };
 
-export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
+export function officeScene(host, labels, onSelect, onMessage, onDisplay, requestDialogue) {
   const scene=new THREE.Scene();
   scene.background=new THREE.Color(day.backdrop);
   const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
@@ -243,7 +243,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
     onMessage('Menyiapkan kantor…');
     world=await buildWorld(scene,shadow);
     world.displays.sync(state);
-    population=await createActors(scene,navigation(world.obstacles),shadow,state);
+    population=await createActors(scene,navigation(world.obstacles),shadow,state,requestDialogue);
     for (const room of rooms) {
       const element=document.createElement('button');
       element.className='room-label';

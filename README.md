@@ -29,6 +29,12 @@ Buat **Tugas baru → Diagnostik worker lokal** untuk menguji alur dari antrean 
 - Klik permukaan monitor, laptop, atau TV, atau buka **Ruang → Periksa layar**. Layar 3D menampilkan status dan animasi sesuai divisi. Panel tugas memuat waktu eksekusi WIB, progres yang dilaporkan worker, log terbaru, cuplikan hasil dan tautan unduh jika tersedia.
 - Dekatkan kamera untuk melihat percakapan atau monolog singkat saat pegawai menjalani rutinitas. Satu bubble tampil pada satu waktu.
 - Buka **Ruang → Lounge PS5 → Periksa layar → Fokus TV** untuk melihat Anshel Circuit. Layar memutar demo sambil menunggu pemain dan menampilkan hingga dua pegawai yang bermain.
+
+## Dialog dengan Groq
+
+Tambahkan `GROQ_API_KEY` ke `.env` di folder proyek dan jalankan ulang server dengan `npm.cmd start`. Saat kamera mendekati pegawai, server dapat meminta variasi percakapan dan monolog dari `openai/gpt-oss-20b` di Groq. Topiknya termasuk hobi, makanan, musik, dan gosip ringan fiktif. Server mengirim nama karakter, gaya bicara, topik, dan lokasi atau rutinitas. Dialog bawaan tetap tersedia saat kunci kosong atau Groq gagal merespons. **Pengaturan → Dialog** menunjukkan status Groq.
+
+Setiap proses server memberi jeda minimal delapan detik dan batas 120 permintaan per 24 jam untuk fitur ini. Satu permintaan menghasilkan satu putaran dialog grup atau satu monolog. [Dokumentasi Groq](https://console.groq.com/docs/structured-outputs).
 - Rute A* memakai grid dengan radius karakter 0,29 meter, pintu 1,75 meter, dan pengecekan segmen terhadap penghalang. Titik interaksi dipesan oleh satu karyawan. Duduk dan berdiri memakai lintasan pendek dari titik pendekatan ke kursi. Posisi setelah memuat ulang dibangun dari rencana terkini.
 - Pengaturan WIB mencakup jam kerja, libur, jeda, buka, tutup, dan lembur. Jeda menghentikan animasi dan pengambilan tugas baru. Tugas yang sedang berjalan dapat dijeda atau dibatalkan secara terpisah.
 - Tugas, jadwal, log, dan hasil tersimpan di `data/office.sqlite`. Worker melakukan polling dengan token terpisah dan sewa eksekusi. Sewa yang habis memindahkan tugas ke status terhambat. Tugas tersebut dapat diantrekan ulang dari panel.

@@ -10,6 +10,8 @@ const phaseNames = {closed:'Kantor tutup', arrival:'Karyawan tiba', briefing:'Br
 const statusNames = {queued:'Dalam antrean',running:'Berjalan',paused:'Dijeda',blocked:'Terhambat',
   awaiting_approval:'Menunggu persetujuan',completed:'Selesai',failed:'Gagal',cancelled:'Dibatalkan'};
 const modeNames = {auto:'Ikuti jadwal',open:'Buka kantor',closed:'Tutup kantor',paused:'Jeda simulasi',overtime:'Mulai lembur'};
+const dialogueNames = {disabled:'Bawaan',ready:'Groq · Menunggu percakapan',active:'Groq · Aktif',
+  fallback:'Bawaan · Groq belum merespons',limit:'Bawaan · Batas harian tercapai'};
 const scheduleFields = {arrival:'Kedatangan',open:'Buka',briefingEnd:'Akhir briefing',lunch:'Makan siang',
   lunchEnd:'Akhir makan siang',review:'Mulai evaluasi',close:'Tutup'};
 const actionNames = {created:'Dibuat',queued:'Masuk antrean',assigned:'Ditugaskan',running:'Mulai eksekusi',
@@ -77,7 +79,7 @@ async function enter() {
     scene = officeScene($('scene'),$('room-labels'),select,(message)=>{
       $('scene-message').textContent = message;
       $('scene-message').hidden = !message;
-    },openWorkstation);
+    },openWorkstation,input=>api('dialogue',input).then(result=>result.lines).catch(()=>[]));
     scene.state(office);
     scene.quality(localStorage.getItem('anshel-quality')==='low');
     setLighting(lighting);
@@ -100,6 +102,8 @@ async function refresh(force = false) {
     clockOffset = value.now-Date.now();
     clock();
     office = {...value, signature};
+    const dialogueStatus=$('dialogue-status');
+    if (dialogueStatus) dialogueStatus.textContent=dialogueNames[value.dialogueStatus] ?? dialogueNames.disabled;
     scene?.state(office);
     const completed = latestAudit===null ? null : value.audit.find(item=>item.id>latestAudit && item.action==='completed');
     if (completed) {
@@ -280,6 +284,7 @@ function renderSettings() {
     '<label>Mode kantor<select name="mode">'+optionList(Object.entries(modeNames),mode)+'</select></label>'+
     '<label>Pencahayaan<select id="lighting">'+optionList([['auto','Otomatis · WIB'],['day','Siang'],['evening','Malam']],lighting)+'</select></label>'+
     '<label>Kualitas grafis<select id="quality">'+optionList([['normal','Standar'],['low','Ringan']],localStorage.getItem('anshel-quality')??'normal')+'</select></label>'+
+    '<dl class="stats"><div><dt>Dialog</dt><dd id="dialogue-status">'+(dialogueNames[office.dialogueStatus] ?? dialogueNames.disabled)+'</dd></div></dl>'+
     '<p class="section-label">Jadwal · WIB</p><div class="form-grid">'+Object.entries(scheduleFields).map(([key,label])=>
       '<label>'+label+'<input type="time" name="'+key+'" required value="'+escape(schedule[key])+'"></label>').join('')+'</div>'+
     '<div class="days" aria-label="Hari kerja">'+['Min','Sen','Sel','Rab','Kam','Jum','Sab'].map((day,i)=>
