@@ -17,15 +17,15 @@ const evening={
   sun:.80, ambient:1.20, interior:1.16, glow:.76, exposure:1.04,
 };
 
-export function officeScene(host, labels, onSelect, onMessage, onDisplay, requestDialogue) {
+export function officeScene(host, labels, onSelect, onMessage, onDisplay, requestDialogue, {low=false}={}) {
   const scene=new THREE.Scene();
   scene.background=new THREE.Color(day.backdrop);
-  const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+  const renderer=new THREE.WebGLRenderer({antialias:!low,powerPreference:low?'default':'high-performance',stencil:false});
+  renderer.setPixelRatio(low?1:Math.min(devicePixelRatio,1.5));
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=day.exposure;
-  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.enabled=!low;
   renderer.shadowMap.type=THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate=false;
   host.append(renderer.domElement);
@@ -47,7 +47,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const sun=new THREE.DirectionalLight(day.key,day.sun);
   sun.position.set(-24,38,16);
   sun.castShadow=true;
-  sun.shadow.mapSize.set(2048,2048);
+  sun.shadow.mapSize.set(low?512:2048,low?512:2048);
   sun.shadow.normalBias=.028;
   sun.shadow.bias=-.0002;
   sun.shadow.intensity=.65;
@@ -85,7 +85,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     camera.updateProjectionMatrix();
     renderer.setSize(width,height,false);
   }
-  new ResizeObserver(resize).observe(host);
+  const resizeObserver=new ResizeObserver(resize);
+  resizeObserver.observe(host);
   camera.position.copy(overview);
   camera.zoom=1;
   controls.target.copy(center);
@@ -311,6 +312,16 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   return {
     load,reset,focusRoom,focusEmployee,focusDisplay,
+    dispose() {
+      renderer.setAnimationLoop(null);
+      resizeObserver.disconnect();
+      controls.dispose();
+      renderer.dispose();
+      renderer.forceContextLoss();
+      renderer.domElement.remove();
+      bubble.remove();
+      for (const {element} of roomLabels) element.remove();
+    },
     displayTypes(room) { return world?.displays.types(room) ?? []; },
     gamePlayers() { return population?.game.players.size ?? 0; },
     state(value) {

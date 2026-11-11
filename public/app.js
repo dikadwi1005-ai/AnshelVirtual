@@ -2,6 +2,7 @@ import { activities, divisions, timezone } from './catalog.js';
 import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
 import { rooms, roomById, wings } from './layout.js';
+import { lowGraphics, sceneFailureMessage } from './scene-support.js';
 
 const $ = id => document.getElementById(id);
 const buttons = query => [...document.querySelectorAll(query)];
@@ -33,6 +34,12 @@ let taskKey = null;
 let lighting = localStorage.getItem('anshel-lighting') ?? 'auto';
 let latestAudit = null;
 let pendingPanelRefresh = false;
+
+const graphicsPreference = () => lowGraphics(localStorage.getItem('anshel-quality'),{
+  compact:matchMedia('(max-width: 800px)').matches,
+  coarse:matchMedia('(pointer: coarse)').matches,
+  memory:navigator.deviceMemory,
+});
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const optionList = (list,current) => list.map(([value,label])=>'<option value="'+escape(value)+'"'+
@@ -79,15 +86,28 @@ async function enter() {
     scene = officeScene($('scene'),$('room-labels'),select,(message)=>{
       $('scene-message').textContent = message;
       $('scene-message').hidden = !message;
-    },openWorkstation,input=>api('dialogue',input).then(result=>result.lines).catch(()=>[]));
+    },openWorkstation,input=>api('dialogue',input).then(result=>result.lines).catch(()=>[]),
+    {low:graphicsPreference()});
     scene.state(office);
-    scene.quality(localStorage.getItem('anshel-quality')==='low');
     setLighting(lighting);
     await scene.load();
     if (panel==='office') render();
   } catch(error) {
-    console.error(error);
-    $('scene-message').textContent='Kantor 3D memerlukan WebGL 2. Panel tugas tetap tersedia.';
+    console.error('Gagal membuka kantor 3D',error);
+    try { scene?.dispose(); } catch(cleanupError) { console.error('Gagal membersihkan renderer 3D',cleanupError); }
+    scene = null;
+    const message=document.createElement('span');
+    message.textContent=sceneFailureMessage(error);
+    const retry=document.createElement('button');
+    retry.type='button';
+    retry.className='scene-retry';
+    retry.textContent='Coba lagi';
+    retry.addEventListener('click',()=>{
+      $('scene-message').textContent='Memuat ulang kantor 3D…';
+      enter().catch(failure=>notice(failure.message));
+    });
+    $('scene-message').replaceChildren(message,retry);
+    $('scene-message').hidden=false;
   }
 }
 
@@ -283,7 +303,7 @@ function renderSettings() {
   $('panel-content').innerHTML = '<form class="settings-form" id="settings-form">'+
     '<label>Mode kantor<select name="mode">'+optionList(Object.entries(modeNames),mode)+'</select></label>'+
     '<label>Pencahayaan<select id="lighting">'+optionList([['auto','Otomatis · WIB'],['day','Siang'],['evening','Malam']],lighting)+'</select></label>'+
-    '<label>Kualitas grafis<select id="quality">'+optionList([['normal','Standar'],['low','Ringan']],localStorage.getItem('anshel-quality')??'normal')+'</select></label>'+
+    '<label>Kualitas grafis<select id="quality">'+optionList([['auto','Otomatis (HP lebih ringan)'],['normal','Standar'],['low','Ringan']],localStorage.getItem('anshel-quality')??'auto')+'</select></label>'+
     '<dl class="stats"><div><dt>Dialog</dt><dd id="dialogue-status">'+(dialogueNames[office.dialogueStatus] ?? dialogueNames.disabled)+'</dd></div></dl>'+
     '<p class="section-label">Jadwal · WIB</p><div class="form-grid">'+Object.entries(scheduleFields).map(([key,label])=>
       '<label>'+label+'<input type="time" name="'+key+'" required value="'+escape(schedule[key])+'"></label>').join('')+'</div>'+
@@ -372,8 +392,9 @@ $('panel-content').addEventListener('change',async event=>{
   const field=event.target;
   if (field.id==='lighting') setLighting(field.value);
   if (field.id==='quality') {
-    localStorage.setItem('anshel-quality',field.value);
-    scene?.quality(field.value==='low');
+    if (field.value==='auto') localStorage.removeItem('anshel-quality');
+    else localStorage.setItem('anshel-quality',field.value);
+    scene?.quality(graphicsPreference());
   }
   if (!field.dataset.assign) return;
   try {
