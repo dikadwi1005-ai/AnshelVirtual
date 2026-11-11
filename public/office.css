@@ -71,6 +71,7 @@ h2{font-size:23px;letter-spacing:-.045em}
 .task-card,.audit-list li{border:1px solid var(--line);padding:9px;border-radius:7px;overflow-wrap:anywhere}
 .task-card p{margin:4px 0}
 .task-card small,.audit-list small{color:var(--muted)}
+.workstation-result{margin:6px 0 0;padding:8px;background:#111c29;border-radius:5px;white-space:pre-wrap;overflow-wrap:anywhere}
 .task-actions,.context-actions{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
 .task-actions button,.task-actions a,.context-actions button,#follow,#focus-employee,#logout{background:#2c435d;border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:var(--ink);text-decoration:none;font-weight:700;font-size:12px}
 .task-actions button:hover,.task-actions a:hover,.context-actions button:hover{background:#3d5a78}

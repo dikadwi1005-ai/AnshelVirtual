@@ -1,4 +1,5 @@
 import { activities, divisions, timezone } from './catalog.js';
+import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
 import { rooms, roomById, wings } from './layout.js';
 
@@ -23,6 +24,8 @@ const dateFormat = new Intl.DateTimeFormat('id-ID',{timeZone:timezone,day:'numer
 const team = id => divisions.find(person=>person.id===id);
 
 let panel = null, selected = null, selectedRoom = null;
+let workstation = null;
+let workstationPreview = null;
 let scene, office, poller, refreshing, toastTimer, clockOffset = 0;
 let taskKey = null;
 let lighting = localStorage.getItem('anshel-lighting') ?? 'auto';
@@ -74,11 +77,12 @@ async function enter() {
     scene = officeScene($('scene'),$('room-labels'),select,(message)=>{
       $('scene-message').textContent = message;
       $('scene-message').hidden = !message;
-    });
+    },openWorkstation);
     scene.state(office);
     scene.quality(localStorage.getItem('anshel-quality')==='low');
     setLighting(lighting);
     await scene.load();
+    if (panel==='office') render();
   } catch(error) {
     console.error(error);
     $('scene-message').textContent='Kantor 3D memerlukan WebGL 2. Panel tugas tetap tersedia.';
@@ -138,6 +142,12 @@ function select(id,room = null) {
   setPanel('office');
 }
 
+function openWorkstation({room,type}) {
+  workstation={room,type};
+  workstationPreview=null;
+  setPanel('workstation');
+}
+
 function title(kicker,title) {
   $('panel-kicker').textContent=kicker;
   $('panel-title').textContent=title;
@@ -183,14 +193,58 @@ function renderOffice() {
     const personButton=room.person ? '<button type="button" class="person" data-employee="'+room.person.id+
       '"><span class="initial" style="--swatch:'+room.accent+'">'+room.person.employee[0]+'</span>'+
       '<span><strong>'+room.person.employee+'</strong><small>'+room.person.role+'</small></span><span>›</span></button>' : '';
+    const hasDisplay=scene?.displayTypes(room.id).length;
     $('panel-content').innerHTML=(personButton?'<div class="roster">'+personButton+'</div>':'')+
-      '<div class="context-actions"><button type="button" data-directory>Semua ruang</button></div>';
+      '<div class="context-actions">'+(hasDisplay?'<button type="button" data-workstation="'+room.id+'">Periksa layar</button>':'')+
+      '<button type="button" data-directory>Semua ruang</button></div>';
     return;
   }
   title('Denah kantor','Ruang');
   $('panel-content').innerHTML=Object.entries(wings).map(([key,label])=>
     '<p class="section-label">'+label+'</p><div class="quick-rooms">'+rooms.filter(item=>item.wing===key).map(item=>
       '<button type="button" data-room="'+item.id+'">'+item.label+'</button>').join('')+'</div>').join('');
+}
+
+const deviceLabels={monitor:'monitor',laptop:'laptop',tv:'TV'};
+
+function renderWorkstation() {
+  const {room:id,type}=workstation;
+  const room=roomById[id];
+  const snapshot=displayState(office,id);
+  const task=workstationTask(office,id);
+  title(room.label,'Layar workstation');
+  const focusButtons=(scene?.displayTypes(id) ?? []).map(device=>
+    '<button type="button" data-focus-display="'+device+'" aria-pressed="'+(device===type)+'">Fokus '+deviceLabels[device]+'</button>');
+  const controls='<div class="context-actions">'+focusButtons.join('')+'</div>';
+  const content=$('panel-content');
+  if (!task) {
+    content.innerHTML=controls+stats([['Layar',displayModes[snapshot.mode]]])+'<p class="status-text">Belum ada tugas untuk area ini.</p>';
+    return;
+  }
+  const logs=office.audit.filter(event=>event.task===task.id).slice(0,8);
+  const preview=workstationPreview?.id===task.id
+    ? '<pre class="workstation-result">'+escape(workstationPreview.text)+'</pre>' : '';
+  const result=task.status==='completed' ? '<div class="task-actions"><button type="button" data-result="'+task.id+
+    '">Lihat cuplikan hasil</button><a href="/api/tasks/'+task.id+'/artifact">Unduh hasil</a></div>'+preview : '';
+  const rows=[
+    ['Layar',displayModes[snapshot.mode]],['Status tugas',statusNames[task.status]??task.status],
+    ['Mulai',task.started==null?'—':dateFormat.format(task.started)+' WIB'],
+    ['Selesai',task.ended==null?'—':dateFormat.format(task.ended)+' WIB'],
+  ];
+  if (task.status==='running') rows.push(['Progres',Number.isFinite(task.progress)?task.progress+'%':'Belum dilaporkan']);
+  content.innerHTML=controls+'<article class="task-card"><p>'+escape(task.description)+'</p>'+
+    (task.project?'<small>'+escape(task.project)+'</small>':'')+stats(rows)+
+    (task.error?'<p class="error">'+escape(task.error)+'</p>':'')+
+    (task.sha256?'<small class="hash">SHA-256 '+escape(task.sha256)+'</small>':'')+result+'</article>'+
+    '<p class="section-label">Log terbaru</p>'+renderAudit(logs);
+}
+
+function renderAudit(items) {
+  return items.length?'<ul class="audit-list">'+items.map(item=>
+    '<li><strong>'+escape(actionNames[item.action]??item.action)+'</strong><br><small>'+
+    dateFormat.format(item.at)+' · '+escape(item.actor)+'</small>'+
+    (item.detail?'<p>'+escape(item.detail)+'</p>':'')+'</li>').join('')+'</ul>':
+    '<p class="status-text">Belum ada aktivitas tercatat.</p>';
 }
 
 function renderTasks(tasks,interactive=true) {
@@ -228,6 +282,7 @@ function renderSettings() {
 function render() {
   if (!office || !panel) return;
   if (panel==='office') return renderOffice();
+  if (panel==='workstation') return renderWorkstation();
   if (panel==='settings') return renderSettings();
   if (panel==='projects') {
     const projects = new Map();
@@ -251,16 +306,36 @@ function render() {
     return;
   }
   title('Log audit','Aktivitas');
-  $('panel-content').innerHTML=office.audit.length?'<ul class="audit-list">'+office.audit.map(item=>
-    '<li><strong>'+escape(actionNames[item.action]??item.action)+'</strong><br><small>'+
-    dateFormat.format(item.at)+' · '+escape(item.actor)+'</small>'+
-    (item.detail?'<p>'+escape(item.detail)+'</p>':'')+'</li>').join('')+'</ul>':
-    '<p class="status-text">Belum ada aktivitas tercatat.</p>';
+  $('panel-content').innerHTML=renderAudit(office.audit);
 }
 
 $('panel-content').addEventListener('click',async event=>{
   const button=event.target.closest('button');
   if (!button) return;
+  if (button.dataset.workstation) return openWorkstation({room:button.dataset.workstation});
+  if (button.dataset.focusDisplay) {
+    workstation.type=button.dataset.focusDisplay;
+    scene?.focusDisplay(workstation.room,workstation.type);
+    for (const control of $('panel-content').querySelectorAll('[data-focus-display]')) {
+      control.setAttribute('aria-pressed',String(control===button));
+    }
+    return;
+  }
+  if (button.dataset.result) {
+    const id=button.dataset.result;
+    button.disabled=true;
+    try {
+      const response=await fetch('/api/tasks/'+id+'/artifact');
+      if (response.status===401) return showLogin();
+      if (!response.ok) throw new Error('Cuplikan hasil tidak tersedia.');
+      const output=await response.text();
+      if (panel!=='workstation' || workstationTask(office,workstation.room)?.id!==id) return;
+      workstationPreview={id,text:output.length>1800?output.slice(0,1800)+'…':output};
+      renderWorkstation();
+    } catch(error) { notice(error.message); }
+    finally { button.disabled=false; }
+    return;
+  }
   if (button.dataset.employee) return select(button.dataset.employee);
   if (button.dataset.room) return select(null,button.dataset.room);
   if ('directory' in button.dataset) return select(null);

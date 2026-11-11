@@ -74,7 +74,7 @@ export function createStore(path: string, now = Date.now) {
     close:() => db.close(),
     state() {
       if (get("SELECT id FROM tasks WHERE status='running' AND lease_until<=? LIMIT 1",now())) transaction(expireLeases);
-      const running = all("SELECT id,division,description,status FROM tasks WHERE status='running' AND lease_until>?",now());
+      const running = all("SELECT id,division,description,status,kind,started FROM tasks WHERE status='running' AND lease_until>?",now());
       const assigned = all(`SELECT id,division,description,status,kind FROM (
         SELECT id,division,description,status,kind,
           row_number() OVER (PARTITION BY division ORDER BY priority DESC,created,rowid) AS rank

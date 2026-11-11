@@ -17,7 +17,7 @@ const evening={
   sun:.80, ambient:1.20, interior:1.16, glow:.76, exposure:1.04,
 };
 
-export function officeScene(host, labels, onSelect, onMessage) {
+export function officeScene(host, labels, onSelect, onMessage, onDisplay) {
   const scene=new THREE.Scene();
   scene.background=new THREE.Color(day.backdrop);
   const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
@@ -35,7 +35,7 @@ export function officeScene(host, labels, onSelect, onMessage) {
   const controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true;
   controls.dampingFactor=.10;
-  controls.maxZoom=9;
+  controls.maxZoom=48;
   controls.minZoom=.56;
   controls.minPolarAngle=.29;
   controls.maxPolarAngle=1.18;
@@ -106,6 +106,15 @@ export function officeScene(host, labels, onSelect, onMessage) {
     if (!actor) return;
     following=follow?id:null;
     focus(actor.root.position.x,actor.root.position.z,host.clientWidth<650?3.7:4.7);
+  }
+
+  function focusDisplay(room,type) {
+    const view=world?.displays.focus(room,type);
+    if (!view) return;
+    following=null;
+    const target=view.center;
+    const direction=view.normal.setY(.66).normalize().multiplyScalar(16);
+    cameraMove={target,position:target.clone().add(direction),zoom:host.clientWidth<650?40:33};
   }
 
   controls.addEventListener('start',()=>{cameraMove=null;following=null;});
@@ -188,6 +197,7 @@ export function officeScene(host, labels, onSelect, onMessage) {
     if (loaded) return;
     onMessage('Menyiapkan kantor…');
     world=await buildWorld(scene,shadow);
+    world.displays.sync(state);
     population=await createActors(scene,navigation(world.obstacles),shadow,state);
     for (const room of rooms) {
       const element=document.createElement('button');
@@ -221,6 +231,8 @@ export function officeScene(host, labels, onSelect, onMessage) {
     const bounds=host.getBoundingClientRect();
     pointer.set((event.clientX-bounds.left)/bounds.width*2-1,1-(event.clientY-bounds.top)/bounds.height*2);
     ray.setFromCamera(pointer,camera);
+    const device=world?.displays.pick(ray,scene.children);
+    if (device) { onDisplay(device); return; }
     const candidate=population?.actors.map(actor=>{
       temp.copy(actor.root.position).y+=actor.stage==='seated'?.45:.8;
       return {actor,distance:ray.ray.distanceSqToPoint(temp)};
@@ -242,12 +254,14 @@ export function officeScene(host, labels, onSelect, onMessage) {
     }
     updateCamera(delta);
     refreshLighting(delta);
+    world?.displays.update(now,camera.zoom);
     renderer.render(scene,camera);
     updateLabels();
   });
 
   return {
-    load,reset,focusRoom,focusEmployee,
+    load,reset,focusRoom,focusEmployee,focusDisplay,
+    displayTypes(room) { return world?.displays.types(room) ?? []; },
     state(value) {
       if (!value) return;
       if (auditCursor!==null) {
@@ -259,6 +273,7 @@ export function officeScene(host, labels, onSelect, onMessage) {
       }
       auditCursor=value.audit[0]?.id ?? 0;
       state=value;
+      world?.displays.sync(value);
     },
     select(id) { selected=id; },
     actorState(id) {

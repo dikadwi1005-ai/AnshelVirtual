@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { doorway, entrance, footprint, point, roomOutline, rooms } from './layout.js';
+import { createDisplays } from './displays.js';
 import { furniture, obstaclesFor, partitions, propsFor } from './furnishings.js';
 import { emission, finish, floorMaterial, objectMaterial, radialTexture } from './materials.js';
 
@@ -106,45 +107,7 @@ function architecture(parent,room) {
   }
   box(parent,[doorway,.018,.43],[x,.026,z],panel).castShadow=false;
 }
-function screenTexture(style) {
-  const canvas=document.createElement('canvas');
-  canvas.width=192; canvas.height=108;
-  const ctx=canvas.getContext('2d');
-  ctx.fillStyle='#152642';
-  ctx.fillRect(0,0,192,108);
-  ctx.fillStyle='#233d61';
-  ctx.fillRect(0,0,192,13);
-  ctx.fillStyle=style;
-  ctx.fillRect(9,5,14,3);
-  ctx.fillStyle='#284565';
-  ctx.fillRect(10,22,45,76);
-  for (let i=0;i<6;i++) {
-    ctx.globalAlpha=i%3===0?.9:.48;
-    ctx.fillStyle=i%3===0?style:'#6c9fcd';
-    ctx.fillRect(67+(i%2)*8,25+i*8,52+(i%3)*13,2.5);
-  }
-  ctx.globalAlpha=1;
-  ctx.fillStyle='#284565';
-  ctx.fillRect(68,80,111,15);
-  ctx.fillStyle=style;
-  for(let i=0;i<6;i++) ctx.fillRect(74+i*15,91-(i%3)*2,8,2+(i%3)*2);
-  const texture=new THREE.CanvasTexture(canvas);
-  texture.colorSpace=THREE.SRGBColorSpace;
-  return texture;
-}
-
-const screens = new Map();
-function decorateScreen(parent,prop,width,depth,height) {
-  if (prop.type!=='monitor' && prop.type!=='tv') return;
-  if (!screens.has(prop.accent)) screens.set(prop.accent,new THREE.MeshBasicMaterial({
-    map:screenTexture(prop.accent),color:'#c0dcff',toneMapped:false,
-  }));
-  const screen=new THREE.Mesh(new THREE.PlaneGeometry(width*.88,height*.70),screens.get(prop.accent));
-  screen.position.set(0,height*.58,depth*.51);
-  parent.add(screen);
-}
-
-async function placeProp(parent,prop) {
+async function placeProp(parent,prop,room,displays) {
   const [name,width,depth,height]=furniture[prop.type];
   const path=name.includes('/') ? name : 'furniture/'+name;
   const {scene,bounds,size}=await model(path);
@@ -158,12 +121,15 @@ async function placeProp(parent,prop) {
   copy.position.set(-center.x*scale.x,-bounds.min.y*scale.y,-center.z*scale.z);
   copy.traverse(node=>{
     if (!node.isMesh) return;
+    if (displays.attach(node,node.material,prop,room)) {
+      node.userData.displaySurface=true;
+      return;
+    }
     node.material=objectMaterial(node.material,prop);
     node.castShadow=prop.type!=='rug';
     node.receiveShadow=true;
   });
   group.add(copy);
-  decorateScreen(group,prop,width,depth,height);
   parent.add(group);
 }
 
@@ -171,7 +137,7 @@ function batchStatic(group) {
   group.updateMatrixWorld(true);
   const batches=new Map();
   group.traverse(mesh=>{
-    if (!mesh.isMesh || mesh.material.transparent || Array.isArray(mesh.material)) return;
+    if (!mesh.isMesh || mesh.userData.displaySurface || mesh.material.transparent || Array.isArray(mesh.material)) return;
     const key=[mesh.material.id,mesh.castShadow,mesh.receiveShadow].join('|');
     if (!batches.has(key)) batches.set(key,[]);
     batches.get(key).push(mesh);
@@ -217,6 +183,7 @@ function contactShadows(parent,props,map) {
 }
 
 export async function buildWorld(scene,shadowTexture) {
+  const displays=createDisplays();
   const core=new THREE.Group();
   scene.add(core);
   const baseGeometry=new THREE.ExtrudeGeometry(outlineShape(footprint),{
@@ -245,7 +212,7 @@ export async function buildWorld(scene,shadowTexture) {
     const wing=wings.get(room.wing);
     architecture(wing,room);
     const props=propLists.get(room.id);
-    jobs.push(...props.map(prop=>placeProp(wing,prop)));
+    jobs.push(...props.map(prop=>placeProp(wing,prop,room,displays)));
     const at=point(room,0,-.32);
     flatMesh(core,5.2,3.9,at,.024,warmGlow);
   }
@@ -259,5 +226,5 @@ export async function buildWorld(scene,shadowTexture) {
   batchStatic(core);
   contactShadows(core,[...propLists.values()].flat(),shadowTexture);
   const obstacles=rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)));
-  return {errors,warmGlow,obstacles};
+  return {errors,warmGlow,obstacles,displays};
 }

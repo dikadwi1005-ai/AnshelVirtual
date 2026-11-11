@@ -72,3 +72,13 @@ Inspeksi roster di Chrome membandingkan pose berjalan 12 profil sebelum dan sesu
 **Tested dan Visually Verified untuk denah.** Seluruh 16 tes lulus. Chrome menampilkan 21 label pada overview 1440 × 900 dan membuka close-up atrium, pod rapat, Pengembangan, Kreatif & Desain, dan ruang Dika. Median interval frame 11,1 ms dan p90 11,3 ms dari 60 sampel overview siang pada Radeon terintegrasi D3D11. Screenshot malam memakai pengalih pencahayaan. Uji mobile dilakukan pada viewport Chrome 390 × 844.
 
 Rekaman Chrome menunjukkan Alya meninggalkan atrium, berjalan ke meja Manajemen, duduk, bereaksi setelah tugas selesai, lalu kembali ke atrium. Siklus browser memakai fixture SQLite dan menguji status antrean offline, status kerja, unduhan, serta pergerakan. Tes worker diagnostik terpisah menjalankan proses aktual.
+
+## Checkpoint Phase 1 · Layar workstation
+
+**Implemented.** Monitor, laptop dan TV memakai tekstur langsung pada permukaan layar asli aset Kenney. `public/displays.js` memilih tampilan sesuai divisi dan memusatkan kamera pada perangkat yang dipilih. `public/display-state.js` membedakan layar siap, worker offline, antre, terhambat, dan aktif dari status backend. Editor, konsol, artboard, kalender dan timeline memakai visual generik. Tampilan video belum mendapat media pratinjau. Data tugas tersedia di panel privat dengan waktu WIB, progres yang dilaporkan worker, log, cuplikan hasil, checksum dan tautan unduhan. Perubahan snapshot di `server/store.ts` memakai data yang sudah tersimpan tanpa migrasi. Checkpoint ini tidak memerlukan konfigurasi atau biaya eksternal.
+
+**Verifikasi lokal.** Buka **Ruang → Pengembangan → Periksa layar → Fokus monitor** atau klik permukaan monitor setelah mendekat. Buat tugas diagnostik dan jalankan worker lokal untuk melihat perubahan dari antrean ke eksekusi dan artefak. Layar memakai tekstur bersama per divisi dan pembaruan animasi hanya saat kamera cukup dekat.
+
+**Tested dan Visually Verified.** Seluruh 19 tes lulus, termasuk proses worker diagnostik nyata dan pemeriksaan geometri tiga aset. Chrome menguji klik langsung pada monitor Pengembangan, laptop Kreatif & Desain dan TV Pod Rapat. Pengujian memakai fixture SQLite untuk status antrean offline, animasi saat eksekusi, dan cuplikan serta unduhan artefak. Rekaman timeline diputar ulang di Chrome. Panel laptop diperiksa pada viewport 390 × 844. Performa kantor ramai dan sentuhan pada perangkat fisik masih perlu diukur.
+
+**Sisa Phase 1.** Kalibrasi duduk dan foot placement, formasi percakapan, lounge PS5 dengan animasi gameplay, serta pengujian visual akhir.
