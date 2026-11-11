@@ -3,13 +3,13 @@ import { doorway, entrance, point, roomById, wallThickness } from './layout.js';
 // Width, depth and height in meters. Ground props share these dimensions with navigation.
 export const furniture = {
   desk:['desk',1.82,.76,.77], corner:['deskcorner',2.05,1.42,.77],
-  chair:['chairdesk',.72,.62,.80], seat:['chairmoderncushion',.68,.64,.62],
+  chair:['chairdesk',.65,.62,.91], seat:['chairmoderncushion',.62,.64,.88],
   monitor:['computerscreen',.54,.19,.40], keyboard:['computerkeyboard',.44,.15,.035],
   laptop:['laptop',.36,.28,.24], tv:['televisionmodern',1.38,.28,.82],
   cabinet:['cabinettelevision',1.66,.52,.55], shelf:['bookcaseopen',1.27,.44,1.75],
   books:['books',.30,.22,.24], plant:['pottedplant',.51,.51,1.24], succulent:['plantsmall2',.22,.22,.30],
   largePlant:['pottedplant',.79,.79,1.65],
-  couch:['loungesofa',2.34,.94,.62], lounge:['loungechair',.93,.85,.86],
+  couch:['loungesofa',2.34,.94,.88], lounge:['loungechair',.93,.85,.86],
   coffeeTable:['tablecoffee',1.23,.64,.45], round:['tableround',1.20,1.20,.75],
   long:['table',2.63,1.15,.75], counter:['kitchenbar',1.18,.63,.96],
   coffee:['kitchencoffeemachine',.39,.40,.48], fridge:['kitchenfridgesmall',.72,.67,1.18],
@@ -26,18 +26,12 @@ const themes = {
   development:'dark', video:'dark', operations:'dark', qa:'dark',
 };
 
-// Cushion top and depth as fractions of the fitted Kenney models' bounds.
-export const seatSurfaces = {
-  chair:{height:.2335/.6076, forward:.13},
-  seat:{height:.24/.46, forward:.08},
-  couch:{height:.23/.46, forward:.28},
-};
-const seatHeight = type => furniture[type][3]*seatSurfaces[type].height;
-const stationDepth = 1.60;
+const stationDepth = 1.38;
 const seatDepth = .57;
+const chairHeight = .42;
 export const station = room => ({
-  point:point(room,0,seatDepth+seatSurfaces.chair.forward), approach:point(room,.76,seatDepth+.33),
-  angle:room.front===1 ? Math.PI : 0, height:seatHeight('chair'), clip:'sit', id:room.id+'-desk',
+  point:point(room,0,seatDepth), approach:point(room,.74,seatDepth-.18),
+  angle:room.front===1 ? Math.PI : 0, height:chairHeight, clip:'sit', id:room.id+'-desk',
   support:room.id+'-chair',
 });
 
@@ -104,7 +98,7 @@ export function propsFor(room) {
       case 'social':
         put('round',-2.36,1.05);
         put('laptop',-2.36,1.05,{y:.75});
-        set('seat',[[-2.36,.07],[-3.32,1.05]]);
+        set('seat',[[-2.36,.07],[-3.25,1.05]]);
         put('lounge',2.44,-1.28,{turn:-.46});
         break;
       case 'research':
@@ -125,7 +119,7 @@ export function propsFor(room) {
         break;
       case 'hr':
         put('round',-2.33,.65);
-        set('seat',[[-2.33,-.31],[-3.29,.65]]);
+        set('seat',[[-2.33,-.29],[-3.24,.65]]);
         put('shelf',2.23,2.57);
         break;
       case 'administration':
@@ -186,10 +180,10 @@ export function propsFor(room) {
       put('shelf',-2.32,2.54);
       break;
     case 'meeting':
-      put('long',0,1.37);
+      put('long',0,1.23);
       for (const x of [-.78,.78]) {
         put('seat',x,.22,{turn:Math.PI,key:x<0?'seat-left':'seat-right'});
-        put('seat',x,2.42);
+        put('seat',x,2.25);
       }
       put('laptop',-.77,1.12,{y:.75});
       media(2.59,2.53);
@@ -270,15 +264,19 @@ const localAnchor = (room,x,z,angle,clip,id,extra={}) => ({
 
 export function activityAnchors(person,activity) {
   if (['desk','work','nap'].includes(activity)) return [{
-    ...station(roomById[person.id]), clip:activity==='nap'?'desk-rest':'sit',
+    ...station(roomById[person.id]), clip:activity==='nap'?'crouch':'sit',
   }];
   const options = {
     coffee:()=>[-1.45,0,1.45].map((x,i)=>localAnchor(roomById.pantry,x,1.34,0,'interact-right','coffee-'+i)),
     arcade:()=>[-2.6,-1.32,0,1.32,2.6].map((x,i)=>localAnchor(roomById.gaming,x,1.36,Math.PI,'interact-right','arcade-'+i)),
-    rest:loungeSeats,
-    read:loungeSeats,
-    tv:()=>[-1.12,0].map((z,i)=>localAnchor(roomById.gaming,2.83-seatSurfaces.couch.forward,z,-Math.PI/2,'sit','tv-'+i,{
-      height:seatHeight('couch'), rug:true, approach:point(roomById.gaming,1.99,z), support:'gaming-sofa',
+    rest:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'sit','rest-'+i,{
+      height:.42, approach:point(roomById.relaxation,x,.90), support:'relaxation-sofa',
+    })),
+    read:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'sit','rest-'+i,{
+      height:.42, approach:point(roomById.relaxation,x,.90), support:'relaxation-sofa',
+    })),
+    tv:()=>[-1.05,-.12].map((z,i)=>localAnchor(roomById.gaming,2.78,z,-Math.PI/2,'sit','tv-'+i,{
+      height:.42, approach:point(roomById.gaming,1.99,z), support:'gaming-sofa',
     })),
     talk:()=>[
       ...[[-1.16,0],[0,-1.16],[1.16,0],[0,1.16]].map(([x,depth],i)=>
@@ -286,19 +284,12 @@ export function activityAnchors(person,activity) {
       ...[-1.18,-.36,.46,1.28].map((x,i)=>
         localAnchor(roomById.reception,x,-.78,i%2? -Math.PI/2:Math.PI/2,'emote-yes','talk-'+i)),
     ],
-    meeting:()=>[-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,.22+seatSurfaces.seat.forward,Math.PI,'sit','meeting-'+i,{
-      height:seatHeight('seat'), approach:point(roomById.meeting,x+Math.sign(x)*.67,.47), support:'meeting-seat-'+(i?'right':'left'),
+    meeting:()=>[-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,.22,Math.PI,'sit','meeting-'+i,{
+      height:.42, approach:point(roomById.meeting,x,-.58), support:'meeting-seat-'+(i?'right':'left'),
     })),
     stroll:()=>[-1.18,0,1.18].map((x,i)=>localAnchor(roomById.garden,x,-.50,0,'idle','garden-'+i)),
     visit:()=>[roomById.hr,roomById.marketing,roomById.creative].filter(room=>room.id!==person.id)
       .map(room=>localAnchor(room,0,-1.62,room.front===1?Math.PI:0,'emote-yes','visit-'+room.id)),
   };
   return options[activity]?.() ?? [];
-}
-
-function loungeSeats() {
-  const room=roomById.relaxation;
-  return [-.58,.58].map((x,i)=>localAnchor(room,x,1.94-seatSurfaces.couch.forward,0,'lounge-sit','rest-'+i,{
-    height:seatHeight('couch'), rug:true, approach:point(room,x,.90), support:'relaxation-sofa',
-  }));
 }

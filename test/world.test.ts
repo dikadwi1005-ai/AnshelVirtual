@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createStore } from '../server/store.ts';
 import { activities, divisions } from '../public/catalog.js';
-import { activityAnchors, furniture, obstaclesFor, partitions, propBounds, propsFor, seatSurfaces, station } from '../public/furnishings.js';
+import { activityAnchors, furniture, obstaclesFor, partitions, propBounds, propsFor, station } from '../public/furnishings.js';
 import { doorway, entrance, insideRoom, roomById, rooms, withinSite } from '../public/layout.js';
 import { agentRadius, navigation, segmentHits } from '../public/navigation.js';
 
@@ -63,10 +63,9 @@ test('semua titik aktivitas dapat dicapai dan gerak duduk hanya mengecualikan ku
         assert.ok(nav.route(lobby,anchor.approach),anchor.id);
         assert.ok(nav.clear(anchor.approach,anchor.point,anchor.support,.075),anchor.id);
         if (!anchor.support) continue;
-        const support=rooms.flatMap(propsFor).find(prop=>prop.id===anchor.support);
-        assert.ok(support,anchor.id);
+        assert.ok(obstacles.find(item=>item.id===anchor.support),anchor.id);
         assert.ok(distance(anchor.point,anchor.approach)<1.15);
-        assert.equal(anchor.height,furniture[support.type][3]*seatSurfaces[support.type].height);
+        assert.ok(anchor.height>=.38 && anchor.height<=.49);
       }
     }
   }

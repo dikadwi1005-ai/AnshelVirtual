@@ -2,18 +2,16 @@ import * as THREE from 'three';
 import { divisions } from './catalog.js';
 import { employeeFigure } from './employee-look.js';
 import { employeeProfile } from './employee-profiles.js';
-import { activityAnchors } from './furnishings.js';
-import { createSeatRig } from './seat-pose.js';
+import { activityAnchors, station } from './furnishings.js';
+import { roomById } from './layout.js';
 import { flatMesh, model } from './world.js';
 
 const speed=1.72;
 const personalSpace=.58;
-const sitBlend=.62;
-const floorY=.016;
-const rugHeight=.016;
+const sitBlend=.42;
 const angleDifference=(target,current)=>Math.atan2(Math.sin(target-current),Math.cos(target-current));
 
-function seatedClip(sit, arms, name, leftOffsets, rightOffsets, torsoPitch=0) {
+function seatedClip(sit, arms, name, leftOffsets, rightOffsets) {
   const tracks=sit.tracks.map(track=>track.clone());
   const flex=new THREE.Quaternion(), arm=new THREE.Quaternion(), axis=new THREE.Vector3(1,0,0);
   for (const name of ['arm-left','arm-right']) {
@@ -29,10 +27,6 @@ function seatedClip(sit, arms, name, leftOffsets, rightOffsets, torsoPitch=0) {
     const track=new THREE.QuaternionKeyframeTrack(name+'.quaternion',[0,.23,.49,.76],values);
     if (index>=0) tracks[index]=track;
     else tracks.push(track);
-  }
-  if (torsoPitch) {
-    flex.setFromAxisAngle(axis,torsoPitch);
-    tracks.push(new THREE.QuaternionKeyframeTrack('torso.quaternion',[0,.76],[...flex.toArray(),...flex.toArray()]));
   }
   return new THREE.AnimationClip(name,.76,tracks);
 }
@@ -51,15 +45,7 @@ function chooseAnchor(actor,activity,reservations,nav) {
   for (let i=0;i<options.length;i++) {
     const anchor=options[(i+actor.person.index)%options.length];
     if (reservations.has(anchor.id) && reservations.get(anchor.id)!==actor) continue;
-    if (anchor.height>0) {
-      const fit=actor.seatRig.fit(anchor.height-(anchor.rug ? rugHeight : 0));
-      if (!fit) continue;
-      const stand=seatPosition(anchor,actor.seatRig.standingOffset(fit));
-      const seated=seatPosition(anchor,-fit.hipDepth);
-      if (!nav.clear(anchor.approach,stand,anchor.support,.075) || !nav.clear(stand,seated,anchor.support,.075)) continue;
-      return {...anchor,fit,stand};
-    }
-    if (!nav.clear(anchor.approach,anchor.point)) continue;
+    if (!nav.clear(anchor.approach,anchor.point,anchor.support,.075)) continue;
     return anchor;
   }
   return null;
@@ -67,25 +53,12 @@ function chooseAnchor(actor,activity,reservations,nav) {
 
 function location(actor) { return [actor.root.position.x,actor.root.position.z]; }
 
-function seatPosition(anchor,forward) {
-  return [anchor.point[0]+Math.sin(anchor.angle)*forward,anchor.point[1]+Math.cos(anchor.angle)*forward];
-}
-
-function applySeat(actor) {
-  const anchor=actor.anchor;
-  const progress=THREE.MathUtils.smoothstep(actor.seatProgress,0,1);
-  const {rise,forward}=actor.seatRig.apply(anchor.fit,progress);
-  const [x,z]=seatPosition(anchor,forward);
-  actor.root.position.set(x,floorY+(anchor.rug ? rugHeight : 0)+rise,z);
-}
-
 export async function createActors(scene,nav,shadowMap,initial) {
   const shadow=new THREE.MeshBasicMaterial({map:shadowMap,transparent:true,depthWrite:false,opacity:.70,toneMapped:false});
   const settled=await Promise.allSettled(divisions.map(async person=>{
     const profile=employeeProfile(person.id);
     const asset=await model('people/character-'+profile.asset);
-    const figure=employeeFigure(asset,person.id);
-    return {figure,seatRig:createSeatRig(figure),animations:asset.animations,employeeId:profile.id};
+    return {figure:employeeFigure(asset,person.id),animations:asset.animations,employeeId:profile.id};
   }));
   const reservations=new Map();
   const actors=[];
@@ -93,7 +66,7 @@ export async function createActors(scene,nav,shadowMap,initial) {
   for (const [index,result] of settled.entries()) {
     if (result.status==='rejected') { errors.push(result.reason); continue; }
     const person=divisions[index];
-    const {figure,seatRig}=result.value;
+    const {figure}=result.value;
     const root=new THREE.Group();
     root.add(figure);
     root.name=result.value.employeeId;
@@ -106,24 +79,20 @@ export async function createActors(scene,nav,shadowMap,initial) {
       const drive=result.value.animations.find(clip=>clip.name==='drive') ?? sit;
       clips.set('desk-work',mixer.clipAction(seatedClip(sit,drive,'desk-work',[-.13,-.20,-.14,-.13],[-.20,-.12,-.17,-.20])));
       clips.set('desk-cheer',mixer.clipAction(seatedClip(sit,drive,'desk-cheer',[-.20,-.94,-.75,-.20],[-.20,-.80,-.94,-.20])));
-      clips.set('desk-rest',mixer.clipAction(seatedClip(sit,drive,'desk-rest',[-.48,-.52,-.48,-.48],[-.48,-.52,-.48,-.48],.15)));
-      clips.set('lounge-sit',mixer.clipAction(seatedClip(sit,sit,'lounge-sit',[0,.03,.01,0],[0,.01,.03,0],-.16)));
     }
     const plan=initial?.people?.[person.id];
-    const actor={person,root,figure,seatRig,shadowMesh,mixer,clips,action:null,animation:'idle',path:[],
+    const actor={person,root,figure,shadowMesh,mixer,clips,action:null,animation:'idle',path:[],
       stage:'idle',seatProgress:0,activity:plan?.activity ?? 'desk',reaction:0,wait:0,retry:0};
-    const anchor=chooseAnchor(actor,actor.activity,reservations,nav) ?? chooseAnchor(actor,'desk',reservations,nav);
-    if (!anchor) { root.removeFromParent(); shadowMesh.removeFromParent(); errors.push(new Error('Kursi tidak dapat dicapai: '+person.id)); continue; }
+    const anchor=chooseAnchor(actor,actor.activity,reservations,nav) ?? station(roomById[person.id]);
     reservations.set(anchor.id,actor);
     actor.anchor=anchor;
     actor.actual=anchor.id.endsWith('-desk') && !['desk','work','nap'].includes(actor.activity) ? 'desk' : actor.activity;
     actor.stage=anchor.height>0?'seated':'arrived';
     actor.seatProgress=anchor.height>0?1:0;
-    root.position.set(anchor.point[0],floorY,anchor.point[1]);
+    root.position.set(anchor.point[0],.021+anchor.height,anchor.point[1]);
     root.rotation.y=anchor.angle;
     play(actor,actor.actual==='work'?'desk-work':anchor.clip,0);
     mixer.update(.016);
-    if (anchor.fit) applySeat(actor);
     actors.push(actor);
   }
 
@@ -131,23 +100,16 @@ export async function createActors(scene,nav,shadowMap,initial) {
     actor.activity=activity;
     const anchor=chooseAnchor(actor,activity,reservations,nav);
     if (!anchor) { actor.retry=2; return; }
-    if (actor.anchor.id===anchor.id) {
-      if (actor.pending) reservations.delete(actor.pending.id);
-      actor.pending=null;
+    actor.actual=activity;
+    if (actor.anchor===anchor || (actor.anchor?.id===anchor.id && actor.stage!=='departing')) {
       actor.anchor=anchor;
-      actor.actual=activity;
-      if (actor.stage==='departing') actor.stage='sitting';
-      if (actor.stage==='exiting-seat') seatAccess(actor,false);
-      if (actor.stage==='released' || actor.stage==='idle') actor.stage='approached';
       return;
     }
     if (actor.pending && actor.pending.id!==actor.anchor?.id) reservations.delete(actor.pending.id);
     actor.pending=anchor;
-    actor.pendingActivity=activity;
     reservations.set(anchor.id,actor);
     if (actor.stage==='seated' || actor.stage==='sitting') actor.stage='departing';
-    else if (actor.stage==='entering-seat' || actor.stage==='aligning' && actor.anchor.fit) seatAccess(actor,true);
-    else if (actor.stage!=='departing' && actor.stage!=='exiting-seat') route(actor);
+    else route(actor);
   }
 
   function route(actor) {
@@ -163,22 +125,19 @@ export async function createActors(scene,nav,shadowMap,initial) {
     }
     if (actor.anchor && actor.anchor.id!==target.id) reservations.delete(actor.anchor.id);
     actor.anchor=target;
-    actor.actual=actor.pendingActivity;
     actor.pending=null;
     actor.path=path;
     actor.stage='walking';
     actor.wait=0;
   }
 
-  function step(actor,delta,nextStage='approached') {
+  function step(actor,delta) {
     const here=location(actor);
-    const goal=actor.path[0];
+    let goal=actor.path[0];
     const distance=Math.hypot(goal[0]-here[0],goal[1]-here[1]);
     if (distance<.035) {
-      actor.root.position.x=goal[0];
-      actor.root.position.z=goal[1];
       actor.path.shift();
-      if (!actor.path.length) actor.stage=nextStage;
+      if (!actor.path.length) actor.stage='aligning';
       return;
     }
     const forward=[(goal[0]-here[0])/distance,(goal[1]-here[1])/distance];
@@ -189,7 +148,7 @@ export async function createActors(scene,nav,shadowMap,initial) {
       Math.hypot(other.root.position.x-here[0],other.root.position.z-here[1]));
     if (obstacle) {
       actor.wait+=delta;
-      if (nextStage==='approached' && actor.wait>.22 && actor.path.length<36) {
+      if (actor.wait>.22 && actor.path.length<36) {
         for (const side of [1,-1]) {
           const detour=[here[0]+forward[0]*.48-forward[1]*.72*side,here[1]+forward[1]*.48+forward[0]*.72*side];
           if (!nav.clear(here,detour) || !nav.clear(detour,goal)) continue;
@@ -213,15 +172,18 @@ export async function createActors(scene,nav,shadowMap,initial) {
     play(actor,'walk');
   }
 
-  function seatAccess(actor,reverse) {
-    actor.stage=reverse?'exiting-seat':'entering-seat';
-    actor.path=[reverse?actor.anchor.approach:actor.anchor.stand];
-  }
-
   function seat(actor,delta,reverse) {
     const direction=reverse?-1:1;
     actor.seatProgress=THREE.MathUtils.clamp(actor.seatProgress+direction*delta/sitBlend,0,1);
-    play(actor,reverse?'idle':'sit',.26);
+    const t=THREE.MathUtils.smoothstep(actor.seatProgress,0,1);
+    const {point,approach,height}=actor.anchor;
+    actor.root.position.set(
+      THREE.MathUtils.lerp(approach[0],point[0],t),.021+height*t,
+      THREE.MathUtils.lerp(approach[1],point[1],t),
+    );
+    play(actor,reverse?'idle':'sit',sitBlend);
+    if (reverse && actor.seatProgress===0) route(actor);
+    if (!reverse && actor.seatProgress===1) actor.stage='seated';
   }
 
   function advance(actor,delta,state) {
@@ -233,12 +195,6 @@ export async function createActors(scene,nav,shadowMap,initial) {
     if (requested!==actor.activity || (!actor.retry && requested!==actor.actual && !actor.pending)) request(actor,requested);
     if (actor.stage==='departing' || actor.stage==='sitting') seat(actor,delta,actor.stage==='departing');
     else if (actor.stage==='walking' && actor.path.length) step(actor,delta);
-    else if (actor.stage==='approached') {
-      if (actor.anchor.fit) seatAccess(actor,false);
-      else actor.stage='aligning';
-    } else if (actor.stage==='entering-seat') step(actor,delta,'aligning');
-    else if (actor.stage==='exiting-seat') step(actor,delta,'released');
-    else if (actor.stage==='released') route(actor);
     else if (actor.stage==='aligning') {
       const turn=angleDifference(actor.anchor.angle,actor.root.rotation.y);
       actor.root.rotation.y+=THREE.MathUtils.clamp(turn,-delta*9,delta*9);
@@ -250,23 +206,13 @@ export async function createActors(scene,nav,shadowMap,initial) {
     } else {
       const seated=actor.stage==='seated';
       const working=actor.actual==='work' && seated && plan?.executing;
-      const clip=reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.stage==='idle'?'idle':actor.anchor.clip;
+      const clip=reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.anchor.clip;
       play(actor,clip);
       actor.reaction=Math.max(0,actor.reaction-delta);
     }
     actor.mixer.update(delta);
-    const hasSeatPose=['sitting','seated','departing'].includes(actor.stage);
-    if (hasSeatPose) {
-      applySeat(actor);
-      if (actor.stage==='sitting' && actor.seatProgress===1) actor.stage='seated';
-      if (actor.stage==='departing' && actor.seatProgress===0) {
-        actor.root.position.y=floorY;
-        seatAccess(actor,true);
-      }
-    }
     actor.shadowMesh.position.x=actor.root.position.x;
     actor.shadowMesh.position.z=actor.root.position.z;
-    actor.shadowMesh.position.y=actor.anchor.rug && hasSeatPose ? .035 : .031;
   }
 
   return {
