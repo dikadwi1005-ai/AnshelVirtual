@@ -162,7 +162,7 @@ function updateEmployee() {
     element.dataset.stage=actor.stage;
     element.dataset.animation=actor.animation;
   }
-  const moving=['walking','aligning','sitting','departing'].includes(actor?.stage);
+  const moving=['walking','approached','entering-seat','aligning','sitting','departing','exiting-seat','released'].includes(actor?.stage);
   const workStatus=plan.executing?'Eksekusi berjalan':plan.task?.status==='blocked'?'Tugas terhambat':
     plan.task ? (!office.worker || !office.capabilities.includes(plan.task.kind) ? 'Menunggu worker' : 'Dalam antrean') : 'Tanpa tugas aktif';
   const activity=moving ? (plan.task?'Menuju meja kerja':'Berjalan') :

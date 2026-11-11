@@ -82,3 +82,15 @@ Rekaman Chrome menunjukkan Alya meninggalkan atrium, berjalan ke meja Manajemen,
 **Tested dan Visually Verified.** Seluruh 19 tes lulus, termasuk proses worker diagnostik nyata dan pemeriksaan geometri tiga aset. Chrome menguji klik langsung pada monitor Pengembangan, laptop Kreatif & Desain dan TV Pod Rapat. Pengujian memakai fixture SQLite untuk status antrean offline, animasi saat eksekusi, dan cuplikan serta unduhan artefak. Rekaman timeline diputar ulang di Chrome. Panel laptop diperiksa pada viewport 390 × 844. Performa kantor ramai dan sentuhan pada perangkat fisik masih perlu diukur.
 
 **Sisa Phase 1.** Kalibrasi duduk dan foot placement, formasi percakapan, lounge PS5 dengan animasi gameplay, serta pengujian visual akhir.
+
+## Checkpoint Phase 1 · Pose duduk dan pijakan kaki
+
+**Implemented.** `public/seat-pose.js` menghitung pose dari geometri rig dan tinggi bantalan. Pivot sepatu menjaga telapak rata, sementara perpindahan tubuh mengimbangi gerak kaki saat duduk dan berdiri. `public/actors.js` memisahkan rute umum, pendekatan ke tempat pijak, penyesuaian arah, duduk, berdiri dan keluar. Kursi tetap dipesan sampai karakter keluar. `public/furnishings.js` menyesuaikan tinggi serta posisi furnitur dan memakai anchor terpisah untuk kursi kerja, kursi rapat dan kedua sofa. Aset tetap memakai model yang ada di manifest.
+
+**Verifikasi lokal.** Jalankan `npm.cmd test`. Tes membaca model asli untuk 12 profil dan memeriksa kontak telapak, tinggi pinggul, pergeseran kaki dan segmen pendekatan di setiap tipe kursi. Untuk melihat transisi, ikuti Alya dari panel karyawan, buat tugas Manajemen, dan biarkan worker diagnostik menyelesaikannya.
+
+**Tested dan Visually Verified.** Seluruh 20 tes lulus. Di Chrome 1440 × 900, kursi kerja, kursi pod rapat, sofa santai dan sofa TV diperiksa dari dekat. Dua orang menempati posisi berbeda di setiap sofa dan di pod. Rekaman siklus tugas memakai fixture SQLite untuk memicu Alya berjalan, duduk, bekerja, berdiri dan kembali bersosialisasi. Tes integrasi menjalankan worker diagnostik aktual secara terpisah.
+
+Pemutaran rekaman 1280 × 720 diperiksa di Chrome. Overview siang mencatat median interval frame 11,1 ms dan p90 11,2 ms dari 90 sampel pada Radeon terintegrasi D3D11.
+
+**Sisa Phase 1.** Formasi percakapan, lounge PS5 dengan animasi gameplay dan pemeriksaan visual akhir. Uji pose pada perangkat sentuh fisik masih terbuka.
