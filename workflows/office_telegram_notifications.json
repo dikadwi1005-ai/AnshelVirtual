@@ -1,5 +1,5 @@
 {
-  "name": "Anshel · Notifikasi tugas ke Telegram (30 menit)",
+  "name": "Anshel · Grup AI 12 pegawai — update kerja",
   "active": false,
   "nodes": [
     {
@@ -8,13 +8,13 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "*/30 * * * *"
+              "expression": "0,30 9-17 * * 1-5"
             }
           ]
         }
       },
       "id": "9d87afcb-8dd5-4708-b2c4-000000000001",
-      "name": "Periksa pembaruan",
+      "name": "Jadwal ngobrol kantor",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -25,118 +25,32 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://anshel-virtual.vercel.app/api/integrations/notifications/claim",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/office-group/dispatch",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({}) }}",
         "options": {
-          "timeout": 12000
+          "timeout": 25000
         }
       },
       "id": "9d87afcb-8dd5-4708-b2c4-000000000002",
-      "name": "Ambil notifikasi",
+      "name": "Kirim pembaruan dari pegawai",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        240,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const notification=$input.first().json.notification;\nif (!notification) return [];\nif (!Number.isSafeInteger(notification.eventId) || typeof notification.token!=='string' ||\n  typeof notification.chatId!=='string' || typeof notification.text!=='string') {\n  throw new Error('Bentuk notifikasi Anshel tidak valid.');\n}\nreturn [{json:notification}];"
-      },
-      "id": "9d87afcb-8dd5-4708-b2c4-000000000003",
-      "name": "Siapkan pesan",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        480,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "sendMessage",
-        "chatId": "={{ $json.chatId }}",
-        "text": "={{ $json.text }}",
-        "additionalFields": {
-          "appendAttribution": false
-        }
-      },
-      "id": "9d87afcb-8dd5-4708-b2c4-000000000004",
-      "name": "Kirim ke Telegram",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        720,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://anshel-virtual.vercel.app/api/integrations/notifications/ack",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ eventId: $('Siapkan pesan').first().json.eventId, token: $('Siapkan pesan').first().json.token }) }}",
-        "options": {
-          "timeout": 12000
-        }
-      },
-      "id": "9d87afcb-8dd5-4708-b2c4-000000000005",
-      "name": "Konfirmasi terkirim",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        960,
+        270,
         0
       ]
     }
   ],
   "connections": {
-    "Periksa pembaruan": {
+    "Jadwal ngobrol kantor": {
       "main": [
         [
           {
-            "node": "Ambil notifikasi",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Ambil notifikasi": {
-      "main": [
-        [
-          {
-            "node": "Siapkan pesan",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Siapkan pesan": {
-      "main": [
-        [
-          {
-            "node": "Kirim ke Telegram",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Kirim ke Telegram": {
-      "main": [
-        [
-          {
-            "node": "Konfirmasi terkirim",
+            "node": "Kirim pembaruan dari pegawai",
             "type": "main",
             "index": 0
           }
