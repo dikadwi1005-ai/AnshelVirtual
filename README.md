@@ -27,7 +27,7 @@ Di Vercel → proyek Anshel → Settings → Environment Variables, isi:
 
 Pilih lingkungan **Production**. Jangan taruh connection string, password atau token pada GitHub, `.env.example`, atau kode JavaScript browser. Pada Vercel, gunakan Node.js 24.x dan deploy ulang setelah menyimpan variabel. `vercel.json` membangun aset Three.js/font dan meneruskan `/api/*` ke Web API cloud.
 
-Uji `https://anshel-virtual.vercel.app/api/session`. Jika backend sudah terhubung dan belum login, responsnya JSON `{"authenticated":false}`, bukan halaman `404`. Kemudian masuk lewat halaman kantor, buat tugas, dan periksa antreannya. Tanpa workflow AI cloud yang sudah aktif, tugas akan tetap mengantre; migrasi database sendiri belum menjalankan AI.
+Uji `https://anshel-virtual.vercel.app/api/session`. Jika backend sudah terhubung dan belum login, responsnya JSON `{"authenticated":false}`. Untuk menguji satu tugas draf dengan n8n Cloud dan Gemini, ikuti [panduan pilot Gemini](workflows/README.md#pilot-satu-tugas-gemini).
 
 ### Pindahkan data SQLite yang sudah ada
 
@@ -40,7 +40,9 @@ npm.cmd ci
 npm.cmd run migrate:sqlite -- "D:\Web Project\VirtualOffice\anshel-virtual-tech\data\office.sqlite"
 ```
 
-Importer menolak sumber yang tidak ada, memeriksa checksum artefak, menolak target yang sudah berisi data, lalu memindahkan isi ketiga tabel dalam **satu transaksi**. Bila terjadi kesalahan, transaksi dibatalkan. Setelah sukses, hapus variabel `DATABASE_URL` dari terminal. Jika SQLite ternyata tidak mempunyai tugas, tidak ada pekerjaan yang perlu dipindahkan.
+Importer membaca snapshot SQLite yang konsisten, memeriksa integritas dan checksum artefak, serta menolak tugas yang masih berjalan. Ketiga tabel di target dikunci selama impor. Isi setiap baris dibandingkan sebelum transaksi disahkan. Target yang sudah berisi data ditolak. Setelah sukses, hapus variabel `DATABASE_URL` dari terminal.
+
+Untuk menyimpan dan memulihkan data cloud, lihat [prosedur backup dan restore](docs/cloud-recovery.md).
 
 ## Jalankan lokal
 

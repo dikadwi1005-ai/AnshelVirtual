@@ -116,6 +116,7 @@ export function officeHandler(store, env = process.env) {
           if (!configured(env.WORKER_TOKEN) || !equal(bearer,env.WORKER_TOKEN)) throw new Fault(401,'Token worker ditolak.');
           const body = await json(req);
           if (path === '/api/worker/claim') return respond({task:await store.claim(body.kinds)});
+          if (path === '/api/worker/claim-task') return respond({task:await store.claim(body.kinds,body.taskId ?? '')});
           if (path === '/api/worker/heartbeat') { await store.heartbeat(body.id,body.token); return respond({ok:true}); }
           if (path === '/api/worker/finish') { await store.finish(body.id,body.token,body); return respond({ok:true}); }
         }

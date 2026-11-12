@@ -73,6 +73,7 @@ async function route(request, injectedStore = null, env = process.env) {
       }
       const input = await readJson(request);
       if (path === '/api/worker/claim') return respond({task:await office.claim(input.kinds)});
+      if (path === '/api/worker/claim-task') return respond({task:await office.claim(input.kinds,input.taskId ?? '')});
       if (path === '/api/worker/heartbeat') { await office.heartbeat(input.id,input.token); return respond({ok:true}); }
       if (path === '/api/worker/finish') { await office.finish(input.id,input.token,input); return respond({ok:true}); }
     }
