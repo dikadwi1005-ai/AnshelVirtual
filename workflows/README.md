@@ -1,5 +1,25 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3D — Kontrol status kantor langsung dari Telegram (HP)
+
+Ini perubahan backend saja. Workflow Natural Gemini dan Auto Office yang sudah Published **tidak perlu diimpor ulang**, dan tidak ada credential/Telegram Trigger baru. Hanya Alya, Bima, Citra, dan Dara yang merespons perintah khusus berikut:
+
+- **/ringkasan** atau **/ringkas** → Alya mengirim ringkasan hitungan status tugas dari seluruh divisi berdasarkan `state.counts` (antre, dikerjakan, selesai, terhambat, gagal). Angka status ini adalah **akumulasi tugas tercatat saat ini**, **bukan** jumlah tugas yang selesai hari ini.
+- **/kendala** → Bima mengirim jumlah tugas berstatus `blocked`/`failed` serta contoh maksimal tiga tugas yang terlihat di daftar terbaru, hanya menyertakan nama divisi, proyek singkat, dan status. Teks deskripsi pekerjaan, token, log error, dan artefak tidak dikirim. Nol tugas bermasalah **bukan bukti** server telah diperiksa atau sehat.
+- **/cek Bima** → Bima mengabarkan salah satu tugas divisinya yang perlu diperhatikan. Bentuk yang sama berlaku untuk **/cek Alya**, **/cek Citra**, dan **/cek Dara**. Perintah `/cek` bagi delapan nama lain secara eksplisit dikembalikan ke Alya dengan keterangan belum aktif pada pilot Telegram.
+- **/bantuan** → daftar singkat perintah yang bisa dipakai dari HP. Perintah `/status`, `/tim`, dan `/tugas Nama | instruksi` yang sudah ada tetap berjalan.
+
+Keempat perintah baru diproses secara deterministik tanpa memanggil Gemini; hanya pemilik dan grup Telegram yang telah diizinkan bisa memicu balasan. Batas 20 pesan pemilik per hari WIB dan jeda minimal delapan detik tetap berlaku. Chat bebas tetap menggunakan Gemini pada workflow Natural Gemini.
+
+### Menguji dari HP setelah PR di-merge dan Production Ready
+
+1. Buka grup Telegram internal Anshel, kirim **/ringkasan** lalu periksa apakah yang membalas Alya.
+2. Setelah jeda minimal **8 detik**, kirim **/kendala**. Bima seharusnya membalas dengan status tugas yang tercatat, tanpa mengaku sudah mengecek server.
+3. Setelah jeda minimal **8 detik**, kirim **/cek Citra**. Balasan harus datang dari bot Citra.
+4. Tidak perlu membuka laptop, mengubah workflow n8n, atau membagikan credential.
+
+**Ringkasan harian terjadwal:** workflow lama bernama Ringkasan Harian di n8n belum diubah/diaktifkan melalui PR ini; perintah `/ringkasan` adalah permintaan manual, bukan pengiriman harian otomatis.
+
 ## Phase 3C — Otomatisasi Telegram kantor, hanya empat bot aktif
 
 **Scope pilot:** Alya (management), Bima (operations), Citra (administration), Dara (hr). Delapan bot lainnya **tetap ditunda**. Tidak ada pembuatan bot atau perubahan token, dan workflow Natural Gemini tidak perlu diganti.

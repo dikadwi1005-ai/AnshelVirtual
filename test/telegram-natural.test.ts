@@ -290,3 +290,29 @@ test('chat Gemini memakai persona pegawai meski namanya ada di tengah atau akhir
       {mode:'skip',duplicate:true});
   } finally{s.close();}
 });
+
+test('perintah monitoring dari HP tidak memakai Gemini dan dibalas oleh bot yang relevan',async()=>{
+  let now=clock.value;
+  const s=createStore(':memory:',()=>now);
+  const calls=[];
+  try {
+    const issue=await prepareOfficeNaturalChat(s,env,userMessage(12001,'/kendala'),transport(calls));
+    assert.equal(issue.mode,'handled');
+    assert.equal(issue.division,'operations');
+    assert.ok(calls[0].url.includes(tokens.operations));
+    assert.match(calls[0].body.text,/catatan tugas Anshel/);
+    assert.equal(calls.length,1);
+    now+=9000;
+    const summary=await prepareOfficeNaturalChat(s,env,userMessage(12002,'/ringkasan'),transport(calls));
+    assert.equal(summary.mode,'handled');
+    assert.equal(summary.division,'management');
+    assert.ok(calls[1].url.includes(tokens.management));
+    assert.match(calls[1].body.text,/Ringkasan status tugas Anshel/);
+    now+=9000;
+    const employee=await prepareOfficeNaturalChat(s,env,userMessage(12003,'/cek Citra'),transport(calls));
+    assert.equal(employee.mode,'handled');
+    assert.equal(employee.division,'administration');
+    assert.ok(calls[2].url.includes(tokens.administration));
+    assert.equal(calls.length,3);
+  } finally{s.close();}
+});
