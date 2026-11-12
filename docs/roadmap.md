@@ -126,3 +126,9 @@ Sofa santai diperlebar untuk mengatasi tangan yang menembus sandaran lengan deng
 Tes regresi `test/gemini-queue.test.ts` menargetkan: autentikasi negatif, prioritas satu tugas, draf kedua tetap antre, konteks divisi, tidak membocorkan lease ke Gemini, heartbeat, penyelesaian dan checksum. **Tes CI, import n8n Cloud, dan eksekusi live belum diverifikasi** pada saat checkpoint ini disiapkan.
 
 **Berikutnya:** jalankan `npm.cmd test` serta build, lalu impor workflow baru secara terpisah dan uji dua tugas nonrahasia. Sesudah lulus, rancang scheduler dengan kuota/biaya dan notifikasi Telegram. Kemampuan gambar, video, dan kode dengan aksi GitHub masih merupakan adapter yang memerlukan pekerjaan dan izin berbeda; alur ini tetap hanya menghasilkan draf teks.
+
+## Checkpoint Phase 3 · Penjadwalan Gemini terbatas
+
+**Implemented on branch; pending tests and deployment.** Endpoint baru `/api/worker/claim-scheduled` memerlukan token worker dan hanya mengizinkan klaim draf selama fase kerja yang sah. Kuota harian tiga klaim dihitung per tanggal WIB dan dicatat atomik dalam transaksi SQLite/PosgreSQL bersama perubahan status tugas, dengan advisory lock cloud yang sudah dipakai worker. Menggunakan tabel `anshel.setting` yang sudah ada; tidak membuat tabel/kolom baru. Hitungan bertambah hanya jika berhasil mengklaim satu tugas; tidak dihitung ulang saat provider gagal. Worker manual/UUID tetap berfungsi seperti sebelumnya.
+
+File `workflows/office_gemini_scheduled.json` menggunakan Schedule Trigger tiap 20 menit pada hari kerja 09.00–16.40 WIB, **nonaktif sampai di-publish**. Tidak ada publikasi Telegram atau penggunaan AI tanpa persetujuan. Tes baru `test/gemini-scheduler.test.ts` memeriksa batas tiga, kuota reset, jadwal libur, mode manual, autentikasi, dan pencegahan pemborosan saat antrean kosong. **Belum ada pengujian langsung n8n Cloud / CI penuh**; lakukan pengecekan sebelum merge dan aktifkan setelah verifikasi produksi.
