@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule } from './schedule.ts';
-import { Fault } from './store.ts';
+import { Fault, validateWorkerTaskId } from './store.ts';
 
 // All timestamps remain Unix milliseconds to preserve existing SQLite API contracts.
 pg.types.setTypeParser(20, value => Number(value));
@@ -202,10 +202,11 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         return { mode: await readSetting('mode', 'auto', client), schedule: await readSetting('schedule', defaults, client) };
       });
     },
-    async claim(kinds) {
+    async claim(kinds, taskId = null) {
       if (!Array.isArray(kinds) || kinds.length > kindsAllowed.length || !kinds.every(kind => kindsAllowed.includes(kind))) {
         throw new Fault(400, 'Kapabilitas worker tidak valid.');
       }
+      validateWorkerTaskId(taskId);
       return transaction(async client => {
         // Serialize claims across cloud functions; retain one-running-task-per-division.
         await query('SELECT pg_advisory_xact_lock(17293105)', [], client);
@@ -217,8 +218,9 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         const task = await one(`SELECT ${fields} FROM anshel.tasks AS queued WHERE status='queued'
           AND kind=ANY($1::text[]) AND ($2 OR urgent=1)
           AND NOT EXISTS (SELECT 1 FROM anshel.tasks WHERE status='running' AND division=queued.division)
+          AND ($3::text IS NULL OR queued.id=$3)
           ORDER BY priority DESC,created,seq LIMIT 1 FOR UPDATE OF queued SKIP LOCKED`,
-          [kinds, canDispatch(officePhase)], client);
+          [kinds, canDispatch(officePhase), taskId], client);
         if (!task) return null;
         const token = randomUUID();
         await query(`UPDATE anshel.tasks SET status='running',started=$1,attempts=attempts+1,lease=$2,lease_until=$3 WHERE id=$4`,

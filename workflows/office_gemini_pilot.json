@@ -1,0 +1,205 @@
+{
+  "name": "Anshel · Uji satu tugas Gemini",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "5fd23aec-b884-42e6-9bd2-000000000001",
+      "name": "Jalankan uji",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const taskId = 'TEMPEL_UUID_TUGAS_UJI';\nif (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(taskId)) {\n  throw new Error('Isi UUID tugas uji pada node Tugas uji.');\n}\nreturn [{ json: { taskId } }];"
+      },
+      "id": "5fd23aec-b884-42e6-9bd2-000000000002",
+      "name": "Tugas uji",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        230,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/worker/claim-task",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ kinds: ['draft'], taskId: $json.taskId }) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "5fd23aec-b884-42e6-9bd2-000000000003",
+      "name": "Ambil tugas terpilih",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const task = $input.first().json.task;\nif (!task) return [];\nif (task.id !== $('Tugas uji').first().json.taskId || task.kind !== 'draft' || typeof task.token !== 'string') {\n  throw new Error('Worker menerima tugas yang tidak cocok dengan uji ini.');\n}\nreturn [{ json: {\n  id: task.id,\n  token: task.token,\n  request: {\n    systemInstruction: { parts: [{ text: 'Kerjakan tugas penulisan dalam Bahasa Indonesia. Berikan draf teks siap ditinjau. Sebutkan asumsi bila perlu. Jangan mengaku telah menelusuri internet, mengakses repositori, mengirim pesan, atau menjalankan perubahan.' }] },\n    contents: [{ role: 'user', parts: [{ text: task.description }] }],\n    generationConfig: { maxOutputTokens: 1200 }\n  }\n} }];"
+      },
+      "id": "5fd23aec-b884-42e6-9bd2-000000000004",
+      "name": "Siapkan draf",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        690,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 25000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "5fd23aec-b884-42e6-9bd2-000000000005",
+      "name": "Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { id, token } = $('Siapkan draf').first().json;\nconst response = $input.first().json;\nconst status = Number(response.statusCode);\nconst finish = (error, unavailable = false) => [{ json: { id, token, error, unavailable } }];\nif (!status || status < 200 || status >= 300) {\n  const temporary = !status || [401, 403, 404, 408, 429].includes(status) || status >= 500;\n  if (!status) return finish('Gemini tidak dapat dihubungi atau melewati batas waktu.', true);\n  if (status === 429) return finish('Kuota Gemini sedang terbatas. Coba lagi setelah kuota tersedia.', true);\n  return finish('Gemini menolak permintaan (HTTP ' + status + ').', temporary);\n}\nconst candidate = response.body?.candidates?.[0];\nconst parts = candidate?.content?.parts;\nconst output = Array.isArray(parts) ? parts\n  .filter(part => part?.thought !== true && typeof part?.text === 'string')\n  .map(part => part.text).join('').trim() : '';\nif (candidate?.finishReason === 'MAX_TOKENS') return finish('Draf Gemini terpotong oleh batas keluaran.');\nif (candidate?.finishReason !== 'STOP' || !output || output.length > 99000) {\n  return finish('Gemini tidak mengembalikan draf lengkap yang dapat disimpan.');\n}\nreturn [{ json: { id, token, output } }];"
+      },
+      "id": "5fd23aec-b884-42e6-9bd2-000000000006",
+      "name": "Periksa hasil",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1150,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/worker/finish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "5fd23aec-b884-42e6-9bd2-000000000007",
+      "name": "Simpan hasil",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Jalankan uji": {
+      "main": [
+        [
+          {
+            "node": "Tugas uji",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tugas uji": {
+      "main": [
+        [
+          {
+            "node": "Ambil tugas terpilih",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil tugas terpilih": {
+      "main": [
+        [
+          {
+            "node": "Siapkan draf",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan draf": {
+      "main": [
+        [
+          {
+            "node": "Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini": {
+      "main": [
+        [
+          {
+            "node": "Periksa hasil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Periksa hasil": {
+      "main": [
+        [
+          {
+            "node": "Simpan hasil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}

@@ -338,8 +338,10 @@ function render() {
   if (panel==='tasks') {
     const queued = office.counts.queued ?? 0;
     title(queued+' dalam antrean','Tugas');
-    const worker = !office.worker ? 'Worker belum terhubung.' : office.capabilities.includes('draft') ?
-      'Worker menerima diagnostik dan draf AI.' : 'Worker menerima diagnostik. Draf AI membutuhkan Ollama.';
+    const supported = [['diagnostic','diagnostik'],['draft','draf AI']]
+      .filter(([kind])=>office.capabilities.includes(kind)).map(([,label])=>label);
+    const worker = !office.worker ? 'Worker belum terhubung.' : supported.length ?
+      'Worker menerima '+supported.join(' dan ')+'.' : 'Worker belum melaporkan jenis pekerjaan yang didukung.';
     $('panel-content').innerHTML='<p class="status-text">'+worker+'</p>'+renderTasks(office.tasks);
     return;
   }

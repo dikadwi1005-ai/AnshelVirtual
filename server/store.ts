@@ -9,6 +9,12 @@ export class Fault extends Error {
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
 
+export function validateWorkerTaskId(taskId) {
+  if (taskId !== null && (typeof taskId !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(taskId))) {
+    throw new Fault(400,'ID tugas worker tidak valid.');
+  }
+}
+
 const leaseDuration = 120_000;
 const types = ['diagnostic','draft'];
 
@@ -161,10 +167,11 @@ export function createStore(path: string, now = Date.now) {
         return {mode:mode(),schedule:schedule()};
       });
     },
-    claim(kinds) {
+    claim(kinds, taskId = null) {
       if (!Array.isArray(kinds) || kinds.length > types.length || !kinds.every(kind => types.includes(kind))) {
         throw new Fault(400,'Kapabilitas worker tidak valid.');
       }
+      validateWorkerTaskId(taskId);
       return transaction(() => {
         writeSetting('worker_at',now());
         writeSetting('worker_kinds',kinds);
@@ -172,9 +179,9 @@ export function createStore(path: string, now = Date.now) {
         if (!kinds.length || current() === 'paused') return null;
         const placeholders = kinds.map(() => '?').join(',');
         const task = get(`SELECT * FROM tasks AS queued WHERE status='queued' AND kind IN (${placeholders})
-          AND (? OR urgent=1) AND NOT EXISTS (
+          AND (? OR urgent=1) AND (? IS NULL OR queued.id=?) AND NOT EXISTS (
             SELECT 1 FROM tasks WHERE status='running' AND division=queued.division
-          ) ORDER BY priority DESC,created,rowid LIMIT 1`,...kinds,Number(canDispatch(current())));
+          ) ORDER BY priority DESC,created,rowid LIMIT 1`,...kinds,Number(canDispatch(current())),taskId,taskId);
         if (!task) return null;
         const token = randomUUID();
         run("UPDATE tasks SET status='running',started=?,attempts=attempts+1,lease=?,lease_until=? WHERE id=?",
