@@ -17,6 +17,8 @@ export function isCollectiveCall(text) {
   if(typeof text!=='string')return false;
   const q=text.trim();
   if(!q||q.startsWith('/')||leadingPerson.test(q))return false;
+  // 'Semua tugas selesai?' asks about tasks, not every staff member.
+  if(/^semua(?:nya)?\s+(?:tugas|dokumen|pekerjaan|laporan|data|hasil|proyek|pesan|file|pegawai|divisi)\b/i.test(q))return false;
   return /^(?:(?:eh|hei|hai|halo|oke|okay|pagi|siang|sore|malam|woi)[\s,!.:-]+){0,3}(?:guys|semuanya|semua|teman[- ]teman|kalian\s+semua|tim)(?=$|[\s,!.?:;-])/i.test(q)
     || /(?:^|[\s,!.])guys(?=$|[\s,!.?:;-])/i.test(q)
     || /\bsemua(?:nya)?\s+(?:semangat|lagi\s+(?:apa|ngapain)|dengerin|dengar|bisa\s+bantu|kumpul|hadir|pagi|siang|sore|malam)\b/i.test(q);
