@@ -5,7 +5,7 @@ import { divisions } from '../public/catalog.js';
 import { createStore } from '../server/store.ts';
 import { createCloudApi } from '../api/route.ts';
 import {
-  buildOfficeNaturalRequest,prepareOfficeNaturalChat,deliverOfficeNaturalChat,cleanOfficeNaturalResponse,
+  buildOfficeNaturalRequest,prepareOfficeNaturalChat,deliverOfficeNaturalChat,cleanOfficeNaturalResponse,officeScheduleReply,
 } from '../server/telegram-natural.ts';
 
 const tokens=Object.fromEntries(divisions.map((d,i)=>[d.id,String(100000+i)+':'+('z'.repeat(35))]));
@@ -315,4 +315,84 @@ test('perintah monitoring dari HP tidak memakai Gemini dan dibalas oleh bot yang
     assert.ok(calls[2].url.includes(tokens.administration));
     assert.equal(calls.length,3);
   } finally{s.close();}
+});
+
+
+test('Alya menyebut jam masuk besok dari jadwal kantor WIB, bukan mengaku kerja fleksibel',()=>{
+  const state={now:Date.parse('2026-11-12T15:53:00Z'),phase:'closed',mode:'auto',
+    schedule:{arrival:'08:45',open:'09:00',briefingEnd:'09:15',lunch:'12:00',
+      lunchEnd:'13:00',review:'16:30',close:'17:00',days:[1,2,3,4,5],holidays:[]},
+    people:{management:{activity:'talk',executing:false}}};
+  const question='iya maksudku alya, besok masuk jam berapa di kantor virtual? lagi dikantor virtual sekarang?';
+  const answer=officeScheduleReply('management',question,state);
+  assert.match(answer,/Besok \(Jumat,? 13 November\)/i);
+  assert.match(answer,/08\.45 WIB/);
+  assert.match(answer,/09\.00–09\.15/);
+  assert.match(answer,/17\.00 WIB/);
+  assert.match(answer,/sekarang status kantor virtual: tutup/i);
+  assert.match(answer,/aktivitas avatar yang tercatat: bersosialisasi/i);
+  assert.doesNotMatch(answer,/jam masuk resmi|fleksibel|selalu siap|kapan pun/i);
+  assert.equal(officeScheduleReply('management','Alya, semangat besok ya!',state),null);
+});
+
+test('jadwal khusus dan hari libur diambil dari pengaturan, bukan angka tetap',()=>{
+  const schedule={arrival:'10:00',open:'10:15',briefingEnd:'10:30',lunch:'12:30',
+    lunchEnd:'13:30',review:'17:00',close:'18:00',days:[1,2,3,4,5],holidays:[]};
+  const state={now:Date.parse('2026-11-13T15:30:00Z'),phase:'closed',mode:'auto',schedule,
+    people:{operations:{activity:'game',executing:false}}};
+  const saturday=officeScheduleReply('operations','Bima, besok masuk jam berapa?',state);
+  assert.match(saturday,/Sabtu,? 14 November/i);
+  assert.match(saturday,/libur menurut pengaturan/i);
+  assert.match(saturday,/10\.00 WIB/);
+  assert.match(saturday,/18\.00 WIB/);
+  const holiday=officeScheduleReply('operations','Besok jadwal kantor gimana?',{
+    ...state,now:Date.parse('2026-11-12T15:30:00Z'),
+    schedule:{...schedule,holidays:['2026-11-13']},
+  });
+  assert.match(holiday,/Jumat,? 13 November/i);
+  assert.match(holiday,/libur menurut pengaturan/i);
+  const adjusted=officeScheduleReply('operations','Besok masuk jam berapa?',{
+    ...state,now:Date.parse('2026-11-12T15:30:00Z')
+  });
+  assert.match(adjusted,/dijadwalkan masuk/i);
+  assert.match(adjusted,/10\.15–10\.30/);
+});
+
+test('pertanyaan jam kantor diproses langsung dari jadwal tanpa biaya Gemini dan tetap dari bot Alya',async()=>{
+  let now=Date.parse('2026-11-12T15:53:00Z');
+  const s=createStore(':memory:',()=>now);
+  const sent=[];
+  const q='iya maksudku alya, besok masuk jam berapa di kantor virtual? lagi dikantor virtual sekarang?';
+  try {
+    const reply=await prepareOfficeNaturalChat(s,env,userMessage(1721,q),transport(sent));
+    assert.deepEqual(reply,{mode:'handled',sent:true,division:'management',source:'office-schedule'});
+    assert.equal(sent.length,1);
+    assert.ok(sent[0].url.includes(tokens.management));
+    assert.match(sent[0].body.text,/08\.45 WIB/);
+    assert.match(sent[0].body.text,/Jumat,? 13 November/i);
+    assert.doesNotMatch(sent[0].body.text,/tidak pakai jam masuk|fleksibel/i);
+    assert.deepEqual(await prepareOfficeNaturalChat(s,env,userMessage(1721,q),transport(sent)),
+      {mode:'skip',duplicate:true});
+    assert.equal(sent.length,1);
+    now+=9000;
+    const next=await prepareOfficeNaturalChat(s,env,userMessage(1722,'Bima, kamu lagi di kantor virtual sekarang?'),transport(sent));
+    assert.deepEqual(next,{mode:'handled',sent:true,division:'operations',source:'office-schedule'});
+    assert.ok(sent[1].url.includes(tokens.operations));
+    assert.match(sent[1].body.text,/aktivitas avatar yang tercatat/i);
+    assert.match(sent[1].body.text,/chat Telegram tetap bisa dipakai/i);
+  } finally{s.close();}
+});
+
+test('memori Gemini tidak mengulangi klaim lama bahwa kantor tidak punya jam masuk',()=>{
+  const state={tasks:[],counts:{},schedule:{
+    arrival:'08:45',open:'09:00',briefingEnd:'09:15',lunch:'12:00',
+    lunchEnd:'13:00',review:'16:30',close:'17:00',days:[1,2,3,4,5],holidays:[]}};
+  const history=[
+    {question:'Alya, jam kantor?',reply:'Di kantor virtual ini kita nggak pakai jam masuk resmi, fleksibel aja.'},
+    {question:'Alya, ada kerjaan?',reply:'Belum ada tugas manajemen baru.'},
+  ];
+  const result=buildOfficeNaturalRequest('management','Alya, ada kabar?',state,history);
+  assert.equal(result.contents.length,3);
+  assert.equal(result.contents[0].parts[0].text,'Alya, ada kerjaan?');
+  assert.match(result.systemInstruction.parts[0].text,/jadwal operasional nyata yang tersimpan/i);
 });
