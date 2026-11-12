@@ -22,6 +22,7 @@ const userMessage=(id,text)=>({chatId:env.TELEGRAM_CHAT_ID,userId:env.TELEGRAM_U
 
 test('empat pegawai menggunakan persona yang benar-benar berbeda; fakta tidak dipalsukan',()=>{
   const state={phase:'work',counts:{queued:1,running:0,completed:0},
+    people:{administration:{activity:'coffee',executing:false}},
     tasks:[{division:'administration',status:'queued',kind:'draft',project:'Jadwal uji'}]};
   const params=divisions.slice(0,4).map(d=>buildOfficeNaturalRequest(d.id,'Gimana kabarnya?',state));
   const personalities=params.map(p=>p.systemInstruction.parts[0].text);
@@ -35,7 +36,8 @@ test('empat pegawai menggunakan persona yang benar-benar berbeda; fakta tidak di
   const privateContext=JSON.parse(personalities[2].split('DATA KANTOR TERPERCAYA: ')[1]);
   assert.equal(privateContext.contohTugasDivisiTerbaru[0].kondisi,'masih antre');
   assert.equal(privateContext.contohTugasDivisiTerbaru[0].proyek,'Jadwal uji');
-  assert.equal(privateContext.totalSemuaDivisi.tugasMasihAntre,1);
+  assert.equal(privateContext.totalSemuaDivisi,undefined);
+  assert.equal(privateContext.aktivitasAvatarDiKantorVirtual,'Mengambil kopi');
   assert.deepEqual(JSON.parse(personalities[0].split('DATA KANTOR TERPERCAYA: ')[1]).contohTugasDivisiTerbaru,[]);
 });
 
@@ -210,4 +212,67 @@ test('balasan suasana kantor tidak membeberkan status internal atau menganggap s
   assert.doesNotMatch(messages[0].body.text,/keadaan fisik kantor/i);
   assert.ok(messages[0].url.includes(tokens.management));
   assert.equal(memory.length,1);
+});
+
+
+test('12 persona punya gaya berbeda; pertanyaan pegawai tidak mendapat statistik kantor yang tidak diminta',()=>{
+  const state={phase:'work',counts:{completed:5,queued:0,running:0},
+    people:{operations:{activity:'game',executing:false}},tasks:[]};
+  const prompts=divisions.map(d=>buildOfficeNaturalRequest(d.id,
+    d.employee+', lagi ngapain?',state).systemInstruction.parts[0].text);
+  assert.equal(prompts.length,12);
+  assert.equal(new Set(prompts).size,12);
+  for(const prompt of prompts){
+    assert.match(prompt,/Jangan mengaku sedang mantengin log/);
+    assert.match(prompt,/jangan menyebut statistik semua divisi/i);
+    assert.match(prompt,/Jangan menyebut format \/tugas/i);
+  }
+  const specific=buildOfficeNaturalRequest('operations',
+    'Bima, lagi ngapain? Ada masalah teknis yang perlu kita beresin nggak?',state);
+  const factual=JSON.parse(specific.systemInstruction.parts[0].text.split('DATA KANTOR TERPERCAYA: ')[1]);
+  assert.equal(factual.pegawai,'Bima');
+  assert.equal(factual.aktivitasAvatarDiKantorVirtual,'Bermain PS5');
+  assert.equal(factual.adaTugasYangSedangDieksekusi,false);
+  assert.equal(factual.totalSemuaDivisi,undefined);
+  assert.equal(factual.contohTugasDivisiTerbaru.length,0);
+  const company=buildOfficeNaturalRequest('management','Alya, bagaimana suasana kantor?',state);
+  const all=JSON.parse(company.systemInstruction.parts[0].text.split('DATA KANTOR TERPERCAYA: ')[1]);
+  assert.equal(all.totalSemuaDivisi.tugasTercatatSelesai,5);
+  assert.equal(all.aktivitasAvatarDiKantorVirtual,undefined);
+});
+
+test('kabar IT tidak boleh didasarkan pada klaim memantau log atau aman tanpa pemeriksaan',async()=>{
+  const q='Bima, lagi ngapain? Ada masalah teknis yang perlu kita beresin nggak?';
+  const reported='Lagi mantengin log sistem aja. Divisi IT aman terkendali karena belum ada tugas baru yang masuk, sementara total ada lima draf pekerjaan lain di sistem yang sudah selesai diproses. Kalau mau nambah task baru, langsung lempar pakai format slash tugas ya.';
+  assert.equal(cleanOfficeNaturalResponse(reported,'status belum diverifikasi',q),
+    'status belum diverifikasi');
+  assert.equal(cleanOfficeNaturalResponse('Sistem IT aman terkendali.','belum diuji',q),'belum diuji');
+  assert.equal(cleanOfficeNaturalResponse('Belum ada tugas IT yang tercatat buatku. Kalau ada error, kirim detailnya ya.','fallback',q),
+    'Belum ada tugas IT yang tercatat buatku. Kalau ada error, kirim detailnya ya.');
+  const state={phase:'work',counts:{completed:5,queued:0,running:0},tasks:[],people:{}};
+  const memory=[];
+  const messages=[];
+  const sent=await deliverOfficeNaturalChat({
+    consumeOfficeGroupAI:async()=>({division:'operations',question:q}),
+    state:async()=>state,rememberOfficeGroupAI:async(...params)=>memory.push(params),
+  },env,{updateId:'999',ticket:'mock',output:reported},transport(messages));
+  assert.deepEqual(sent,{sent:true,division:'operations',ai:false});
+  assert.match(messages[0].body.text,/belum ada tugas IT/i);
+  assert.match(messages[0].body.text,/belum punya hasil pemeriksaan/i);
+  assert.doesNotMatch(messages[0].body.text,/lima draf|mantengin log|aman terkendali|slash tugas/i);
+  assert.ok(messages[0].url.includes(tokens.operations));
+  assert.equal(memory.length,1);
+});
+
+test('riwayat pesan lama yang mengarang pemantauan log tidak dijadikan konteks baru',()=>{
+  const hist=[
+    {question:'Bima, gimana?',reply:'Lagi mantengin log sistem aja.'},
+    {question:'Bima, lagi apa?',reply:'Belum ada tugas IT yang tercatat, ada yang mau dicek?'},
+  ];
+  const result=buildOfficeNaturalRequest('operations','Bima, kalau ada error gimana?',{
+    tasks:[],counts:{},people:{operations:{activity:'read',executing:false}},
+  },hist);
+  assert.equal(result.contents.length,3);
+  assert.equal(result.contents[0].parts[0].text,'Bima, lagi apa?');
+  assert.equal(result.contents[1].parts[0].text,'Belum ada tugas IT yang tercatat, ada yang mau dicek?');
 });

@@ -2,6 +2,9 @@
 
 ## Phase 3B — Percakapan Telegram natural dengan Gemini
 
+**Penyempurnaan setelah tes Alya/Bima:** Pertanyaan tentang aktivitas pegawai kini dapat memakai `state.people[division].activity` (label simulasi di `public/catalog.js`). Itu **aktivitas avatar virtual**, bukan bukti akses log atau pemeriksaan server. Jumlah tugas lintas divisi hanya dikirim ke Gemini jika pemilik menanyakan kondisi kantor secara keseluruhan; pertanyaan spesifik ke pegawai hanya mendapat tugas divisinya. Semua 12 persona disesuaikan, dan keluaran yang mengaku memantau log/menyatakan IT aman tanpa bukti akan memakai respons cadangan yang tidak mengarang. Percakapan sebelumnya yang memuat klaim semacam itu tidak dipakai ulang sebagai contoh Gemini.
+
+
 **Kondisi sekarang:** Alya, Bima, Citra, dan Dara dapat membalas dari bot masing-masing, tetapi workflow lama memakai balasan status berbasis template. Workflow baru `office_telegram_group_natural.json` mengganti hanya **jalur obrolan pemilik**; otomatisasi tugas Gemini dan notifikasi berbasis audit tetap terpisah.
 
 ### Yang berubah

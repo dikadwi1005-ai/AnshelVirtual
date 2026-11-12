@@ -1,25 +1,30 @@
-import { divisions } from '../public/catalog.js';
+import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply } from './telegram-office.ts';
 
 const persona={
- management:'Alya: hangat dan tegas, mengutamakan koordinasi serta prioritas, tidak kaku.',
- operations:'Bima: teknis, santai dan solutif, bedakan dugaan dengan hasil diagnosis sungguhan.',
- administration:'Citra: tenang, teliti, rapi dan perhatian pada detail; bukan bahasa surat formal.',
- hr:'Dara: komunikatif, empatik dan ramah tanpa mengarang kondisi pribadi pegawai.',
- development:'Eka: developer kasual, penasaran, menjelaskan langkah teknis dengan konkret.',
- creative:'Fara: ekspresif, imajinatif, suka memberi ide visual yang spesifik.',
- video:'Galih: antusias soal adegan, storyboard dan editing, tanpa mengaku telah merender.',
- social:'Hana: lincah, suka konsep konten dan caption, tidak mengaku telah memposting.',
- research:'Indra: kritis, membedakan bukti dan asumsi, tidak mengarang sumber.',
- marketing:'Jihan: strategis dan analitis soal audiens dan SEO, tidak mengarang angka.',
- qa:'Kirana: cermat, kritis, memeriksa klaim, tidak mengaku sudah menguji.',
- finance:'Laras: sistematis, hati-hati dengan angka, jujur soal asumsi anggaran.',
+  management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
+  operations:'Bima: anak IT yang praktis, kasual, sedikit to the point. Kalau ada error, minta gejala atau contoh; jangan sok tahu kondisi server.',
+  administration:'Citra: teliti dan rapi, tutur kata kalem serta jelas soal dokumen, jadwal dan catatan; tidak terdengar seperti surat resmi.',
+  hr:'Dara: empatik, mudah diajak ngobrol, ingin mendengar kebutuhan tim; jangan mengaku telah berbicara ke orang lain.',
+  development:'Eka: programmer yang penasaran dan ringan berbahasa, suka contoh teknis konkret, tidak mengaku deploy atau menguji kode.',
+  creative:'Fara: spontan dan imajinatif, suka menanyakan preferensi warna, bentuk, gaya dan ide visual yang spesifik.',
+  video:'Galih: energik dalam bahasan adegan, ritme, suara dan editing; tidak mengaku sudah menghasilkan video.',
+  social:'Hana: komunikatif dan ringkas, antusias bahas caption, audiens dan ide konten; tidak mengaku sudah memposting.',
+  research:'Indra: kritis dan analitis, suka membedakan dugaan dari bukti; tidak mengarang penelusuran atau sumber.',
+  marketing:'Jihan: strategis dan penuh pertimbangan, fokus ke tujuan pencarian serta target audiens; tidak mengarang angka SEO.',
+  qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
+  finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
 const command=/^\/(?:tugas|status|tim|bantuan|help)(?:\s|$)/i;
 const actionClaim=/\b(?:sudah|telah|berhasil)\s+(?:(?:aku|saya|kami|kita)\s+)?(?:mengirim|mempublikasikan|memposting|menghapus|membayar|mentransfer|menginstal|mendeploy)\b/i;
 const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
+// Only use company-wide totals when the user actually asks about the office as a whole.
+export const wantsCompanyOverview=text=>/\b(?:kantor|semua(?:\s+(?:tim|divisi|pegawai))?|seluruh|total|perusahaan|antardivisi|keseluruhan)\b/i.test(text);
+const wantsAvatarActivity=text=>/\b(?:lagi\s+(?:apa|ngapain)|sedang\s+apa|kesibukan|kegiatan|aktivitas|suasana|cerita|kabar(?:nya)?|di\s+mana)\b/i.test(text);
+const unsupportedMonitoring=/\b(?:lagi|sedang|barusan|tadi|sudah)\s+(?:(?:mantengin|memantau|monitoring|ngecek|mengecek|memeriksa|cek|audit|mengawasi)\s+(?:(?:log|server|sistem|database|dashboard|infrastruktur)\b))/i;
+const unverifiedHealth=/\b(?:it|server|sistem|operasional|jaringan)\b.{0,40}\b(?:aman\s+terkendali|aman\s+semua|normal\s+semua|stabil\s+semua|bebas\s+(?:error|gangguan))\b/i;
 
 export function buildOfficeNaturalRequest(division,question,state,history=[]) {
   const person=divisions.find(d=>d.id===division);
@@ -38,17 +43,29 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
       jenis:t.kind==='draft'?'draf':t.kind==='diagnostic'?'pemeriksaan':'tugas lain',
       proyek:typeof t.project==='string'?t.project.slice(0,70):''}));
   const c=state.counts||{};
-  const facts={pegawai:person.employee,divisi:person.name,
-    contohTugasDivisiTerbaru:taskData,
-    totalSemuaDivisi:{
+  const facts={pegawai:person.employee,divisi:person.name,contohTugasDivisiTerbaru:taskData,
+    cakupanData:'Catatan tugas dan simulasi kantor virtual; bukan log error, hasil audit atau verifikasi kondisi server.'};
+  if(wantsCompanyOverview(spokenQuestion)) {
+    facts.totalSemuaDivisi={
       tugasMasihAntre:Number(c.queued)||0,tugasSedangDiproses:Number(c.running)||0,
       tugasTercatatSelesai:Number(c.completed)||0,tugasTerhambat:Number(c.blocked)||0,
-    },
-    cakupanData:'Hanya catatan pekerjaan Anshel. Tidak ada informasi tentang kejadian sosial atau suasana di luar catatan ini.'};
+    };
+  }
+  const avatar=state.people?.[division];
+  if(wantsAvatarActivity(spokenQuestion) && avatar && Object.hasOwn(activities,avatar.activity)) {
+    facts.aktivitasAvatarDiKantorVirtual=activities[avatar.activity];
+    facts.adaTugasYangSedangDieksekusi=avatar.executing===true;
+  }
   const instructions=[
     'Kamu adalah '+person.employee+', pegawai AI Anshel Virtual Tech yang sedang berbicara di grup Telegram privat.',
     persona[division],
-    'Balas dalam Bahasa Indonesia sehari-hari, alami, spesifik dan mengalir. Biasanya cukup 1-3 kalimat, kurang dari 420 karakter.',
+    'Balas dalam Bahasa Indonesia sehari-hari seperti rekan kerja saat chat, alami dan spesifik. Biasanya 1-3 kalimat pendek, di bawah 320 karakter.',
+    'Utamakan pertanyaan TERAKHIR. Kalau ada dua pertanyaan, jawab keduanya. Jangan menyelipkan statistik atau topik lain yang tidak diminta.',
+    'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar YANG TERCATAT di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
+    'Belum ada tugas IT tercatat tidak berarti server pasti aman. Tanpa bukti pemeriksaan, jangan klaim kondisi sistem aman, stabil, normal, atau bebas kendala.',
+    'Jangan mengaku sedang mantengin log, cek server, bekerja, ngobrol dengan staf, mengirim sesuatu, atau melakukan kegiatan konkret yang tidak tersedia pada DATA KANTOR.',
+    'Jangan menyebut format /tugas, cara memakai bot atau perintah teknis kecuali memang ditanya cara memberi tugas.',
+    'Gunakan fakta hanya saat relevan. Jika pertanyaan tentang satu pegawai, jangan menyebut statistik semua divisi. Angka totalSemuaDivisi hanya tersedia saat ditanya kantor secara umum.',
     'Jangan emoji, markdown, JSON, nama pembicara, atau narasi panggung. Hindari kalimat pembuka dan pola jawaban yang sama berulang.',
     greeted
       ? 'Pesan terbaru benar-benar mengandung sapaan; boleh membalas sapaan secara singkat, lalu jawab maksud pesannya.'
@@ -61,6 +78,8 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'Jangan menyalin nama key data, bahasa teknis, istilah Inggris atau status seperti completed, complete, queued, running, statis complete ke balasan. Ucapkan "sudah selesai", "masih antre" dan seterusnya.',
     'Kalau ditanya "ada cerita menarik?", jawab bagian itu juga secara singkat. Jangan mengarang cerita atau menuduh semua orang sibuk/fokus tanpa catatan khusus.',
     'Jangan otomatis mengakhiri dengan "Kamu sendiri gimana kabarnya?" atau pertanyaan balik klise yang tidak relevan.',
+    'Tidak perlu membuka dengan "Menurut catatan dari sistem divisi...". Jika fakta kerja relevan, sampaikan langsung dalam obrolan santai, contoh "Belum ada tugas IT yang masuk di Anshel."',
+    'Memori mungkin berisi respons lama yang keliru atau kaku. Jangan menyalin gaya atau klaim dalam riwayat jika bertentangan dengan data terbaru.',
     'FAKTA KERJA HANYA DARI DATA KANTOR. Riwayat pesan berguna untuk kesinambungan, bukan bukti telah menyelesaikan pekerjaan. DATA KANTOR berupa ringkasan dan contoh tugas, bukan daftar lengkap seluruh aktivitas.',
     'Jangan mengarang tugas, status, hasil tes, kode yang telah dijalankan, publikasi, audit, tanggal, keuangan, atau interaksi nyata.',
     'Status queued berarti belum dikerjakan; completed hanya berarti hasil draf tersedia, bukan sudah lolos review atau dipublikasikan.',
@@ -70,7 +89,8 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
   ].join('\n');
   const contents=[];
   for(const t of (Array.isArray(history)?history:[]).slice(-6)) {
-    if(typeof t.question==='string' && typeof t.reply==='string') {
+    if(typeof t.question==='string' && typeof t.reply==='string' &&
+        !unsupportedMonitoring.test(t.reply) && !unverifiedHealth.test(t.reply)) {
       contents.push({role:'user',parts:[{text:t.question.slice(0,350)}]});
       contents.push({role:'model',parts:[{text:t.reply.slice(0,500)}]});
     }
@@ -111,7 +131,8 @@ export function cleanOfficeNaturalResponse(text,fallback,question='') {
   const rawStatus=/\b(?:statis|status)\s*(?:complete|completed|queued|running|blocked|failed)\b|\b(?:completed|queued|awaiting_approval)\b/i;
   const physicalDisclaimer=/\b(?:keadaan fisik kantor|kondisi fisik kantor|nggak bisa lihat langsung|tidak bisa melihat langsung)\b/i;
   if(safe.length<4||safe.length>700||/[\x00-\x08\x0e-\x1f]/.test(safe)||
-      actionClaim.test(safe)||rawStatus.test(safe)||
+      actionClaim.test(safe)||rawStatus.test(safe)||unsupportedMonitoring.test(safe)||
+      unverifiedHealth.test(safe)||
       (askedAtmosphere&&(atmosphere.test(safe)||physicalDisclaimer.test(safe))))
     return fallback;
   return safe;
@@ -129,11 +150,15 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
   if(completed>0) activity.push(completed+' tugas dari seluruh tim tercatat sudah selesai');
   if(running>0) activity.push(running+' lagi dikerjakan');
   if(queued>0) activity.push(queued+' masih antre');
+  const asksTechnical= /\b(?:it|teknis|server|sistem|log|jaringan|bug|error|kendala|gangguan)\b/i.test(pending.question);
+  const divisionTasks=(state.tasks||[]).filter(t=>t.division===pending.division);
   const fallback=asksAtmosphere
     ? (activity.length ? 'Dari catatan tugas, '+activity.join(', ')+'. ':
         'Di catatan tugas belum ada perkembangan baru yang menonjol. ')+
       'Kalau soal cerita kantor lainnya, belum ada kabar khusus yang bisa kupastikan.'
-    : officeGroupReply(state,pending.question,env).text;
+    : pending.division==='operations' && asksTechnical && divisionTasks.length===0
+      ? 'Belum ada tugas IT yang tercatat buatku di Anshel. Soal ada masalah teknis atau nggak, aku belum punya hasil pemeriksaan. Kalau ada error, kirim gejalanya ya.'
+      : officeGroupReply(state,pending.question,env).text;
   const text=cleanOfficeNaturalResponse(input?.output,fallback,pending.question);
   await sendOfficeBotMessage(env,pending.division,text,{fetchImpl});
   await store.rememberOfficeGroupAI(pending.division,pending.question,text);
