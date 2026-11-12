@@ -28,10 +28,23 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
   const addressed=new RegExp('^'+person.employee+'\\s*[,：:]\\s*','i');
   const spokenQuestion=question.replace(addressed,'').trim() || question;
   const greeted=/^(?:hai|halo|hello|hi|selamat\s+(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|assalamualaikum)\b/i.test(spokenQuestion);
+  const statusText={
+    queued:'masih antre',running:'sedang diproses',completed:'hasil sudah dibuat; belum tentu ditinjau',
+    awaiting_approval:'menunggu persetujuan',blocked:'terhambat',failed:'gagal',
+    paused:'dijeda',cancelled:'dibatalkan',
+  };
   const taskData=(state.tasks||[]).filter(t=>t.division===division).slice(0,3)
-    .map(t=>({status:t.status,kind:t.kind,project:typeof t.project==='string'?t.project.slice(0,70):''}));
-  const facts={pegawai:person.employee,divisi:person.name,phase:state.phase,
-    tugasDivisi:taskData,ringkasanStatus:state.counts||{}};
+    .map(t=>({kondisi:statusText[t.status]||'belum diketahui',
+      jenis:t.kind==='draft'?'draf':t.kind==='diagnostic'?'pemeriksaan':'tugas lain',
+      proyek:typeof t.project==='string'?t.project.slice(0,70):''}));
+  const c=state.counts||{};
+  const facts={pegawai:person.employee,divisi:person.name,
+    contohTugasDivisiTerbaru:taskData,
+    totalSemuaDivisi:{
+      tugasMasihAntre:Number(c.queued)||0,tugasSedangDiproses:Number(c.running)||0,
+      tugasTercatatSelesai:Number(c.completed)||0,tugasTerhambat:Number(c.blocked)||0,
+    },
+    cakupanData:'Hanya catatan pekerjaan Anshel. Tidak ada informasi tentang kejadian sosial atau suasana di luar catatan ini.'};
   const instructions=[
     'Kamu adalah '+person.employee+', pegawai AI Anshel Virtual Tech yang sedang berbicara di grup Telegram privat.',
     persona[division],
@@ -41,9 +54,14 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
       ? 'Pesan terbaru benar-benar mengandung sapaan; boleh membalas sapaan secara singkat, lalu jawab maksud pesannya.'
       : 'Pesan terbaru TIDAK memiliki sapaan. Langsung jawab inti pertanyaan; JANGAN memulai dengan Halo, Hai, Halo juga, Hai juga, atau salam lain.',
     'Panggilan nama pegawai seperti "Alya, gimana suasana kantor?" BUKAN salam. Jawaban harus menanggapi pertanyaan, bukan menyapa balik.',
-    'Kalau ditanya suasana kantor, jangan mengaku menyaksikan kantor ramai, tenang, fokus, sibuk atau ada cerita menarik tanpa bukti. Hanya ceritakan catatan aktivitas/tugas yang benar-benar tersedia; akui jika tidak ada pengamatan langsung.',
+    'Ini kantor VIRTUAL. Jika ditanya suasana atau cerita kantor, jawab santai berdasar aktivitas tugas digital yang tercatat, bukan cuaca, keramaian ruangan, atau pengamatan fisik.',
+    'JANGAN membuka dengan kalimat defensif seperti "aku nggak bisa lihat keadaan fisik kantor" atau "sebagai AI". Cukup ceritakan hal yang memang diketahui, dan akui secara singkat jika tidak ada cerita khusus.',
+    'Bedakan angka total SEMUA divisi dengan tugas divisi sendiri. Jangan menyebut "lima draf manajemen" hanya karena totalSemuaDivisi.tugasTercatatSelesai bernilai 5.',
+    'Kondisi "hasil sudah dibuat" berarti pekerjaannya tercatat selesai, bukan sedang fokus menyelesaikan atau sudah dipublikasikan. Jangan mengubah pekerjaan yang selesai menjadi pekerjaan yang sedang berlangsung.',
+    'Jangan menyalin nama key data, bahasa teknis, istilah Inggris atau status seperti completed, complete, queued, running, statis complete ke balasan. Ucapkan "sudah selesai", "masih antre" dan seterusnya.',
+    'Kalau ditanya "ada cerita menarik?", jawab bagian itu juga secara singkat. Jangan mengarang cerita atau menuduh semua orang sibuk/fokus tanpa catatan khusus.',
     'Jangan otomatis mengakhiri dengan "Kamu sendiri gimana kabarnya?" atau pertanyaan balik klise yang tidak relevan.',
-    'FAKTA KERJA HANYA DARI DATA KANTOR. Riwayat pesan berguna untuk kesinambungan, bukan bukti telah menyelesaikan pekerjaan.',
+    'FAKTA KERJA HANYA DARI DATA KANTOR. Riwayat pesan berguna untuk kesinambungan, bukan bukti telah menyelesaikan pekerjaan. DATA KANTOR berupa ringkasan dan contoh tugas, bukan daftar lengkap seluruh aktivitas.',
     'Jangan mengarang tugas, status, hasil tes, kode yang telah dijalankan, publikasi, audit, tanggal, keuangan, atau interaksi nyata.',
     'Status queued berarti belum dikerjakan; completed hanya berarti hasil draf tersedia, bukan sudah lolos review atau dipublikasikan.',
     'Jika belum ada tugas tercatat, jangan mengaku sedang bekerja. Kalau diminta mengerjakan sesuatu, arahkan ke /tugas Nama | instruksi.',
@@ -90,8 +108,11 @@ export function cleanOfficeNaturalResponse(text,fallback,question='') {
   // A language model cannot observe the physical office. Avoid unsupported observations.
   const atmosphere=/\b(?:suasana|kantor)\b.{0,60}\b(?:tenang|ramai|sepi|sibuk|fokus|heboh)\b|\b(?:di sini|di kantor|suasananya)\b.{0,35}\b(?:tenang|ramai|sepi|sibuk|heboh)\b/i;
   const askedAtmosphere=/\b(?:suasana|ramai|sepi|heboh)\b.{0,35}\bkantor\b|\bkantor\b.{0,35}\b(?:suasana|ramai|sepi|heboh)\b/i.test(question);
+  const rawStatus=/\b(?:statis|status)\s*(?:complete|completed|queued|running|blocked|failed)\b|\b(?:completed|queued|awaiting_approval)\b/i;
+  const physicalDisclaimer=/\b(?:keadaan fisik kantor|kondisi fisik kantor|nggak bisa lihat langsung|tidak bisa melihat langsung)\b/i;
   if(safe.length<4||safe.length>700||/[\x00-\x08\x0e-\x1f]/.test(safe)||
-      actionClaim.test(safe)||(askedAtmosphere&&atmosphere.test(safe)))
+      actionClaim.test(safe)||rawStatus.test(safe)||
+      (askedAtmosphere&&(atmosphere.test(safe)||physicalDisclaimer.test(safe))))
     return fallback;
   return safe;
 }
@@ -101,9 +122,17 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
   const state=await store.state();
   const asksAtmosphere=/\b(?:suasana|ramai|sepi|heboh)\b.{0,35}\bkantor\b|\bkantor\b.{0,35}\b(?:suasana|ramai|sepi|heboh)\b/i.test(pending.question);
   const counts=state.counts||{};
+  const completed=Number(counts.completed)||0;
+  const queued=Number(counts.queued)||0;
+  const running=Number(counts.running)||0;
+  const activity=[];
+  if(completed>0) activity.push(completed+' tugas dari seluruh tim tercatat sudah selesai');
+  if(running>0) activity.push(running+' lagi dikerjakan');
+  if(queued>0) activity.push(queued+' masih antre');
   const fallback=asksAtmosphere
-    ? 'Kalau dari catatan Anshel, sekarang ada '+(Number(counts.queued)||0)+' tugas antre dan '+
-      (Number(counts.running)||0)+' berjalan. Belum ada laporan kejadian khusus yang tercatat, jadi aku nggak mau nebak-nebak suasana kantor.'
+    ? (activity.length ? 'Dari catatan tugas, '+activity.join(', ')+'. ':
+        'Di catatan tugas belum ada perkembangan baru yang menonjol. ')+
+      'Kalau soal cerita kantor lainnya, belum ada kabar khusus yang bisa kupastikan.'
     : officeGroupReply(state,pending.question,env).text;
   const text=cleanOfficeNaturalResponse(input?.output,fallback,pending.question);
   await sendOfficeBotMessage(env,pending.division,text,{fetchImpl});
