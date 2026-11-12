@@ -208,7 +208,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     const saved=await store.prepareOfficeGroupAI(String(data.updateId),'management',data.text,recipients);
     return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
       division:'management',group:true,recipients,
-      request:buildOfficeCollectiveRequest(data.text,recipients,state)};
+      request:buildOfficeCollectiveRequest(data.text,recipients,state,saved.groupHistory)};
   }
   const target=officeGroupReply(state,data.text,env);
   if(!configuredOfficeBots(env).configured.includes(target.division))
