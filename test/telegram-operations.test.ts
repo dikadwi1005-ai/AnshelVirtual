@@ -131,7 +131,7 @@ test('hourly dispatch alerts Bima after a real queued task waits two hours',asyn
   try {
     const task=store.create({division:'operations',description:'Draf uji koneksi',
       project:'API',kind:'draft'});
-    now=day(12);
+    now=day(13); // After lunch; work-hours warning deliberately skips break.
     const first=await dispatchOfficeGroupEvent(store,env,fakeTelegram);
     assert.equal(first.kind,'queue-delay-alert');
     assert.equal(first.division,'operations');
