@@ -123,6 +123,18 @@ export function createStore(path: string, now = Date.now) {
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)});
       });
     },
+    claimOfficeGroupSignal(kind) {
+      if(!['daily-summary','queued-worker-silent'].includes(kind)) throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
+      return transaction(()=>{
+        const key='office_group_signals_v1';
+        const today=scheduledDraftDay(new Date(now()));
+        const checkpoint=readSetting(key,{date:'',sent:[]});
+        const sent=checkpoint.date===today&&Array.isArray(checkpoint.sent)?checkpoint.sent:[];
+        if(sent.includes(kind))return false;
+        writeSetting(key,{date:today,sent:[...sent,kind]});
+        return true;
+      });
+    },
     claimOfficeGroupCheckin() {
       return transaction(() => {
         const key='office_virtual_checkin_v1';
