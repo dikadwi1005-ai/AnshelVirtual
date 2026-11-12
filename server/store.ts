@@ -149,10 +149,14 @@ export function createStore(path: string, now = Date.now) {
         return true;
       });
     },
-    prepareOfficeGroupAI(updateId, division, question) {
+    prepareOfficeGroupAI(updateId, division, question, recipients = null) {
       if (typeof updateId!=='string' || !/^[0-9]{1,24}$/.test(updateId) ||
           !divisions.some(d=>d.id===division) || typeof question!=='string' ||
-          !question.trim() || question.length>1500) throw new Fault(400,'Permintaan percakapan tidak valid.');
+          !question.trim() || question.length>1500 || (recipients!==null &&
+          (!Array.isArray(recipients)||recipients.length<1||recipients.length>4||
+          recipients.some(id=>!['management','operations','administration','hr'].includes(id))||
+          new Set(recipients).size!==recipients.length)))
+        throw new Fault(400,'Permintaan percakapan tidak valid.');
       return transaction(() => {
         const pending=readSetting('office_group_ai_pending_v1',{});
         const cleanPending=Object.fromEntries(Object.entries(pending).filter(([,p])=>p.until>now()));
@@ -160,7 +164,8 @@ export function createStore(path: string, now = Date.now) {
           .filter(h=>h.division===division && h.at>now()-7*24*3600_000)
           .slice(-6).map(h=>({question:h.question,reply:h.reply}));
         const ticket=randomUUID();
-        cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000};
+        cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000,
+          ...(recipients?{recipients}:{}),};
         writeSetting('office_group_ai_pending_v1',cleanPending);
         return {ticket,history};
       });
@@ -178,7 +183,8 @@ export function createStore(path: string, now = Date.now) {
         }
         delete pending[updateId];
         writeSetting('office_group_ai_pending_v1',pending);
-        return {division:item.division,question:item.question};
+        return {division:item.division,question:item.question,
+          ...(Array.isArray(item.recipients)?{recipients:item.recipients}:{}),};
       });
     },
     rememberOfficeGroupAI(division,question,reply) {
