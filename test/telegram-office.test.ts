@@ -262,7 +262,7 @@ test('update pekerjaan otomatis dibatasi tiga event sehari WIB dan jeda minimal 
     return goodResponse(300+sent.length);
   };
   const complete=()=>{
-    s.create({division:'management',description:'Draf contoh',project:'Pilot',kind:'draft'});
+    s.create({division:'management',description:'Draf contoh',project:'Pilot',kind:'draft',urgent:true});
     const claimed=s.claim(['draft']);
     assert.ok(claimed);
     s.finish(claimed.id,claimed.token,{output:'Draf selesai'});
