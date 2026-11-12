@@ -50,7 +50,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const task = $input.first().json.task;\nif (!task) return [];\nif (task.id !== $('Tugas uji').first().json.taskId || task.kind !== 'draft' || typeof task.token !== 'string') {\n  throw new Error('Worker menerima tugas yang tidak cocok dengan uji ini.');\n}\nreturn [{ json: {\n  id: task.id,\n  token: task.token,\n  request: {\n    systemInstruction: { parts: [{ text: 'Kerjakan tugas penulisan dalam Bahasa Indonesia. Berikan draf teks siap ditinjau. Sebutkan asumsi bila perlu. Jangan mengaku telah menelusuri internet, mengakses repositori, mengirim pesan, atau menjalankan perubahan.' }] },\n    contents: [{ role: 'user', parts: [{ text: task.description }] }],\n    generationConfig: { maxOutputTokens: 1200 }\n  }\n} }];"
+        "jsCode": "const task = $input.first().json.task;\nif (!task) return [];\nif (task.id !== $('Tugas uji').first().json.taskId || task.kind !== 'draft' || typeof task.token !== 'string') {\n  throw new Error('Worker menerima tugas yang tidak cocok dengan uji ini.');\n}\nconst divisions = {\n  management:'Manajemen', operations:'IT & Operasional', administration:'Administrasi',\n  hr:'SDM', development:'Pengembangan', creative:'Kreatif & Desain',\n  video:'Produksi Video', social:'Media Sosial', research:'Riset & Intelijen',\n  marketing:'SEO & Pemasaran', qa:'Jaminan Mutu', finance:'Keuangan'\n};\nconst division = divisions[task.division] || 'Tim kantor';\nconst project = typeof task.project === 'string' && task.project.trim()\n  ? task.project.trim().slice(0, 120) : 'Tidak disebutkan';\nconst instructions = [\n  'Anda adalah asisten Anshel Virtual Tech, divisi ' + division + ', proyek ' + project + '.',\n  'Buat draf Bahasa Indonesia yang menjawab instruksi pengguna secara langsung, siap ditinjau.',\n  'Jika instruksi umum tidak menjelaskan topik, gunakan konteks divisi: misalnya Keuangan membahas anggaran, bukan otomatis mengubahnya menjadi agenda pemasaran.',\n  'Ikuti jumlah poin yang diminta persis; jika tiga poin, buat tiga agenda utama.',\n  'Jangan mengarang tanggal, lokasi, peserta, angka, sumber, atau laporan yang sudah dikirim sebagai fakta. Jika tidak diberikan, tulis Belum ditentukan bila memang perlu.',\n  'Jika contoh bersifat fiktif, nyatakan sebagai contoh, bukan kejadian yang benar-benar terjadi.',\n  'Jangan mengaku telah menelusuri internet, mengakses repositori, mengirim email, atau melakukan perubahan nyata.',\n  'Jika instruksi dan konteks divisi bertentangan, prioritaskan instruksi eksplisit pengguna.'\n].join('\\n');\nreturn [{ json: {\n  id: task.id,\n  token: task.token,\n  request: {\n    systemInstruction: { parts: [{ text: instructions }] },\n    contents: [{ role: 'user', parts: [{ text: task.description }] }],\n    generationConfig: { maxOutputTokens: 1200 }\n  }\n} }];"
       },
       "id": "5fd23aec-b884-42e6-9bd2-000000000004",
       "name": "Siapkan draf",
@@ -112,13 +112,35 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}",
+        "jsonBody": "={{ JSON.stringify($('Periksa hasil').first().json) }}",
         "options": {
           "timeout": 12000
         }
       },
       "id": "5fd23aec-b884-42e6-9bd2-000000000007",
       "name": "Simpan hasil",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1610,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/worker/heartbeat",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.id, token: $json.token }) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "5fd23aec-b884-42e6-9bd2-000000000008",
+      "name": "Perpanjang sewa",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -184,6 +206,17 @@
       ]
     },
     "Periksa hasil": {
+      "main": [
+        [
+          {
+            "node": "Perpanjang sewa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perpanjang sewa": {
       "main": [
         [
           {
