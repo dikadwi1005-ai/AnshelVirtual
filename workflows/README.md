@@ -1,5 +1,17 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Perbaikan respons panggilan "Guys" yang jatuh ke template cadangan (Phase 3F)
+
+Screenshot pengguna menunjukkan empat balasan grup tepat sama seperti template fallback backend, bukan berarti empat respons itu dihasilkan oleh Gemini. **Akar penyebab Gemini yang persis masih perlu dibuktikan dari eksekusi n8n**, sebab node "Periksa jawaban AI" mengirim `output:null` ketika HTTP Gemini gagal, `finishReason` bukan STOP, hasil kosong atau panjang teks lebih dari 700 karakter.
+
+- Backend kini mengirim **`generationConfig.responseSchema`** dengan properti wajib sesuai daftar bot yang bebas. Ini didukung oleh endpoint **Gemini generateContent** dan membantu menghasilkan JSON yang benar serta memisahkan gaya tiap bot; maksimum output dinaikkan dari 550 ke 1.600 token untuk menghindari potong jawaban saat model menggunakan token berpikir.
+- **Jika Gemini tetap gagal**, respons cadangan dibedakan menurut maksud pesan pemilik: semangat, ucapan terima kasih, pertanyaan progres, aktivitas avatar, sapaan atau bantuan. Keempat bot tak lagi selalu menjawab dengan kalimat tak terkait topik. Fallback progres menggunakan status tugas yang benar-benar terlihat; aktivitas avatar tetap dikatakan virtual, bukan tugas nyata.
+- Jawaban Gemini yang valid tetap dilewatkan pemeriksaan klaim aksi, status palsu dan format internal. Kunci orang tambahan tidak dapat mengirim; **maksimal satu sapaan Pak di seluruh respons**. Jika hanya sebagian respons model valid, selebihnya fallback.
+- Node n8n **Kirim dari bot pegawai** sekarang menerima metadata hasil `fallbackReason` dan `generated` yang tidak memuat teks model maupun token. `none` artinya semua berhasil; `provider-empty` artinya n8n mengirim output kosong; `provider-invalid-json` artinya JSON gagal diproses; `provider-no-valid-replies` artinya semua teks ditolak; `provider-partial-fallback` artinya ada sebagian teks yang dipakai; `provider-too-long` bila panjang melebihi batas backend. Ini untuk troubleshooting, bukan balasan Telegram.
+- Alur n8n tetap **7 node**, satu Telegram Trigger, credential tetap sama, tidak memerlukan impor ulang. Jika `provider-empty` terus terjadi sesudah Production Ready, periksa **node Gemini obrolan** dan **Periksa jawaban AI** di eksekusi n8n: response HTTP, `finishReason`, dan panjang `candidate.content.parts.text`; jangan mengirim API key atau token ke chat.
+- Lakukan pengujian dari HP dengan `Guys, besok semua semangat ya!` dan `Guys, ada kabar progres pekerjaan?` setelah merge/deploy. Data keempat bot yang sedang bekerja tetap di-skip. Jangan membuat commit tambahan semata untuk mengulang deployment.
+
+
 ## Phase 3E — Identitas pemilik dan panggilan semua pegawai
 
 **Perilaku baru Telegram, tanpa impor ulang workflow:** Telegram pemilik sudah memiliki identitas yang terverifikasi melalui TELEGRAM_USER_ID. Gemini kini mendapat instruksi bahwa pemilik berbicara sebagai pimpinan Anshel Virtual Tech, bukan pelanggan. Gaya empat karakter tetap berbeda, santai, tanpa basa-basi bot atau pemanggilan nama pemilik berulang. **'Pak' boleh sesekali, maksimal satu panggilan dalam respons grup**, bukan sapaan wajib pada setiap pesan.
