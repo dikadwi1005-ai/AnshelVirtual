@@ -133,6 +133,48 @@ export function createStore(path: string, now = Date.now) {
         return true;
       });
     },
+    prepareOfficeGroupAI(updateId, division, question) {
+      if (typeof updateId!=='string' || !/^[0-9]{1,24}$/.test(updateId) ||
+          !divisions.some(d=>d.id===division) || typeof question!=='string' ||
+          !question.trim() || question.length>1500) throw new Fault(400,'Permintaan percakapan tidak valid.');
+      return transaction(() => {
+        const pending=readSetting('office_group_ai_pending_v1',{});
+        const cleanPending=Object.fromEntries(Object.entries(pending).filter(([,p])=>p.until>now()));
+        const history=readSetting('office_group_ai_history_v1',[])
+          .filter(h=>h.division===division && h.at>now()-7*24*3600_000)
+          .slice(-6).map(h=>({question:h.question,reply:h.reply}));
+        const ticket=randomUUID();
+        cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000};
+        writeSetting('office_group_ai_pending_v1',cleanPending);
+        return {ticket,history};
+      });
+    },
+    consumeOfficeGroupAI(updateId,ticket) {
+      if (typeof updateId!=='string' || !/^[0-9]{1,24}$/.test(updateId) ||
+          typeof ticket!=='string' || !/^[a-f0-9-]{36}$/.test(ticket)) {
+        throw new Fault(400,'Tiket percakapan tidak valid.');
+      }
+      return transaction(() => {
+        const pending=readSetting('office_group_ai_pending_v1',{});
+        const item=pending[updateId];
+        if (!item || item.ticket!==ticket || item.until<=now()) {
+          throw new Fault(409,'Tiket percakapan sudah digunakan atau kedaluwarsa.');
+        }
+        delete pending[updateId];
+        writeSetting('office_group_ai_pending_v1',pending);
+        return {division:item.division,question:item.question};
+      });
+    },
+    rememberOfficeGroupAI(division,question,reply) {
+      if (!divisions.some(d=>d.id===division) || typeof question!=='string' ||
+          typeof reply!=='string') throw new Fault(400,'Riwayat percakapan tidak valid.');
+      return transaction(() => {
+        const key='office_group_ai_history_v1';
+        const memory=readSetting(key,[]).filter(h=>h.at>now()-7*24*3600_000).slice(-23);
+        memory.push({division,question:question.slice(0,350),reply:reply.slice(0,500),at:now()});
+        writeSetting(key,memory);
+      });
+    },
     state() {
       if (get("SELECT id FROM tasks WHERE status='running' AND lease_until<=? LIMIT 1",now())) transaction(expireLeases);
       const running = all("SELECT id,division,description,status,kind,started FROM tasks WHERE status='running' AND lease_until>?",now());
