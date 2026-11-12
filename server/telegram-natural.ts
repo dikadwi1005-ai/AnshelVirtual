@@ -44,7 +44,7 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
       tugasMasihAntre:Number(c.queued)||0,tugasSedangDiproses:Number(c.running)||0,
       tugasTercatatSelesai:Number(c.completed)||0,tugasTerhambat:Number(c.blocked)||0,
     },
-    batasData:'Ini catatan tugas digital, bukan pengamatan langsung suasana fisik atau kehidupan sehari-hari kantor.'};
+    cakupanData:'Hanya catatan pekerjaan Anshel. Tidak ada informasi tentang kejadian sosial atau suasana di luar catatan ini.'};
   const instructions=[
     'Kamu adalah '+person.employee+', pegawai AI Anshel Virtual Tech yang sedang berbicara di grup Telegram privat.',
     persona[division],
