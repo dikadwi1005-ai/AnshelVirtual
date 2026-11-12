@@ -374,16 +374,39 @@ export function officeCheckinWindow(timestamp) {
 }
 
 export function officeVirtualCheckin(state,configured) {
+  const busy=new Set((state.running||[]).map(t=>t.division));
+  for(const t of state.tasks||[])if(t.status==='running')busy.add(t.division);
   const eligible=automaticOfficeDivisions.filter(id=>configured.includes(id) &&
+    !busy.has(id) && state.people?.[id]?.executing!==true &&
     state.people?.[id] && Object.hasOwn(activities,state.people[id].activity));
   if(eligible.length<2)return null;
   const localDay=Math.floor((Number(state.now)+7*3600_000)/86400_000);
   const idx=((localDay%eligible.length)+eligible.length)%eligible.length;
-  const first=eligible[idx];
-  const second=eligible[(idx+1)%eligible.length];
+  // Prefer an actual recorded task over repetitive fictional office banter.
+  const relevant=(state.tasks||[]).find(task=>eligible.includes(task.division) &&
+    ['queued','blocked','failed','completed','awaiting_approval'].includes(task.status));
+  const first=relevant?.division||eligible[idx];
+  const second=eligible[(eligible.indexOf(first)+1)%eligible.length];
   const names=Object.fromEntries(divisions.map(d=>[d.id,d.employee]));
   const p1=activities[state.people[first].activity].toLowerCase();
   const p2=activities[state.people[second].activity].toLowerCase();
+  if(relevant) {
+    const project=clean(relevant.project)||'pekerjaan terbaru';
+    const fact={
+      queued:'masih menunggu eksekusi',blocked:'terhambat',failed:'gagal diproses',
+      completed:'hasil drafnya sudah tercatat',awaiting_approval:'menunggu persetujuan',
+    }[relevant.status];
+    const firstText='Di catatan Anshel, '+project+' '+fact+'. '+names[second]+
+      ', menurutmu langkah berikutnya perlu difokuskan ke mana?';
+    const answers={
+      management:'Kalau dari status di Anshel, kita prioritaskan sesuai jadwal dulu. Belum bisa menganggapnya final.',
+      operations:'Kalau masih ada hambatan, perlu diperiksa penyebabnya dulu. Aku belum punya hasil cek sistem.',
+      administration:'Kita bisa rapikan daftar tindak lanjut dari catatan tugas, tanpa menganggap hasilnya sudah disetujui.',
+      hr:'Kalau ada hambatan, kita bisa diskusikan pembagian perhatian tim tanpa menyimpulkan semua sudah beres.',
+    };
+    return {first,second,text:firstText,reply:answers[second]};
+  }
+
   const openers=[
     'Di kantor virtual, avatarku lagi '+p1+' nih. '+names[second]+', kalau kamu lagi apa?',
     'Kelihatannya avatarku lagi '+p1+' di simulasi kantor. '+names[second]+', kamu lagi di mana?',
