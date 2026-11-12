@@ -142,3 +142,7 @@ Workflow `workflows/office_telegram_notifications.json` terpisah, nonaktif sampa
 ## Checkpoint Phase 3 · Telegram grup 12 pegawai AI
 
 PR #7 dikembangkan ulang dari notifikasi satu bot menjadi grup Telegram 12 identitas bot. Alya menjadi satu Telegram Trigger untuk pesan pemilik; backend mengirim pesan melalui token privat masing-masing pegawai. Input dibatasi dengan ID grup dan pemilik, verifikasi N8N_TOKEN, deduplikasi update serta batas 20 pesan owner/hari dan jeda 8 detik. Worker mengikuti audit pekerjaan yang nyata dan satu event menghasilkan maksimal dua pesan antarkaryawan. Perintah /tugas pegawai | deskripsi menambahkan draf dengan idempotensi tanpa langsung menjalankan Gemini. Workflow terjadwal 09.00-17.30 WIB setiap 30 menit, workflow grup masuk terpisah, keduanya nonaktif sampai pemeriksaan. Bukan obrolan Gemini generatif bebas. Belum diuji terhadap Telegram Bot API sungguhan atau suite npm penuh.
+
+## Checkpoint Phase 3B — Natural Telegram AI chat
+
+PR berikutnya menambah dua endpoint `office-group/ai/prepare` dan `office-group/ai/finish`, tiket satu-kali-pakai, memori singkat per divisi di anshel.setting, 12 persona yang berbeda, prompt berbasis status tugas, serta alur n8n baru yang memakai kredensial Gemini lama. Workflow Telegram lama tidak diubah dan tetap sebagai rollback. Perintah kantor tetap deterministik. Batas pesan tetap 20 per hari WIB, jeda 8 detik; percakapan bebas dapat memakai kuota Gemini terpisah. Tidak mengaktifkan bot maupun workflow pada Vercel/n8n secara otomatis; perlu pemeriksaan CI dan uji n8n langsung.

@@ -1,5 +1,31 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3B — Percakapan Telegram natural dengan Gemini
+
+**Kondisi sekarang:** Alya, Bima, Citra, dan Dara dapat membalas dari bot masing-masing, tetapi workflow lama memakai balasan status berbasis template. Workflow baru `office_telegram_group_natural.json` mengganti hanya **jalur obrolan pemilik**; otomatisasi tugas Gemini dan notifikasi berbasis audit tetap terpisah.
+
+### Yang berubah
+- Setiap dari 12 divisi memiliki gaya bicara dan identitas AI sendiri. Pesan santai bisa dibalas santai; permintaan progres menggunakan status tugas aktual dari database.
+- Riwayat **6 balasan terakhir per pegawai** menjadi konteks Gemini (maks. 7 hari). Penyimpanan dibatasi 24 giliran total di `anshel.setting`, tanpa migrasi database. Hanya status tugas, proyek singkat, dan ringkasan angka dari kantor yang dikirim ke Gemini; bukan isi draf, token, atau detail rahasia.
+- Gemini memakai API `gemini-3.5-flash-lite` via **credential Google AI Studio yang sudah berfungsi di n8n**. Tidak memerlukan kunci Gemini baru di Vercel. Setiap pesan percakapan bebas memicu **satu request Gemini**, sehingga berpotensi memakai kuota API; berbeda dari kuota 3 klaim draf terjadwal.
+- `/status`, `/tim`, `/bantuan`, dan `/tugas Nama | instruksi` tetap diproses deterministik tanpa biaya Gemini. Pesan dari bot lain diabaikan. Batas 20 pesan pemilik/hari WIB dan minimal 8 detik berlaku di kedua alur.
+- Tiket sementara 5 menit dan satu kali pakai mengikat hasil AI ke divisi asli. Pesan dikirim memakai token bot divisi; input tidak bebas mengganti pengirim. Jawaban Gemini kosong/error memakai fallback berbasis status, sehingga sebagian pesan dapat kembali berupa template ketika provider bermasalah.
+
+### Penggantian workflow n8n (tanpa menghapus yang lama)
+
+1. Setelah PR di-merge dan **Vercel Production Ready**, unduh `workflows/office_telegram_group_natural.json`, lalu **Import from File** di n8n sebagai workflow baru, simpan Unpublished.
+2. Buka node **Pesan grup via Alya** dan pilih **Telegram credential Alya** yang sudah berhasil digunakan.
+3. Buka node **Siapkan konteks AI** dan node **Kirim dari bot pegawai**; pilih **Header Auth `Anshel API` yang sudah ada** (nama header `Authorization`, Value `Bearer <N8N_TOKEN>`). Jangan menyalin token ke JSON workflow.
+4. Buka node **Gemini obrolan**, pilih **Header Auth credential Gemini** yang sama seperti workflow Gemini Auto Worker sebelumnya (`x-goog-api-key` di Header Auth). Tidak perlu menambah credential lain.
+5. Telegram mengizinkan satu webhook aktif per bot: **unpublish workflow lama `Anshel · Grup AI 12 pegawai — chat pemilik` sebelum menjalankan/Publish workflow baru**. Simpan workflow lama untuk rollback; jangan aktifkan dua Trigger Alya bersama.
+6. **Test Workflow** baru dengan pesan `Alya, hari ini ada apa?`, lalu `Bima, kamu bisa bantu apa?`, `Citra, kita tadi bahas apa?`, dan `Dara, kabar?` (masing-masing beri jeda minimal 8 detik). Periksa node Gemini, status **ai:true** pada node pengiriman, dan variasi jawaban sesuai karakter bot. Bandingkan dengan data kantor nyata.
+7. Uji `/status` dan `/tugas Citra | Susun ringkasan rapat fiktif`. Perintah ini diproses tanpa Gemini, hanya menambah antrean; jangan pakai instruksi sensitif. Lalu lakukan test duplikat pesan dan mode fallback provider. Jika berhasil, barulah Publish workflow baru.
+8. Workflow `office_telegram_notifications.json` tetap boleh dipakai untuk laporan pekerjaan nyata, tetapi **bukan** obrolan bebas; jangan Publish jika bot lain belum dikonfigurasi.
+
+**Keterbatasan yang disengaja:** Ini belum membuat antarkaryawan mengobrol bebas memakai Gemini secara terjadwal. Balasan antarkaryawan pada pembaruan kerja masih berbasis template terkontrol agar tidak ada bot-loop, spam, atau biaya tak terduga. Integrasi Telegram asli memerlukan pengujian manual memakai credential milik pemilik. Obrolan bisa diteruskan ke provider Gemini; hindari mengirim rahasia ke grup. Jika Telegram gagal sesudah tiket dikonsumsi, pesan chat itu tidak dikirim ulang otomatis. Semua bot tetap jelas sebagai akun bot AI.
+
+
+
 ## Pilot satu tugas Gemini
 
 Impor `office_gemini_pilot.json` ke n8n Cloud. Workflow ini hanya dipicu manual dan memproses satu tugas draf yang dipilih lewat UUID. Jalankan setelah deployment menyajikan `/api/worker/claim-task`. Versi API sebelum rute tersebut mengembalikan 404 sehingga antrean tetap utuh.

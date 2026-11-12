@@ -123,6 +123,51 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         return true;
       });
     },
+    async prepareOfficeGroupAI(updateId, division, question) {
+      if (typeof updateId!=='string' || !/^[0-9]{1,24}$/.test(updateId) ||
+          !divisions.some(d=>d.id===division) || typeof question!=='string' ||
+          !question.trim() || question.length>1500) throw new Fault(400,'Permintaan percakapan tidak valid.');
+      return transaction(async client => {
+        await query('SELECT pg_advisory_xact_lock(17293109)',[],client);
+        const pending=await readSetting('office_group_ai_pending_v1',{},client);
+        const cleanPending=Object.fromEntries(Object.entries(pending).filter(([,p])=>p.until>now()));
+        const history=(await readSetting('office_group_ai_history_v1',[],client))
+          .filter(h=>h.division===division && h.at>now()-7*24*3600_000)
+          .slice(-6).map(h=>({question:h.question,reply:h.reply}));
+        const ticket=randomUUID();
+        cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000};
+        await writeSetting('office_group_ai_pending_v1',cleanPending,client);
+        return {ticket,history};
+      });
+    },
+    async consumeOfficeGroupAI(updateId,ticket) {
+      if (typeof updateId!=='string' || !/^[0-9]{1,24}$/.test(updateId) ||
+          typeof ticket!=='string' || !/^[a-f0-9-]{36}$/.test(ticket)) {
+        throw new Fault(400,'Tiket percakapan tidak valid.');
+      }
+      return transaction(async client => {
+        await query('SELECT pg_advisory_xact_lock(17293109)',[],client);
+        const pending=await readSetting('office_group_ai_pending_v1',{},client);
+        const item=pending[updateId];
+        if (!item || item.ticket!==ticket || item.until<=now()) {
+          throw new Fault(409,'Tiket percakapan sudah digunakan atau kedaluwarsa.');
+        }
+        delete pending[updateId];
+        await writeSetting('office_group_ai_pending_v1',pending,client);
+        return {division:item.division,question:item.question};
+      });
+    },
+    async rememberOfficeGroupAI(division,question,reply) {
+      if (!divisions.some(d=>d.id===division) || typeof question!=='string' ||
+          typeof reply!=='string') throw new Fault(400,'Riwayat percakapan tidak valid.');
+      return transaction(async client => {
+        await query('SELECT pg_advisory_xact_lock(17293109)',[],client);
+        const key='office_group_ai_history_v1';
+        const memory=(await readSetting(key,[],client)).filter(h=>h.at>now()-7*24*3600_000).slice(-23);
+        memory.push({division,question:question.slice(0,350),reply:reply.slice(0,500),at:now()});
+        await writeSetting(key,memory,client);
+      });
+    },
     async sessionActive(token) {
       const hash = createHash('sha256').update(token).digest('hex');
       const session = await one('SELECT expires_at FROM anshel.sessions WHERE token_hash=$1', [hash]);
