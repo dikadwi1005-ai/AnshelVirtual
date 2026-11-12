@@ -23,6 +23,7 @@
 - Obrolan virtual siang pada `/checkin` kini memilih dua pegawai yang **tidak sedang mengeksekusi tugas** dan, jika ada tugas yang tercatat, membahas status tugas/proyek tersebut secara terbatas. Tidak mengarang status penyelesaian atau aktivitas di server.
 - Perhatikan: obrolan otomatis ini masih **disusun secara deterministik dari data kantor**, bukan percakapan Gemini bebas yang selalu berubah. Untuk obrolan AI antarkaryawan yang sepenuhnya generatif dibutuhkan perubahan workflow n8n dan persetujuan kuota khusus; perubahan ini tidak berpura-pura sudah mengaktifkannya.
 - Pemilik tetap bisa memanggil `Guys` untuk memperoleh jawaban terpisah satu permintaan Gemini melalui workflow Natural Gemini. Memori singkat lintas pegawai dari Phase 3H tetap tersedia.
+- **Diskusi dua pegawai yang benar-benar ditulis Gemini**, dipicu pemilik: `Alya dan Bima, diskusikan status pemeriksaan API terbaru` atau `Citra dan Dara, bahas catatan rapat yang kemarin`. Backend memilih hanya dua bot aktif yang disebut dan tidak sibuk. Satu request Gemini menghasilkan dua pendapat berdasarkan konteks dan status tugas; balasan pegawai kedua di-*reply* ke pesan pegawai pertama dalam grup agar alurnya jelas. Tidak mengklaim telah memeriksa server, menyelesaikan tugas atau berkomunikasi tanpa perintah pemilik. Ini berbeda dari **check-in siang otomatis**, yang masih berbasis data dan variasi teks aman.
 
 ### Kontrol melalui Telegram
 - Perintah manual `/ringkasan`, `/status`, `/kendala`, `/cek Nama`, dan `/tugas Nama | instruksi` tetap aktif.
