@@ -151,14 +151,20 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         await query('SELECT pg_advisory_xact_lock(17293109)',[],client);
         const pending=await readSetting('office_group_ai_pending_v1',{},client);
         const cleanPending=Object.fromEntries(Object.entries(pending).filter(([,p])=>p.until>now()));
-        const history=(await readSetting('office_group_ai_history_v1',[],client))
-          .filter(h=>h.division===division && h.at>now()-7*24*3600_000)
+        const recent=(await readSetting('office_group_ai_history_v1',[],client))
+          .filter(h=>h && h.at>now()-7*24*3600_000);
+        const history=recent.filter(h=>h.division===division)
           .slice(-6).map(h=>({question:h.question,reply:h.reply}));
+        // For team calls, recall multiple colleagues' prior Telegram replies,
+        // never just Alya's history. Never expose unrelated divisions.
+        const groupHistory=recipients?recent
+          .filter(h=>recipients.includes(h.division))
+          .slice(-12).map(h=>({division:h.division,question:h.question,reply:h.reply})) : null;
         const ticket=randomUUID();
         cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000,
           ...(recipients?{recipients}:{}),};
         await writeSetting('office_group_ai_pending_v1',cleanPending,client);
-        return {ticket,history};
+        return {ticket,history,...(groupHistory?{groupHistory}:{})};
       });
     },
     async consumeOfficeGroupAI(updateId,ticket) {
