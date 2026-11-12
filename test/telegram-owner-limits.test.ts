@@ -61,9 +61,10 @@ test('SQLite office-group store accepts more than 20 owner messages and identifi
       at+=2000;
     }
     assert.equal(store.reserveOfficeGroupUpdate('1005'),false);
+    at-=1; // 1,999 ms since the last accepted message: still throttled.
     assert.throws(()=>store.reserveOfficeGroupUpdate('2000'),
       e=>e.status===429&&/2 detik/.test(e.message));
-    at+=2000;
+    at+=1; // Exactly 2,000 ms: allowed.
     assert.equal(store.reserveOfficeGroupUpdate('2000'),true);
   }finally{store.close();}
 });
