@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createCloudStore } from '../server/cloud-store.ts';
 import { createDialogue } from '../server/dialogue.ts';
 import { telegram } from '../server/telegram.ts';
+import { configuredOfficeBots, dispatchOfficeGroupEvent, officeGroupConfig, sendOfficeGroupOwnerMessage } from '../server/telegram-office.ts';
 import { Fault } from '../server/store.ts';
 
 // Server-side only. Credentials must be configured in Vercel Environment Variables.
@@ -90,6 +91,22 @@ async function route(request, injectedStore = null, env = process.env) {
           if (error instanceof Fault && [400,404,409].includes(error.status)) return respond({reply:error.message});
           throw error;
         }
+      }
+      if (path === '/api/integrations/office-group/config') {
+        const input=await readJson(request);
+        if (Object.keys(input).length) throw new Fault(400,'Pemeriksaan grup tidak menerima parameter.');
+        const config=officeGroupConfig(env);
+        const bots=configuredOfficeBots(env);
+        return respond({groupConfigured:!!config.chatId,configured:bots.configured,missing:bots.missing,total:12});
+      }
+      if (path === '/api/integrations/office-group/dispatch') {
+        const input=await readJson(request);
+        if (Object.keys(input).length) throw new Fault(400,'Pemicu grup tidak menerima parameter.');
+        return respond(await dispatchOfficeGroupEvent(office,env));
+      }
+      if (path === '/api/integrations/office-group/message') {
+        const input=await readJson(request);
+        return respond(await sendOfficeGroupOwnerMessage(office,env,input));
       }
       if (path === '/api/integrations/report') {
         if (!env.TELEGRAM_CHAT_ID) throw new Fault(503,'Telegram belum dikonfigurasi.');

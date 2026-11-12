@@ -55,7 +55,7 @@ test('manual trigger mengambil hanya satu draf sesuai prioritas lalu menyimpan a
   }));
   try {
     const low = store.create({ division: 'finance', description: 'Draf anggaran', kind: 'draft', priority: 0, urgent: true });
-    const high = store.create({ division: 'management', description: 'Tiga agenda rapat', kind: 'draft', priority: 3, urgent: true });
+    const high = store.create({ division: 'management', description: 'Tiga agenda rapat', kind: 'draft', priority: 2, urgent: true });
     assert.equal((await call('worker/claim', { kinds: ['draft'] }, false)).status, 401);
     const response = await call('worker/claim', { kinds: ['draft'] });
     assert.equal(response.status, 200);

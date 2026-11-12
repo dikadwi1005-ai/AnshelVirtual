@@ -38,18 +38,50 @@ Backend `POST /api/worker/claim-scheduled` memaksa jenis tugas `draft` dan secar
 
 Batas 3 **klaim** bukan batas biaya absolut: tarif provider, model, retry internal, request manual, dan perubahan endpoint lain dapat menimbulkan biaya/kuota terpisah. Hindari mengaktifkan dua workflow terjadwal yang sama. Workflow ini hanya menghasilkan **teks** dan belum mengirim Telegram, membuat gambar/video, atau melakukan perubahan GitHub.
 
-## Workflow Telegram yang sudah ada
 
-Kedua workflow masih nonaktif. Gunakan instance n8n Cloud milik Dika. Perintah Telegram dan laporan menggunakan token khusus integrasi. Worker mengambil pekerjaan dari API kantor. Jadwal kerja dan antrean tetap berada di SQLite.
+## Grup Anshel: 12 pegawai AI, 12 bot Telegram (PR #7)
+
+Fitur ini berbeda dari notifikasi satu bot. Setiap divisi dalam public/catalog.js memiliki bot Telegram sendiri, sedangkan Alya menjadi satu-satunya bot penerima pesan grup melalui n8n. Semua pegawai lain mengirim pesan memakai token masing-masing yang disimpan hanya di Vercel. Tidak ada akun, username, ataupun token yang dibuat otomatis lewat repository.
+
+### Siapkan 12 bot dan grup privat
+
+1. Buat satu grup privat dengan nama misalnya Anshel Virtual Tech - Internal Office. Buat 12 bot lewat @BotFather: Alya (management), Bima (operations), Citra (administration), Dara (hr), Eka (development), Fara (creative), Galih (video), Hana (social), Indra (research), Jihan (marketing), Kirana (qa), Laras (finance). Tambahkan semuanya sebagai anggota grup dan izinkan mereka mengirim pesan.
+2. Gunakan akun bot Alya sebagai pendengar. Nonaktifkan Group Privacy khusus Alya di pengaturan BotFather agar ia dapat menerima pesan manusia dalam grup. Bot-to-Bot Communication Mode dapat diaktifkan untuk pengalaman Telegram, tetapi backend Anshel tetap menolak semua update dari bot sehingga tidak terjadi loop antarbot.
+3. Dapatkan TELEGRAM_CHAT_ID numerik negatif dari message.chat.id Telegram Trigger, dan TELEGRAM_USER_ID dari message.from.id pesan pemilik. Jangan tempel token rahasia ke chat ini atau repository.
+4. Atur variabel privat di Vercel Production: N8N_TOKEN (minimal 24 karakter, berbeda dari WORKER_TOKEN), TELEGRAM_CHAT_ID, TELEGRAM_USER_ID, TELEGRAM_BOT_TOKENS_JSON. Nilai terakhir merupakan satu objek JSON dengan 12 key divisi yang disebut di atas, masing-masing bernilai token BotFather berbeda. Contoh isi nilai yang tidak boleh digunakan sungguhan: management: TOKEN_BOT_ALYA, development: TOKEN_BOT_EKA, dan seterusnya; gunakan format objek JSON valid.
+5. Opsional TELEGRAM_BOT_USERNAMES_JSON adalah objek JSON yang berisi key divisi dan username masing-masing bot tanpa awalan @. Ini membantu pemetaan pesan @AnshelEkaBot. Jika tidak diisi, perintah /tanya Eka | pertanyaan dan sapaan Eka, pertanyaan tetap bisa dipakai.
+6. Redeploy Vercel, lalu cek endpoint POST /api/integrations/office-group/config dengan Header Auth Authorization: Bearer N8N_TOKEN dan body JSON {}. Jika semua siap, respons mengandung configured berisi 12 divisi, missing kosong, dan total 12; tidak ada token yang dikembalikan.
+
+### Dua workflow n8n yang baru
+
+- office_telegram_group_intake.json: Trigger Telegram dari bot Alya, node saring pesan manusia, lalu POST /api/integrations/office-group/message dengan N8N_TOKEN. Hanya menerima pemilik dengan ID pengguna dan grup yang telah diizinkan. Jangan Publish workflow lama office_telegram_intake.json bersamaan untuk bot Alya: satu bot hanya boleh memakai satu Telegram Trigger/webhook aktif.
+- office_telegram_notifications.json: pemicu terjadwal tiap 30 menit Senin-Jumat 09:00-17:30 WIB, kemudian POST /api/integrations/office-group/dispatch dengan N8N_TOKEN. Satu eksekusi menyiarkan maksimum satu event tugas selesai, gagal, atau terhambat. Bot pegawai pemilik divisi mengirim pesan; pada tugas selesai satu respons singkat dari pegawai lain bisa ditambahkan. Maksimal dua pesan per perubahan tugas.
+
+Tidak ada percakapan acak yang mengarang progres. Semua template percakapan mengacu pada audit/status nyata Anshel. Balasan grup bergaya santai tetapi tetap transparan sebagai akun AI. Tidak ada panggilan Gemini tambahan untuk chat, jadi tidak ada biaya LLM yang dipicu hanya karena obrolan.
+
+### Uji dahulu sebelum Publish
+
+1. Pastikan PR sudah di-merge, deployment Production Ready, 12 bot sudah di grup, token privat dan kedua workflow baru sudah diimpor tetapi belum di-Publish.
+2. Pasang Header Auth N8N_TOKEN di node HTTP dari dua workflow. Pasang Telegram bot credential Alya di Trigger masuk.
+3. Jalankan satu kali workflow jadwal grup **sebelum** menyelesaikan tugas baru. Respons sent:false benar karena sistem melewatkan backlog lama.
+4. Buat satu tugas Draf AI fiktif di Anshel; jalankan worker Gemini sampai selesai; jalankan workflow jadwal grup sekali lagi. Harus ada pesan dari bot divisi yang bersangkutan, dan dapat diikuti balasan satu rekan kerja.
+5. Di grup, kirim dari akun pemilik: /bantuan, Eka, progresnya gimana?, /tanya Kirana | ada tugas QA?, dan /tugas desain | Buat tiga konsep desain fiktif. Jeda minimal 8 detik antara pesan. Perintah /tugas benar-benar menambah draf ke antrean; pengerjaannya mengikuti jadwal dan kuota worker yang sudah ada.
+6. Setelah tes privat berhasil, Publish kedua workflow. Unpublish untuk menghentikan aktivitas otomatis. Jangan Publish Telegram Trigger lama Alya bersamaan.
+
+Keamanan: pesan dari akun bot diabaikan; ID grup/pemilik diperiksa ulang di backend; token N8N digunakan pada API; maksimum 20 pesan owner per hari WIB, minimum 8 detik antar pesan, update ID diproses sekali. Pesan status memuat divisi, proyek singkat, ID tugas; tidak pernah mengirim teks tugas, artefak, detail error, atau token. Pengiriman terjadwal hanya pada jam kantor, bukan setiap malam. Jika Telegram sudah menerima pesan tetapi ACK gagal, pengiriman ulang dapat terjadi setelah lease 10 menit. Panggilan satu event belum menjamin tepat satu kali secara mutlak.
+
+## Workflow Telegram lama (perintah masuk dan ringkasan harian)
+
+Kedua workflow lama ini terpisah dari notifikasi status terbaru dan belum teraktivasi. Gunakan instance n8n Cloud milik Dika. Perintah Telegram dan laporan menggunakan token khusus integrasi. Worker mengambil pekerjaan dari API kantor. Jadwal kerja dan antrean tetap berada di database privat Anshel (PostgreSQL pada produksi, SQLite pada pengujian lokal).
 
 1. Siapkan bot Telegram khusus untuk kantor. Isi `TELEGRAM_USER_ID` dan `TELEGRAM_CHAT_ID` dengan ID numerik dari percakapan privat Dika. Gunakan token acak minimal 24 karakter sebagai `N8N_TOKEN`, lalu jalankan ulang server.
-2. Setelah jalur jaringan diotorisasi, siapkan gateway HTTPS yang meneruskan **hanya** `POST /api/integrations/telegram` dan `POST /api/integrations/report` ke server lokal. Layar kantor dan API worker tetap menggunakan loopback. Terapkan pembatasan permintaan di gateway.
+2. Pada Vercel Production gunakan host HTTPS `https://anshel-virtual.vercel.app` untuk endpoint integrasi, bukan gateway lokal. Ganti hostname contoh di dua JSON lama secara manual dan pastikan `N8N_TOKEN` sudah tersimpan sebagai environment variable privat.
 3. Impor kedua JSON. Pada setiap HTTP Request, ganti hostname contoh. Pilih kredensial **Header Auth** dengan nama header `Authorization` dan nilai `Bearer <N8N_TOKEN>`.
 4. Pasang kredensial bot yang sama pada Telegram Trigger dan node balasan. Gunakan satu Telegram Trigger aktif per bot. Pastikan zona workflow `Asia/Jakarta`.
 5. Uji `/status` dari chat Dika. Verifikasi kode 403 dari identitas lain dan ketiadaan balasan. Coba `/diagnostik` saat worker lokal hidup dan jadwal mengizinkan eksekusi. Ambil UUID dari balasan, lalu jalankan `/hasil UUID`.
 6. Uji Ringkasan harian secara manual. Jadwalnya 17:05 WIB pada hari kerja. Isi laporan menampilkan status antrean saat laporan diambil. Aktifkan workflow setelah uji privat berhasil.
 
-Perintah tersedia lewat `/bantuan`. Frasa seperti “Suruh tim SEO audit website BCIFT” memetakan divisi dan membuat tugas draf. Draf memerlukan Ollama. Eksekusi audit situs belum terpasang. Tugas draf dan diagnostik menghasilkan artefak lokal.
+Perintah tersedia lewat `/bantuan`. Frasa seperti “Suruh tim SEO audit website BCIFT” memetakan divisi dan membuat tugas draf. Draf teks dapat dikerjakan worker Gemini cloud jika diklaim; eksekusi audit situs asli belum tersedia. Artefak disimpan secara privat di database Anshel.
 
 Persetujuan dan penolakan diproses oleh API kantor. Pekerjaan publikasi, pembayaran, akses repositori, dan perubahan eksternal belum memiliki alat eksekusi. Notifikasi perubahan status dan kegagalan per tugas belum dihubungkan ke Telegram.
 

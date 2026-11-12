@@ -1,0 +1,89 @@
+{
+  "name": "Anshel · Grup AI 12 pegawai — chat pemilik",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "30e23111-34a9-4897-b01a-000000000001",
+      "name": "Pesan grup via Alya",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "30e23111-34a9-4897-b01a-000000000004"
+    },
+    {
+      "parameters": {
+        "jsCode": "const update=$input.first().json;\nconst message=update.message;\nif (!message || !['group','supergroup'].includes(message.chat?.type) ||\n  message.from?.is_bot!==false || typeof message.text!=='string' || !message.from?.id) return [];\nreturn [{json:{chatId:String(message.chat.id),userId:String(message.from.id),\n  updateId:String(update.update_id),text:message.text,isBot:false}}];"
+      },
+      "id": "30e23111-34a9-4897-b01a-000000000002",
+      "name": "Saring pesan manusia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/office-group/message",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 25000
+        }
+      },
+      "id": "30e23111-34a9-4897-b01a-000000000003",
+      "name": "Tanya pegawai AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Pesan grup via Alya": {
+      "main": [
+        [
+          {
+            "node": "Saring pesan manusia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saring pesan manusia": {
+      "main": [
+        [
+          {
+            "node": "Tanya pegawai AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}

@@ -68,6 +68,61 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
 
   return {
     close: () => pool.end(),
+    async claimTelegramNotification() {
+      return transaction(async client => {
+        // Different advisory lock from task claims; serializes multiple n8n polls.
+        await query('SELECT pg_advisory_xact_lock(17293107)',[],client);
+        const key='telegram_notifications_v1';
+        const checkpoint=await readSetting(key,null,client);
+        if (!checkpoint) {
+          const row=await one('SELECT COALESCE(MAX(id),0) AS id FROM anshel.audit',[],client);
+          await writeSetting(key,{cursor:row.id,pending:null},client);
+          return null;
+        }
+        if (checkpoint.pending && checkpoint.pending.until > now()) return null;
+        const event=await one(`SELECT a.id AS "eventId",a.at,a.task AS "taskId",a.action,
+          t.division,t.project FROM anshel.audit AS a JOIN anshel.tasks AS t ON t.id=a.task
+          WHERE a.id>$1 AND a.action IN ('completed','blocked','failed')
+          ORDER BY a.id LIMIT 1`,[checkpoint.cursor],client);
+        if (!event) return null;
+        const token=randomUUID();
+        await writeSetting(key,{cursor:checkpoint.cursor,
+          pending:{id:event.eventId,token,until:now()+10*60_000}},client);
+        return {...event,token};
+      });
+    },
+    async ackTelegramNotification(eventId,token) {
+      if (!Number.isSafeInteger(eventId) || eventId<1 || typeof token !== 'string' || !token) {
+        throw new Fault(400,'Konfirmasi notifikasi tidak valid.');
+      }
+      return transaction(async client => {
+        await query('SELECT pg_advisory_xact_lock(17293107)',[],client);
+        const key='telegram_notifications_v1';
+        const checkpoint=await readSetting(key,null,client);
+        if (!checkpoint?.pending || checkpoint.pending.id!==eventId ||
+          checkpoint.pending.token!==token || checkpoint.pending.until<=now()) {
+          throw new Fault(409,'Sewa notifikasi sudah berakhir atau tidak cocok.');
+        }
+        await writeSetting(key,{cursor:eventId,pending:null},client);
+      });
+    },
+    async reserveOfficeGroupUpdate(updateId) {
+      if (typeof updateId !== 'string' || !/^[0-9]{1,24}$/.test(updateId)) throw new Fault(400,'ID pesan Telegram tidak valid.');
+      return transaction(async client => {
+        await query('SELECT pg_advisory_xact_lock(17293108)',[],client);
+        const key='office_group_updates_v1';
+        const snapshot=await readSetting(key,{seen:[],at:0,date:'',used:0},client);
+        const cutoff=now()-24*3600_000;
+        const seen=(snapshot.seen||[]).filter(item => item.at>cutoff).slice(-100);
+        if (seen.some(item => item.id===updateId)) return false;
+        const today=scheduledDraftDay(new Date(now()));
+        const used=snapshot.date===today ? snapshot.used : 0;
+        if (now()-snapshot.at<8000 || used>=20) throw new Fault(429,'Batas pesan grup tercapai. Coba lagi nanti.');
+        seen.push({id:updateId,at:now()});
+        await writeSetting(key,{seen,at:now(),date:today,used:used+1},client);
+        return true;
+      });
+    },
     async sessionActive(token) {
       const hash = createHash('sha256').update(token).digest('hex');
       const session = await one('SELECT expires_at FROM anshel.sessions WHERE token_hash=$1', [hash]);

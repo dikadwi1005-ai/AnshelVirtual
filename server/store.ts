@@ -80,6 +80,59 @@ export function createStore(path: string, now = Date.now) {
 
   return {
     close:() => db.close(),
+    // Outbox notifications are stored in the existing setting table and survive restarts.
+    claimTelegramNotification() {
+      return transaction(() => {
+        const key='telegram_notifications_v1';
+        let checkpoint=readSetting(key,null);
+        // First poll starts from NOW to avoid spamming historical completed tasks.
+        if (!checkpoint) {
+          const highest=get('SELECT COALESCE(MAX(id),0) AS id FROM audit').id;
+          writeSetting(key,{cursor:highest,pending:null});
+          return null;
+        }
+        if (checkpoint.pending && checkpoint.pending.until > now()) return null;
+        const event=get(`SELECT a.id AS eventId,a.at,a.task AS taskId,a.action,
+          t.division,t.project FROM audit AS a JOIN tasks AS t ON t.id=a.task
+          WHERE a.id>? AND a.action IN ('completed','blocked','failed')
+          ORDER BY a.id LIMIT 1`,checkpoint.cursor);
+        if (!event) return null;
+        const token=randomUUID();
+        writeSetting(key,{cursor:checkpoint.cursor,
+          pending:{id:event.eventId,token,until:now()+10*60_000}});
+        return {...event,token};
+      });
+    },
+    ackTelegramNotification(eventId,token) {
+      if (!Number.isSafeInteger(eventId) || eventId<1 || typeof token !== 'string' || !token) {
+        throw new Fault(400,'Konfirmasi notifikasi tidak valid.');
+      }
+      return transaction(() => {
+        const key='telegram_notifications_v1';
+        const checkpoint=readSetting(key,null);
+        if (!checkpoint?.pending || checkpoint.pending.id!==eventId ||
+          checkpoint.pending.token!==token || checkpoint.pending.until<=now()) {
+          throw new Fault(409,'Sewa notifikasi sudah berakhir atau tidak cocok.');
+        }
+        writeSetting(key,{cursor:eventId,pending:null});
+      });
+    },
+    reserveOfficeGroupUpdate(updateId) {
+      if (typeof updateId !== 'string' || !/^[0-9]{1,24}$/.test(updateId)) throw new Fault(400,'ID pesan Telegram tidak valid.');
+      return transaction(() => {
+        const key='office_group_updates_v1';
+        const snapshot=readSetting(key,{seen:[],at:0,date:'',used:0});
+        const cutoff=now()-24*3600_000;
+        const seen=(snapshot.seen||[]).filter(item => item.at>cutoff).slice(-100);
+        if (seen.some(item => item.id===updateId)) return false;
+        const today=scheduledDraftDay(new Date(now()));
+        const used=snapshot.date===today ? snapshot.used : 0;
+        if (now()-snapshot.at<8000 || used>=20) throw new Fault(429,'Batas pesan grup tercapai. Coba lagi nanti.');
+        seen.push({id:updateId,at:now()});
+        writeSetting(key,{seen,at:now(),date:today,used:used+1});
+        return true;
+      });
+    },
     state() {
       if (get("SELECT id FROM tasks WHERE status='running' AND lease_until<=? LIMIT 1",now())) transaction(expireLeases);
       const running = all("SELECT id,division,description,status,kind,started FROM tasks WHERE status='running' AND lease_until>?",now());

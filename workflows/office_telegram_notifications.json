@@ -1,0 +1,68 @@
+{
+  "name": "Anshel · Grup AI 12 pegawai — update kerja",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0,30 9-17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "9d87afcb-8dd5-4708-b2c4-000000000001",
+      "name": "Jadwal ngobrol kantor",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/office-group/dispatch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 25000
+        }
+      },
+      "id": "9d87afcb-8dd5-4708-b2c4-000000000002",
+      "name": "Kirim pembaruan dari pegawai",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        270,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Jadwal ngobrol kantor": {
+      "main": [
+        [
+          {
+            "node": "Kirim pembaruan dari pegawai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}
