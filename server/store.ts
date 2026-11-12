@@ -160,14 +160,20 @@ export function createStore(path: string, now = Date.now) {
       return transaction(() => {
         const pending=readSetting('office_group_ai_pending_v1',{});
         const cleanPending=Object.fromEntries(Object.entries(pending).filter(([,p])=>p.until>now()));
-        const history=readSetting('office_group_ai_history_v1',[])
-          .filter(h=>h.division===division && h.at>now()-7*24*3600_000)
+        const recent=readSetting('office_group_ai_history_v1',[])
+          .filter(h=>h && h.at>now()-7*24*3600_000);
+        const history=recent.filter(h=>h.division===division)
           .slice(-6).map(h=>({question:h.question,reply:h.reply}));
+        // For team calls, recall multiple colleagues' prior Telegram replies,
+        // never just Alya's history. Never expose unrelated divisions.
+        const groupHistory=recipients?recent
+          .filter(h=>recipients.includes(h.division))
+          .slice(-12).map(h=>({division:h.division,question:h.question,reply:h.reply})) : null;
         const ticket=randomUUID();
         cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000,
           ...(recipients?{recipients}:{}),};
         writeSetting('office_group_ai_pending_v1',cleanPending);
-        return {ticket,history};
+        return {ticket,history,...(groupHistory?{groupHistory}:{})};
       });
     },
     consumeOfficeGroupAI(updateId,ticket) {
