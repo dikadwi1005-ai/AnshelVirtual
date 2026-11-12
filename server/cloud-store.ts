@@ -110,6 +110,17 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)},client);
       });
     },
+    async claimOfficeGroupCheckin() {
+      return transaction(async client => {
+        await query('SELECT pg_advisory_xact_lock(17293110)',[],client);
+        const key='office_virtual_checkin_v1';
+        const day=scheduledDraftDay(new Date(now()));
+        const value=await readSetting(key,{date:''},client);
+        if (value.date===day) return false;
+        await writeSetting(key,{date:day},client);
+        return true;
+      });
+    },
     async reserveOfficeGroupUpdate(updateId) {
       if (typeof updateId !== 'string' || !/^[0-9]{1,24}$/.test(updateId)) throw new Fault(400,'ID pesan Telegram tidak valid.');
       return transaction(async client => {
