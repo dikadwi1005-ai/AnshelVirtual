@@ -117,6 +117,22 @@ export function createStore(path: string, now = Date.now) {
         writeSetting(key,{cursor:eventId,pending:null});
       });
     },
+    reserveOfficeGroupUpdate(updateId) {
+      if (typeof updateId !== 'string' || !/^[0-9]{1,24}$/.test(updateId)) throw new Fault(400,'ID pesan Telegram tidak valid.');
+      return transaction(() => {
+        const key='office_group_updates_v1';
+        const snapshot=readSetting(key,{seen:[],at:0,date:'',used:0});
+        const cutoff=now()-24*3600_000;
+        const seen=(snapshot.seen||[]).filter(item => item.at>cutoff).slice(-100);
+        if (seen.some(item => item.id===updateId)) return false;
+        const today=scheduledDraftDay(new Date(now()));
+        const used=snapshot.date===today ? snapshot.used : 0;
+        if (now()-snapshot.at<8000 || used>=20) throw new Fault(429,'Batas pesan grup tercapai. Coba lagi nanti.');
+        seen.push({id:updateId,at:now()});
+        writeSetting(key,{seen,at:now(),date:today,used:used+1});
+        return true;
+      });
+    },
     state() {
       if (get("SELECT id FROM tasks WHERE status='running' AND lease_until<=? LIMIT 1",now())) transaction(expireLeases);
       const running = all("SELECT id,division,description,status,kind,started FROM tasks WHERE status='running' AND lease_until>?",now());
