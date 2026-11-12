@@ -3,6 +3,7 @@ import { createCloudStore } from '../server/cloud-store.ts';
 import { createDialogue } from '../server/dialogue.ts';
 import { telegram } from '../server/telegram.ts';
 import { configuredOfficeBots, dispatchOfficeGroupEvent, officeGroupConfig, sendOfficeGroupOwnerMessage } from '../server/telegram-office.ts';
+import { prepareOfficeNaturalChat, deliverOfficeNaturalChat } from '../server/telegram-natural.ts';
 import { Fault } from '../server/store.ts';
 
 // Server-side only. Credentials must be configured in Vercel Environment Variables.
@@ -103,6 +104,12 @@ async function route(request, injectedStore = null, env = process.env) {
         const input=await readJson(request);
         if (Object.keys(input).length) throw new Fault(400,'Pemicu grup tidak menerima parameter.');
         return respond(await dispatchOfficeGroupEvent(office,env));
+      }
+      if (path === '/api/integrations/office-group/ai/prepare') {
+        return respond(await prepareOfficeNaturalChat(office,env,await readJson(request)));
+      }
+      if (path === '/api/integrations/office-group/ai/finish') {
+        return respond(await deliverOfficeNaturalChat(office,env,await readJson(request)));
       }
       if (path === '/api/integrations/office-group/message') {
         const input=await readJson(request);
