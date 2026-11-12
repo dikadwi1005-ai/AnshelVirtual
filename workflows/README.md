@@ -1,5 +1,19 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3H — Memori percakapan grup Telegram lintas pegawai
+
+Sebelumnya, panggilan "Guys" hanya memakai pertanyaan terbaru dan fakta tugas. Meskipun kantor sudah menyimpan jawaban masing-masing pegawai, grup tidak memiliki konteks bersama. Sekarang saat **panggilan kolektif** ditujukan kepada pegawai bebas, satu request Gemini menerima **ringkasan maksimal lima putaran percakapan terbaru** dari Alya, Bima, Citra, dan Dara, termasuk saat sebelumnya pengguna berbicara secara pribadi di grup dengan salah satu pegawai. **Balasan yang dicatat berasal dari grup Telegram privat yang sama**, bukan sumber luar.
+
+- Penyimpanan existing `office_group_ai_history_v1` dipakai kembali di SQLite dan PostgreSQL. Tidak ada skema tabel baru, token, workflow tambahan, atau trigger Telegram baru.
+- Backend membatasi konteks pada maksimal 12 entri percakapan dari tujuh hari terakhir, memotong isi masing-masing entri dan menggabungkan balasan pada pertanyaan bersama yang sama. Maksimal lima putaran dimasukkan ke request untuk menghemat token.
+- Riwayat antarpegawai bisa dipakai memahami kata "tadi", "yang barusan", atau "lanjut bahasan itu" tanpa memaksa pemilik menjelaskan topik berulang. Model diinstruksikan bahwa **riwayat bukan bukti penyelesaian pekerjaan**, dan teks lama berisi klaim pekerjaan personal yang tidak didukung dikeluarkan dari konteks.
+- Hanya empat bot Telegram yang sudah aktif yang boleh menjadi pemberi jawaban. Pegawai yang sedang mengerjakan tugas tidak ikut membalas, tetapi pesan lamanya boleh menjadi konteks historis. Tidak membuat loop antarbot atau percakapan otomatis tanpa pesan pemilik.
+- Bila riwayat belum cukup untuk memahami rujukan, pegawai boleh bertanya singkat, **tidak mengarang peristiwa, rencana, atau pekerjaan**.
+- Pengujian mencakup konteks lintas pegawai, pegawai sibuk, filter divisi belum aktif, batas konteks, dan berakhirnya memori sesudah tujuh hari.
+
+**Pengujian dari HP setelah Production Ready:** kirim `Bima, kalau ada error nanti gimana?`; tunggu balasan, kemudian kirim `Guys, lanjut bahasan Bima yang tadi, menurut kalian gimana?`. Alya, Citra, dan Dara harus dapat memahami bahwa pembahasannya tentang cara merespons error, tanpa mengarang bahwa error benar-benar terjadi. Jangan menganggap aktivitas virtual sebagai pemeriksaan sistem sungguhan.
+
+
 ## Phase 3G — Mencegah klaim pekerjaan selesai yang tidak terbukti
 
 Saat diuji pada 13 November 2026, panggilan "Guys, besok semua semangat ya! Ada yang mau disampaikan?" menghasilkan respons lebih alami, namun beberapa pegawai mengklaim pekerjaan yang belum dibuktikan sistem:
