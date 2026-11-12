@@ -16,6 +16,8 @@ export function validateWorkerTaskId(taskId) {
 }
 
 const leaseDuration = 120_000;
+const draftLeaseDuration = 10 * 60_000;
+const leaseFor = kind => kind === 'draft' ? draftLeaseDuration : leaseDuration;
 const types = ['diagnostic','draft'];
 
 export function createStore(path: string, now = Date.now) {
@@ -185,7 +187,7 @@ export function createStore(path: string, now = Date.now) {
         if (!task) return null;
         const token = randomUUID();
         run("UPDATE tasks SET status='running',started=?,attempts=attempts+1,lease=?,lease_until=? WHERE id=?",
-          now(),token,now()+leaseDuration,task.id);
+          now(),token,now()+leaseFor(task.kind),task.id);
         log(task.id,'worker','assigned',task.division);
         log(task.id,'worker','running');
         return {...publicTask(find(task.id)),token};
@@ -193,9 +195,9 @@ export function createStore(path: string, now = Date.now) {
     },
     heartbeat(id,token) {
       return transaction(() => {
-        activeLease(id,token);
+        const active=activeLease(id,token);
         writeSetting('worker_at',now());
-        run('UPDATE tasks SET lease_until=? WHERE id=?',now()+leaseDuration,id);
+        run('UPDATE tasks SET lease_until=? WHERE id=?',now()+leaseFor(active.kind),id);
       });
     },
     finish(id,token,input) {
