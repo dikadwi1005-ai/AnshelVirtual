@@ -122,6 +122,16 @@ export function createStore(path: string, now = Date.now) {
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)});
       });
     },
+    claimOfficeGroupCheckin() {
+      return transaction(() => {
+        const key='office_virtual_checkin_v1';
+        const day=scheduledDraftDay(new Date(now()));
+        const value=readSetting(key,{date:''});
+        if (value.date===day) return false;
+        writeSetting(key,{date:day});
+        return true;
+      });
+    },
     reserveOfficeGroupUpdate(updateId) {
       if (typeof updateId !== 'string' || !/^[0-9]{1,24}$/.test(updateId)) throw new Fault(400,'ID pesan Telegram tidak valid.');
       return transaction(() => {
