@@ -9,6 +9,8 @@ import { Fault, validateWorkerTaskId } from './store.ts';
 pg.types.setTypeParser(20, value => Number(value));
 
 const leaseDuration = 120_000;
+const draftLeaseDuration = 10 * 60_000;
+const leaseFor = kind => kind === 'draft' ? draftLeaseDuration : leaseDuration;
 const kindsAllowed = ['diagnostic', 'draft'];
 const fields = `id,request_id,creator,division,project,description,kind,priority,status,
   urgent,created,started,ended,attempts,lease,lease_until,result,sha256,error`;
@@ -224,7 +226,7 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         if (!task) return null;
         const token = randomUUID();
         await query(`UPDATE anshel.tasks SET status='running',started=$1,attempts=attempts+1,lease=$2,lease_until=$3 WHERE id=$4`,
-          [now(), token, now()+leaseDuration, task.id], client);
+          [now(), token, now()+leaseFor(task.kind), task.id], client);
         await log(task.id, 'worker', 'assigned', task.division, client);
         await log(task.id, 'worker', 'running', '', client);
         return { ...publicTask(await find(task.id, client)), token };
@@ -232,9 +234,9 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
     },
     async heartbeat(id, token) {
       return transaction(async client => {
-        await activeLease(id, token, client);
+        const active = await activeLease(id, token, client);
         await writeSetting('worker_at', now(), client);
-        await query('UPDATE anshel.tasks SET lease_until=$1 WHERE id=$2', [now()+leaseDuration,id], client);
+        await query('UPDATE anshel.tasks SET lease_until=$1 WHERE id=$2', [now()+leaseFor(active.kind),id], client);
       });
     },
     async finish(id, token, input) {
