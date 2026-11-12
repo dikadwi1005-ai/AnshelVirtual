@@ -139,10 +139,14 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         return true;
       });
     },
-    async prepareOfficeGroupAI(updateId, division, question) {
+    async prepareOfficeGroupAI(updateId, division, question, recipients = null) {
       if (typeof updateId!=='string' || !/^[0-9]{1,24}$/.test(updateId) ||
           !divisions.some(d=>d.id===division) || typeof question!=='string' ||
-          !question.trim() || question.length>1500) throw new Fault(400,'Permintaan percakapan tidak valid.');
+          !question.trim() || question.length>1500 || (recipients!==null &&
+          (!Array.isArray(recipients)||recipients.length<1||recipients.length>4||
+          recipients.some(id=>!['management','operations','administration','hr'].includes(id))||
+          new Set(recipients).size!==recipients.length)))
+        throw new Fault(400,'Permintaan percakapan tidak valid.');
       return transaction(async client => {
         await query('SELECT pg_advisory_xact_lock(17293109)',[],client);
         const pending=await readSetting('office_group_ai_pending_v1',{},client);
@@ -151,7 +155,8 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
           .filter(h=>h.division===division && h.at>now()-7*24*3600_000)
           .slice(-6).map(h=>({question:h.question,reply:h.reply}));
         const ticket=randomUUID();
-        cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000};
+        cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000,
+          ...(recipients?{recipients}:{}),};
         await writeSetting('office_group_ai_pending_v1',cleanPending,client);
         return {ticket,history};
       });
@@ -170,7 +175,8 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         }
         delete pending[updateId];
         await writeSetting('office_group_ai_pending_v1',pending,client);
-        return {division:item.division,question:item.question};
+        return {division:item.division,question:item.question,
+          ...(Array.isArray(item.recipients)?{recipients:item.recipients}:{}),};
       });
     },
     async rememberOfficeGroupAI(division,question,reply) {

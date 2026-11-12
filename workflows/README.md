@@ -1,5 +1,25 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3E — Identitas pemilik dan panggilan semua pegawai
+
+**Perilaku baru Telegram, tanpa impor ulang workflow:** Telegram pemilik sudah memiliki identitas yang terverifikasi melalui TELEGRAM_USER_ID. Gemini kini mendapat instruksi bahwa pemilik berbicara sebagai pimpinan Anshel Virtual Tech, bukan pelanggan. Gaya empat karakter tetap berbeda, santai, tanpa basa-basi bot atau pemanggilan nama pemilik berulang. **'Pak' boleh sesekali, maksimal satu panggilan dalam respons grup**, bukan sapaan wajib pada setiap pesan.
+
+### Panggilan untuk seluruh pegawai yang bebas
+
+- Pesan seperti **'Guys, lagi ngapain?'**, **'Halo semua, kabar?'**, **'Teman-teman, semangat ya'**, **'Oke, besok semua semangat ya'**, atau **'Tim, bisa dengar sebentar?'** diarahkan sebagai panggilan kolektif.
+- Hanya **Alya, Bima, Citra, Dara** yang sudah diaktifkan sebagai bot Telegram yang bisa merespons. **Delapan pegawai lain tetap ditunda.**
+- Pegawai dengan tugas yang **benar-benar sedang dieksekusi** di `state.running`, `state.tasks` berstatus `running`, atau `state.people[id].executing=true` **tidak mengirim balasan**. Tugas yang baru antre/berstatus blocked tidak disamakan dengan sedang menjalankan tugas.
+- Satu pesan pemilik menggunakan **satu request Gemini** untuk menyusun JSON pendek per pegawai. Backend mengikat daftar penerima ke tiket sekali pakai dan mengirim dari token bot masing-masing, maksimum **empat balasan**. Gemini tidak boleh menambah bot atau mengubah penerima.
+- Jawaban grup menggunakan data terbatas terkait tugas dan aktivitas avatar simulasi; tidak mengarang tindakan, publikasi, cek server, atau hadir secara fisik. Jika Gemini gagal atau respons JSON tidak valid, backend memakai respons pendek berbasis karakter.
+- Jika semua pegawai sedang mengerjakan tugas atau tidak ada bot terkonfigurasi, **tidak ada bot yang menyela**. Workflow akan mencatat `sent:false`, `reason:all-workers-busy-or-offline`. Batas pesan pemilik 1.000/hari WIB, jeda 2 detik, dan pemeriksaan grup/pemilik tetap berlaku.
+- Panggilan nama yang jelas di awal seperti **'Alya, coba tanya semua'** tetap ditujukan **hanya kepada Alya**. Frasa **'semua tugas'** bukan panggilan semua pegawai. Perintah slash yang ada tidak berubah.
+
+### Pengujian lewat HP
+
+Setelah PR ini di-merge dan Vercel Production Ready, kirim **'Guys, besok semua semangat ya!'** di grup Telegram internal Anshel. Bila empat bot bebas, masing-masing seharusnya membalas satu kali dengan gaya berbeda. Untuk menguji pengecualian sibuk secara nyata, jalankan satu tugas terverifikasi hingga statusnya `running`, lalu ulangi panggilan setelah jeda 2 detik. Bot yang sedang bekerja tidak seharusnya membalas.
+
+Workflow Natural Gemini yang sudah Published tetap mempunyai **7 node** dan **1 Telegram Trigger**. Tidak perlu edit n8n, credential, atau database schema. Riwayat jawaban per pegawai tetap dipakai untuk obrolan berikutnya, tetapi panggilan kolektif tidak menerbitkan tugas.
+
 ## Pembaruan kapasitas obrolan privat Telegram (1000 pesan/hari)
 
 Untuk percakapan aktif bersama Alya, Bima, Citra, dan Dara, backend kini menerima **maksimal 1.000 pesan pemilik per hari WIB** dengan **jeda minimal 2 detik antar pesan**. Kebijakan ini berlaku konsisten pada database produksi PostgreSQL dan mode lokal SQLite. Pesan baru tidak diblokir pada batas lama 20 pesan; penghitung lama dipertahankan dan dibandingkan dengan kuota baru. Kuota harian berganti pada pukul 00.00 WIB.
