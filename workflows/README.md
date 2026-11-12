@@ -56,7 +56,7 @@ Impor `office_telegram_notifications.json` sebagai **workflow baru**, tanpa meng
 Kedua workflow lama ini terpisah dari notifikasi status terbaru dan belum teraktivasi. Gunakan instance n8n Cloud milik Dika. Perintah Telegram dan laporan menggunakan token khusus integrasi. Worker mengambil pekerjaan dari API kantor. Jadwal kerja dan antrean tetap berada di database privat Anshel (PostgreSQL pada produksi, SQLite pada pengujian lokal).
 
 1. Siapkan bot Telegram khusus untuk kantor. Isi `TELEGRAM_USER_ID` dan `TELEGRAM_CHAT_ID` dengan ID numerik dari percakapan privat Dika. Gunakan token acak minimal 24 karakter sebagai `N8N_TOKEN`, lalu jalankan ulang server.
-2. Setelah jalur jaringan diotorisasi, siapkan gateway HTTPS yang meneruskan **hanya** `POST /api/integrations/telegram` dan `POST /api/integrations/report` ke server lokal. Layar kantor dan API worker tetap menggunakan loopback. Terapkan pembatasan permintaan di gateway.
+2. Pada Vercel Production gunakan host HTTPS `https://anshel-virtual.vercel.app` untuk endpoint integrasi, bukan gateway lokal. Ganti hostname contoh di dua JSON lama secara manual dan pastikan `N8N_TOKEN` sudah tersimpan sebagai environment variable privat.
 3. Impor kedua JSON. Pada setiap HTTP Request, ganti hostname contoh. Pilih kredensial **Header Auth** dengan nama header `Authorization` dan nilai `Bearer <N8N_TOKEN>`.
 4. Pasang kredensial bot yang sama pada Telegram Trigger dan node balasan. Gunakan satu Telegram Trigger aktif per bot. Pastikan zona workflow `Asia/Jakarta`.
 5. Uji `/status` dari chat Dika. Verifikasi kode 403 dari identitas lain dan ketiadaan balasan. Coba `/diagnostik` saat worker lokal hidup dan jadwal mengizinkan eksekusi. Ambil UUID dari balasan, lalu jalankan `/hasil UUID`.
