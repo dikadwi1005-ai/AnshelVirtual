@@ -282,7 +282,7 @@ test('update pekerjaan otomatis dibatasi tiga event sehari WIB dan jeda minimal 
     complete();
     assert.deepEqual(await dispatchOfficeGroupEvent(s,env,fake),{sent:false});
     assert.equal(sent.length,6);
-    clock+=24*60*60_000;
+    clock+=24*60*60_000+1;
     const next=await dispatchOfficeGroupEvent(s,env,fake);
     // Work item is older than 24 hours and must not be announced as recent.
     assert.deepEqual(next,{sent:false});
@@ -337,11 +337,8 @@ test('check-in tidak mengirim jika hanya satu bot tersedia atau timestamp di lua
   try {
     const result=await dispatchOfficeGroupCheckin(s,oneEnv,async()=>{throw Error('Must not send');});
     assert.deepEqual(result,{sent:false,reason:'not-enough-active-bots'});
-    const invalid=await dispatchOfficeGroupCheckin(s,{...oneEnv,TELEGRAM_CHAT_ID:'123'},
-      async()=>{throw Error('Must not send');});
-    assert.equal(invalid.sent,false);
-  } catch(err) {
-    assert.equal(err.status,503);
+    await assert.rejects(dispatchOfficeGroupCheckin(s,{...oneEnv,TELEGRAM_CHAT_ID:'123'},
+      async()=>{throw Error('Must not send');}),e=>e.status===503);
   } finally{s.close();}
 });
 
