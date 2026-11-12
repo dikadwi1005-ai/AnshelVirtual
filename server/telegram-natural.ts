@@ -2,6 +2,8 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply } from './telegram-office.ts';
+import { isCollectiveCall,availableOfficeResponders,buildOfficeCollectiveRequest,
+  parseOfficeCollectiveResponse } from './telegram-group.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -126,6 +128,9 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'Kamu adalah '+person.employee+', pegawai AI Anshel Virtual Tech yang sedang berbicara di grup Telegram privat.',
     persona[division],
     'Balas dalam Bahasa Indonesia sehari-hari seperti rekan kerja saat chat, alami dan spesifik. Biasanya 1-3 kalimat pendek, di bawah 320 karakter.',
+    'Pengirim pesan adalah pemilik sekaligus pimpinan Anshel Virtual Tech, bukan pelanggan. Sapa dengan hormat tetapi tetap santai sebagai rekan kantor; jangan terlalu formal atau menjilat.',
+    'Kamu boleh kadang menyebut "Pak" saat menerima arahan, tapi JANGAN setiap balasan. Jangan sebut nama pemilik kecuali dia sendiri meminta. Sebagian besar pesan langsung jawab inti tanpa panggilan.',
+    'Jangan bersikap seperti bot layanan pelanggan: hindari pola "Siap, ada lagi yang bisa dibantu?", pembuka berulang, dan anjuran format slash kecuali memang diminta.',
     'Utamakan pertanyaan TERAKHIR. Kalau ada dua pertanyaan, jawab keduanya. Jangan menyelipkan statistik atau topik lain yang tidak diminta.',
     'Nama kamu boleh disebut di tengah atau akhir pesan, misalnya "Eh, Bima lagi ngapain?". Anggap itu pertanyaan untukmu jika kamu adalah Bima; jawab langsung sebagai dirimu sendiri, bukan melaporkan Bima sebagai orang ketiga.',
     'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar YANG TERCATAT di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
@@ -178,6 +183,17 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     return {mode:'handled',...done};
   }
   const state=await store.state();
+  const configured=configuredOfficeBots(env).configured;
+  if(isCollectiveCall(data.text)) {
+    const recipients=availableOfficeResponders(state,configured);
+    if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
+    // All four currently busy or not connected: no ungrounded "all present" message.
+    if(!recipients.length) return {mode:'handled',sent:false,reason:'all-workers-busy-or-offline'};
+    const saved=await store.prepareOfficeGroupAI(String(data.updateId),'management',data.text,recipients);
+    return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
+      division:'management',group:true,recipients,
+      request:buildOfficeCollectiveRequest(data.text,recipients,state)};
+  }
   const target=officeGroupReply(state,data.text,env);
   if(!configuredOfficeBots(env).configured.includes(target.division))
     throw new Fault(503,'Token pegawai '+target.division+' belum dikonfigurasi.');
@@ -217,6 +233,28 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
   officeGroupConfig(env);
   const pending=await store.consumeOfficeGroupAI(String(input?.updateId??''),input?.ticket);
   const state=await store.state();
+  if(isCollectiveCall(pending.question) && Array.isArray(pending.recipients)) {
+    // The saved server-side ticket fixes allowed identities. Recheck active
+    // execution at delivery: someone who became busy must not answer.
+    const available=new Set(availableOfficeResponders(state,configuredOfficeBots(env).configured));
+    const recipients=pending.recipients.filter(id=>available.has(id));
+    if(!recipients.length) return {sent:false,group:true,divisions:[],reason:'everyone-busy'};
+    const answers=parseOfficeCollectiveResponse(input?.output,recipients,pending.question,
+      cleanOfficeNaturalResponse);
+    // Send in parallel; n8n's HTTP timeout is 12 seconds and Telegram has a 6s timeout.
+    const attempts=await Promise.allSettled(recipients.map(id=>
+      sendOfficeBotMessage(env,id,answers[id].text,{fetchImpl})));
+    const successful=[];
+    for(let i=0;i<recipients.length;i++) {
+      if(attempts[i].status==='fulfilled') {
+        const id=recipients[i];
+        successful.push(id);
+        await store.rememberOfficeGroupAI(id,pending.question,answers[id].text);
+      }
+    }
+    return {sent:successful.length>0,group:true,divisions:successful,
+      ai:successful.some(id=>answers[id].ai),failed:recipients.length-successful.length};
+  }
   const asksAtmosphere=/\b(?:suasana|ramai|sepi|heboh)\b.{0,35}\bkantor\b|\bkantor\b.{0,35}\b(?:suasana|ramai|sepi|heboh)\b/i.test(pending.question);
   const counts=state.counts||{};
   const completed=Number(counts.completed)||0;
