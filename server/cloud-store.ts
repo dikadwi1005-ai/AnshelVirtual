@@ -70,31 +70,32 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
     close: () => pool.end(),
     async claimTelegramNotification() {
       return transaction(async client => {
-        // Different advisory lock from task claims; serializes multiple n8n polls.
         await query('SELECT pg_advisory_xact_lock(17293107)',[],client);
         const key='telegram_notifications_v1';
         const checkpoint=await readSetting(key,null,client);
         if (!checkpoint) {
           const row=await one('SELECT COALESCE(MAX(id),0) AS id FROM anshel.audit',[],client);
-          await writeSetting(key,{cursor:row.id,pending:null},client);
+          await writeSetting(key,{cursor:row.id,pending:null,date:'',used:0,lastSent:0},client);
           return null;
         }
         if (checkpoint.pending && checkpoint.pending.until > now()) return null;
-        const event=await one(`SELECT a.id AS "eventId",a.at,a.task AS "taskId",a.action,
-          t.division,t.project FROM anshel.audit AS a JOIN anshel.tasks AS t ON t.id=a.task
-          WHERE a.id>$1 AND a.action IN ('completed','blocked','failed')
-          ORDER BY a.id LIMIT 1`,[checkpoint.cursor],client);
+        const today=scheduledDraftDay(new Date(now()));
+        const used=checkpoint.date===today?(checkpoint.used||0):0;
+        if (used>=3 || now()-(checkpoint.lastSent||0)<60*60_000) return null;
+        const sql='SELECT a.id AS "eventId",a.at,a.task AS "taskId",a.action, '+
+          't.division,t.project FROM anshel.audit AS a JOIN anshel.tasks AS t ON t.id=a.task '+
+          "WHERE a.id>$1 AND a.at>=$2 AND a.action IN ('completed','blocked','failed') "+
+          'ORDER BY a.id LIMIT 1';
+        const event=await one(sql,[checkpoint.cursor,now()-24*60*60_000],client);
         if (!event) return null;
         const token=randomUUID();
-        await writeSetting(key,{cursor:checkpoint.cursor,
-          pending:{id:event.eventId,token,until:now()+10*60_000}},client);
+        await writeSetting(key,{...checkpoint,pending:{id:event.eventId,token,until:now()+10*60_000}},client);
         return {...event,token};
       });
     },
-    async ackTelegramNotification(eventId,token) {
-      if (!Number.isSafeInteger(eventId) || eventId<1 || typeof token !== 'string' || !token) {
-        throw new Fault(400,'Konfirmasi notifikasi tidak valid.');
-      }
+    async ackTelegramNotification(eventId,token,sent=true) {
+      if (!Number.isSafeInteger(eventId) || eventId<1 || typeof token !== 'string' || !token ||
+          typeof sent!=='boolean') throw new Fault(400,'Konfirmasi notifikasi tidak valid.');
       return transaction(async client => {
         await query('SELECT pg_advisory_xact_lock(17293107)',[],client);
         const key='telegram_notifications_v1';
@@ -103,7 +104,10 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
           checkpoint.pending.token!==token || checkpoint.pending.until<=now()) {
           throw new Fault(409,'Sewa notifikasi sudah berakhir atau tidak cocok.');
         }
-        await writeSetting(key,{cursor:eventId,pending:null},client);
+        const today=scheduledDraftDay(new Date(now()));
+        const used=checkpoint.date===today?(checkpoint.used||0):0;
+        await writeSetting(key,{cursor:eventId,pending:null,date:today,
+          used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)},client);
       });
     },
     async reserveOfficeGroupUpdate(updateId) {
