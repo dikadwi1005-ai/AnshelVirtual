@@ -40,7 +40,9 @@ npm.cmd ci
 npm.cmd run migrate:sqlite -- "D:\Web Project\VirtualOffice\anshel-virtual-tech\data\office.sqlite"
 ```
 
-Importer menolak sumber yang tidak ada, memeriksa checksum artefak, menolak target yang sudah berisi data, lalu memindahkan isi ketiga tabel dalam **satu transaksi**. Bila terjadi kesalahan, transaksi dibatalkan. Setelah sukses, hapus variabel `DATABASE_URL` dari terminal. Jika SQLite ternyata tidak mempunyai tugas, tidak ada pekerjaan yang perlu dipindahkan.
+Importer membaca snapshot SQLite yang konsisten, memeriksa integritas dan checksum artefak, serta menolak tugas yang masih berjalan. Ketiga tabel di target dikunci selama impor. Isi setiap baris dibandingkan sebelum transaksi disahkan. Target yang sudah berisi data ditolak. Setelah sukses, hapus variabel `DATABASE_URL` dari terminal.
+
+Untuk menyimpan dan memulihkan data cloud, lihat [prosedur backup dan restore](docs/cloud-recovery.md).
 
 ## Jalankan lokal
 
