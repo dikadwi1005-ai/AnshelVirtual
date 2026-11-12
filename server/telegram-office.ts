@@ -292,7 +292,7 @@ export function officeVirtualCheckin(state,configured) {
   ];
   const responses=[
     'Aku lagi '+p2+' di kantor virtual. Kalau nanti ada perkembangan tugas, kita lihat catatan Anshel, ya.',
-    'Avatarku lagi '+p2+' sekarang. Nanti kalau ada update kerjaan, kita bahas dari data yang masuk.',
+    'Avatarku lagi '+p2+' di simulasi kantor. Kalau nanti ada update kerjaan, kita bahas dari catatan Anshel.',
   ];
   return {first,second,text:openers[localDay%openers.length],
     reply:responses[localDay%responses.length]};
