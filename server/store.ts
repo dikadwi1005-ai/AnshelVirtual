@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
-import { canDispatch, defaults, phase, validSchedule } from './schedule.ts';
+import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
 
 export class Fault extends Error {
   status: number;
@@ -169,22 +169,37 @@ export function createStore(path: string, now = Date.now) {
         return {mode:mode(),schedule:schedule()};
       });
     },
-    claim(kinds, taskId = null) {
+    claim(kinds, taskId = null, scheduled = false) {
       if (!Array.isArray(kinds) || kinds.length > types.length || !kinds.every(kind => types.includes(kind))) {
         throw new Fault(400,'Kapabilitas worker tidak valid.');
       }
       validateWorkerTaskId(taskId);
+      if (scheduled && (taskId !== null || kinds.length !== 1 || kinds[0] !== 'draft')) {
+        throw new Fault(400,'Jadwal hanya dapat mengklaim satu draf AI.');
+      }
       return transaction(() => {
         writeSetting('worker_at',now());
         writeSetting('worker_kinds',kinds);
         expireLeases();
-        if (!kinds.length || current() === 'paused') return null;
+        const officePhase = current();
+        if (!kinds.length || officePhase === 'paused' || (scheduled && !canDispatch(officePhase))) return null;
+        let used = 0;
+        const day = scheduled ? scheduledDraftDay(new Date(now())) : '';
+        if (scheduled) {
+          const quota = readSetting('scheduled_draft_quota', null);
+          used = quota?.date === day && Number.isSafeInteger(quota.used) && quota.used >= 0 ? quota.used : 0;
+          if (used >= scheduledDraftDailyLimit) return null;
+        }
         const placeholders = kinds.map(() => '?').join(',');
         const task = get(`SELECT * FROM tasks AS queued WHERE status='queued' AND kind IN (${placeholders})
           AND (? OR urgent=1) AND (? IS NULL OR queued.id=?) AND NOT EXISTS (
             SELECT 1 FROM tasks WHERE status='running' AND division=queued.division
           ) ORDER BY priority DESC,created,rowid LIMIT 1`,...kinds,Number(canDispatch(current())),taskId,taskId);
         if (!task) return null;
+        if (scheduled) {
+          writeSetting('scheduled_draft_quota',{date:day,used:used+1});
+          log(task.id,'worker','scheduled_reserved',day+' '+(used+1)+'/'+scheduledDraftDailyLimit);
+        }
         const token = randomUUID();
         run("UPDATE tasks SET status='running',started=?,attempts=attempts+1,lease=?,lease_until=? WHERE id=?",
           now(),token,now()+leaseFor(task.kind),task.id);
