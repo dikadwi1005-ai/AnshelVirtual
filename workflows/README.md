@@ -1,5 +1,17 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3G — Mencegah klaim pekerjaan selesai yang tidak terbukti
+
+Saat diuji pada 13 November 2026, panggilan "Guys, besok semua semangat ya! Ada yang mau disampaikan?" menghasilkan respons lebih alami, namun beberapa pegawai mengklaim pekerjaan yang belum dibuktikan sistem:
+
+- Alya: "Jadwal dan koordinasi untuk besok sudah saya siapkan ya."
+- Citra: "Catatan penting sudah saya rapikan untuk di cek kembali."
+
+Perubahan ini memperjelas instruksi Gemini serta **memvalidasi balasan sebelum dikirim**. Klaim orang pertama tentang pekerjaan yang "sudah/telah/udah/tadi" disiapkan, dirapikan, disusun, dicek, atau dikerjakan akan ditolak dan diganti jawaban kontekstual jika tidak ada verifikasi aksi tersendiri. Aturan berlaku untuk chat individu dan grup, termasuk saat AI mengirim JSON valid. Status draf yang benar-benar tercatat tetap boleh diceritakan sebagai fakta sistem, tetapi tidak diklaim sebagai tindakan personal tanpa bukti.
+
+Pengujian baru mengambil kalimat **persis dari Telegram**, memeriksa pencampuran jawaban valid dan fallback (hanya balasan Alya/Citra yang diganti), serta memastikan tawaran bantuan dan status draf tercatat tetap diizinkan. Alur tujuh node di n8n tetap tidak berubah; tidak perlu mengimpor workflow atau mengganti credential. Seperti biasa, jangan menganggap status tugas/aktivitas avatar sebagai bukti pemeriksaan server atau penyelesaian pekerjaan nyata.
+
+
 ## Perbaikan respons panggilan "Guys" yang jatuh ke template cadangan (Phase 3F)
 
 Screenshot pengguna menunjukkan empat balasan grup tepat sama seperti template fallback backend, bukan berarti empat respons itu dihasilkan oleh Gemini. **Akar penyebab Gemini yang persis masih perlu dibuktikan dari eksekusi n8n**, sebab node "Periksa jawaban AI" mengirim `output:null` ketika HTTP Gemini gagal, `finishReason` bukan STOP, hasil kosong atau panjang teks lebih dari 700 karakter.

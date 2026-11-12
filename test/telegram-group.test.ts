@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStore } from '../server/store.ts';
 import { buildOfficeNaturalRequest,prepareOfficeNaturalChat,deliverOfficeNaturalChat,
-  cleanOfficeNaturalResponse } from '../server/telegram-natural.ts';
+  cleanOfficeNaturalResponse,unverifiedCompletedWorkClaim } from '../server/telegram-natural.ts';
 import { isCollectiveCall,availableOfficeResponders,buildOfficeCollectiveRequest,
   parseOfficeCollectiveResponse,resolveOfficeCollectiveResponse } from '../server/telegram-group.ts';
 
@@ -226,4 +226,55 @@ test('end-to-end fallback diagnostics return from n8n finish without exposing Ge
     assert.ok(messages.some(x=>/istirahat/i.test(x.body.text)));
     assert.ok(!JSON.stringify(done).includes(allTokens.management));
   }finally {store.close();}
+});
+
+
+test('penyaring memblokir dua klaim kerja palsu dari screenshot Telegram',()=>{
+  const owner='Guys, besok semua semangat ya! Ada yang mau disampaikan?';
+  const alya='Jadwal dan koordinasi untuk besok sudah saya siapkan ya.';
+  const citra='Catatan penting sudah saya rapikan untuk di cek kembali.';
+  assert.equal(unverifiedCompletedWorkClaim(alya),true);
+  assert.equal(unverifiedCompletedWorkClaim(citra),true);
+  assert.notEqual(cleanOfficeNaturalResponse(alya,'Tidak ada pekerjaan tercatat.',owner),alya);
+  assert.notEqual(cleanOfficeNaturalResponse(citra,'Tidak ada pekerjaan tercatat.',owner),citra);
+  const group=resolveOfficeCollectiveResponse(JSON.stringify({
+    management:alya,
+    operations:'Aman, gas terus pokoknya.',
+    administration:citra,
+    hr:'Tetap jaga kesehatan dan semangat buat semuanya.',
+  }),four,owner,cleanOfficeNaturalResponse,{tasks:[],counts:{}});
+  assert.equal(group.generated,2);
+  assert.equal(group.fallbackReason,'provider-partial-fallback');
+  assert.match(group.answers.management.text,/prioritas|jadwal kantor/i);
+  assert.match(group.answers.administration.text,/catatan/i);
+  assert.doesNotMatch(group.answers.management.text,/sudah saya siapkan/i);
+  assert.doesNotMatch(group.answers.administration.text,/sudah saya rapikan/i);
+  assert.equal(group.answers.operations.ai,true);
+  assert.equal(group.answers.hr.ai,true);
+});
+
+test('tetap membolehkan bahasa natural, tawaran bantuan, dan status draf yang tercatat',()=>{
+  for(const sentence of [
+    'Kalau butuh, nanti kita bahas prioritas buat besok.',
+    'Aku bisa bantu merapikan catatan kalau memang diperlukan.',
+    'Jadwal masuk Senin sampai Jumat sudah tercatat di pengaturan kantor.',
+    'Ada hasil draf yang tercatat selesai, tapi belum ditinjau.',
+    'Makasih, Pak. Semoga besok lancar.',
+  ]) {
+    assert.equal(unverifiedCompletedWorkClaim(sentence),false,sentence);
+    assert.equal(cleanOfficeNaturalResponse(sentence,'fallback','Guys, ada yang mau disampaikan?'),sentence);
+  }
+  for(const sentence of [
+    'Aku sudah menyusun laporan untuk besok.',
+    'Tadi kami mengirim dokumennya.',
+    'Udah aku rapihin catatan penting.',
+    'Sudah saya cek sistemnya, semuanya aman.',
+  ])assert.equal(unverifiedCompletedWorkClaim(sentence),true,sentence);
+});
+
+test('balasan tunggal pegawai tidak lagi mengaku sudah menyelesaikan pekerjaan yang tidak tercatat',()=>{
+  const question='Citra, besok ada yang perlu dicatat?';
+  const reply='Aku sudah menyiapkan jadwal dan merapikan catatan untuk besok.';
+  assert.equal(cleanOfficeNaturalResponse(reply,'Belum ada dokumen baru yang tercatat.',question),
+    'Belum ada dokumen baru yang tercatat.');
 });
