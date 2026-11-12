@@ -346,7 +346,7 @@ test('shared history is grouped, capped, ignores old hallucinated work, and is n
   assert.ok(!JSON.stringify(turns).includes('Sumber rahasia'));
   assert.ok(!JSON.stringify(turns).includes('sudah saya siapkan'));
   assert.ok(!JSON.stringify(turns).includes('Aku sudah merapikan'));
-  assert.equal(summarizeSharedOfficeConversation(records.slice(0,4).concat(records.slice(0,4))).length,2);
+  assert.equal(summarizeSharedOfficeConversation(records.slice(0,4).concat(records.slice(0,4))).length,1);
 });
 
 test('shared group memory expires after seven days in store and remains bounded',()=>{
