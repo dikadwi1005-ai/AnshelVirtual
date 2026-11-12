@@ -12,6 +12,18 @@ Impor `office_gemini_pilot.json` ke n8n Cloud. Workflow ini hanya dipicu manual 
 
 Gemini menerima teks instruksi tugas dan konteks divisi serta proyek (tanpa token worker). Instruksi baru membedakan tugas Keuangan dari Pemasaran dan melarang mengarang tanggal atau tindakan yang tidak dilakukan. Gunakan contoh fiktif untuk pilot. Workflow menyimpan keluaran teks lengkap sebagai draf. Pelacakan di kantor memakai ID tugas dan checksum artefak. [HTTP Request n8n](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/) · [Model Gemini](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite) · [Harga dan penggunaan data Gemini](https://ai.google.dev/gemini-api/docs/pricing).
 
+## Jalankan satu tugas antrean tanpa UUID (checkpoint Phase 3)
+
+File `office_gemini_queue.json` adalah **workflow baru yang terpisah** dari pilot UUID. Workflow ini tidak otomatis berjalan: hanya memiliki **Manual Trigger**, `active:false`, dan setiap eksekusi mengambil **maksimal satu tugas berjenis Draf AI** dari antrean `POST /api/worker/claim`. Urutan tugas diatur backend berdasarkan prioritas, jam kerja, dan batas satu tugas aktif per divisi. Saat tidak ada tugas yang boleh diambil, alur berhenti tanpa memanggil Gemini.
+
+1. Impor file JSON baru sebagai workflow terpisah di n8n; **jangan timpa workflow pilot** yang telah terbukti bekerja.
+2. Gunakan kredensial **Header Auth worker** yang sama (`Authorization: Bearer <WORKER_TOKEN>`) di node **Ambil satu draf antrean**, **Perpanjang sewa**, dan **Simpan hasil**.
+3. Gunakan kredensial Gemini yang sama di node **Gemini** (`x-goog-api-key` sebagai nama header). Jangan menaruh rahasia dalam JSON workflow atau screenshot.
+4. Buat dua tugas draf fiktif di Anshel (dengan prioritas berbeda). Jalankan **Execute Workflow** satu kali: tugas prioritas tertinggi yang memenuhi syarat harus selesai, sedangkan lainnya tetap antre. Jalankan kembali untuk tugas berikutnya.
+5. Periksa status dan unduhan artefak privat pada Anshel; uji kuota provider sebagai `Terhambat`. Gunakan prompt nonrahasia untuk pengujian.
+
+**Batas keselamatan:** Alur ini belum terjadwal dan tidak menyalakan eksekusi berulang, sehingga tidak ada panggilan Gemini tanpa pemicu manual. Untuk otomasi penuh perlu batas harian/biaya, pengendalian retry, perlindungan atas pekerjaan sensitif, dan persetujuan Dika terlebih dahulu. Bukan worker gambar/video, bukan audit internet nyata, bukan penulis otomatis ke GitHub, dan bukan Telegram bot. Pastikan impor ulang file setelah perubahan GitHub; n8n tidak menyinkronkan file repository secara otomatis.
+
 ## Workflow Telegram yang sudah ada
 
 Kedua workflow masih nonaktif. Gunakan instance n8n Cloud milik Dika. Perintah Telegram dan laporan menggunakan token khusus integrasi. Worker mengambil pekerjaan dari API kantor. Jadwal kerja dan antrean tetap berada di SQLite.
