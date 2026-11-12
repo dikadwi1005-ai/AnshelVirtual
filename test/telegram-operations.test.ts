@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createStore} from '../server/store.ts';
 import {createCloudApi} from '../api/route.ts';
-import {prepareOfficeNaturalChat} from '../server/telegram-natural.ts';
+import {prepareOfficeNaturalChat,deliverOfficeNaturalChat} from '../server/telegram-natural.ts';
+import {requestedOfficeDiscussion} from '../server/telegram-group.ts';
 import {
   parseOwnerNaturalTask,officeGroupReply,dispatchOfficeGroupEvent,
   officeVirtualCheckin,dispatchOfficeGroupCheckin,automaticOfficeDivisions,
@@ -210,4 +211,58 @@ test('owner-only monitor dashboard exists and displays tracked employee work',as
   assert.match(app,/t\.status==='completed'/);
   assert.match(app,/renderTasks\(results,false\)/);
   assert.match(app,/panel==='monitor'/);
+});
+
+
+test('owner can ask two employees to discuss grounded context; one Gemini call and threaded pair replies',async()=>{
+  assert.deepEqual(requestedOfficeDiscussion('Alya dan Bima, diskusikan status pemeriksaan API terbaru'),[
+    'management','operations',
+  ]);
+  assert.deepEqual(requestedOfficeDiscussion('Citra dan Dara, bahas catatan rapat yang kemarin'),[
+    'administration','hr',
+  ]);
+  for(const question of ['Alya dan Alya, diskusikan catatan rapat',
+    'Alya dan Eka, diskusikan tugas terbaru',
+    'Bima, tolong cek kondisi layanan API',
+    'Guys, ayo diskusi soal tugas'])assert.equal(requestedOfficeDiscussion(question),null);
+  const store=createStore(':memory:',()=>base);
+  sent.length=0;
+  try {
+    const prep=await prepareOfficeNaturalChat(store,env,msg(33001,
+      'Alya dan Bima, diskusikan status pemeriksaan API terbaru'),fakeTelegram);
+    assert.equal(prep.mode,'generate');
+    assert.equal(prep.group,true);
+    assert.deepEqual(prep.recipients,['management','operations']);
+    assert.deepEqual(prep.request.generationConfig.responseSchema.required,['management','operations']);
+    assert.equal(sent.length,0);
+    const output=JSON.stringify({
+      management:'Kalau belum ada pemeriksaan, kita bisa menyusun prioritas pengecekan nanti.',
+      operations:'Setuju. Aku perlu gejala atau data pemeriksaan dulu supaya nggak menebak.',
+      finance:'Aku juga ikut!',
+    });
+    const end=await deliverOfficeNaturalChat(store,env,{
+      updateId:prep.updateId,ticket:prep.ticket,output},fakeTelegram);
+    assert.deepEqual(end.divisions,['management','operations']);
+    assert.equal(sent.length,2);
+    assert.ok(sent[0].url.includes(tokens.management));
+    assert.ok(sent[1].url.includes(tokens.operations));
+    assert.equal(sent[1].body.reply_parameters.message_id,801);
+    assert.ok(sent.every(x=>!x.body.text.includes('Aku juga ikut!')));
+    await assert.rejects(deliverOfficeNaturalChat(store,env,{
+      updateId:prep.updateId,ticket:prep.ticket,output},fakeTelegram),e=>e.status===409);
+  }finally{store.close();}
+});
+
+test('busy target remains excluded from direct two-person discussion',async()=>{
+  const store=createStore(':memory:',()=>base);
+  try{
+    const task=store.create({division:'operations',kind:'draft',
+      description:'Menyiapkan draf spesifikasi API',urgent:true});
+    assert.equal(store.claim(['draft']).id,task.id);
+    const prep=await prepareOfficeNaturalChat(store,env,msg(33002,
+      'Alya dan Bima, diskusikan penanganan layanan API yang terhambat'));
+    assert.equal(prep.group,true);
+    assert.deepEqual(prep.recipients,['management']);
+    assert.deepEqual(prep.request.generationConfig.responseSchema.required,['management']);
+  }finally{store.close();}
 });
