@@ -1,0 +1,211 @@
+{
+  "name": "Anshel · Grup AI Natural Gemini (12 pegawai)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "ef75f4d6-3823-450f-8117-000000000001",
+      "name": "Pesan grup via Alya",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ef75f4d6-3823-450f-8117-000000000008"
+    },
+    {
+      "parameters": {
+        "jsCode": "const update=$input.first().json;\nconst message=update.message;\nif (!message || !['group','supergroup'].includes(message.chat?.type) ||\n  message.from?.is_bot!==false || typeof message.text!=='string' || !message.from?.id) return [];\nreturn [{json:{chatId:String(message.chat.id),userId:String(message.from.id),\n  updateId:String(update.update_id),text:message.text,isBot:false}}];"
+      },
+      "id": "ef75f4d6-3823-450f-8117-000000000002",
+      "name": "Saring pesan manusia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/office-group/ai/prepare",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "ef75f4d6-3823-450f-8117-000000000003",
+      "name": "Siapkan konteks AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data=$input.first().json;\nif (data.mode!=='generate') return [];\nif (typeof data.updateId!=='string'||typeof data.ticket!=='string'||!data.request?.contents) {\n  throw new Error('Konteks Anshel tidak valid');\n}\nreturn [{json:data}];"
+      },
+      "id": "ef75f4d6-3823-450f-8117-000000000004",
+      "name": "Hanya chat AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 25000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "ef75f4d6-3823-450f-8117-000000000005",
+      "name": "Gemini obrolan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prepared=$('Hanya chat AI').first().json;\nconst response=$input.first().json;\nconst status=Number(response.statusCode);\nlet output=null;\nif(status>=200&&status<300){\n  const candidate=response.body?.candidates?.[0];\n  if(candidate?.finishReason==='STOP') {\n    const parts=candidate.content?.parts||[];\n    const text=parts.filter(p=>p?.thought!==true&&typeof p?.text==='string').map(p=>p.text).join('').trim();\n    if(text.length>=4&&text.length<=700)output=text;\n  }\n}\n// Null output triggers a safe factual fallback at the Anshel backend.\nreturn [{json:{updateId:prepared.updateId,ticket:prepared.ticket,output}}];"
+      },
+      "id": "ef75f4d6-3823-450f-8117-000000000006",
+      "name": "Periksa jawaban AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/office-group/ai/finish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "ef75f4d6-3823-450f-8117-000000000007",
+      "name": "Kirim dari bot pegawai",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Pesan grup via Alya": {
+      "main": [
+        [
+          {
+            "node": "Saring pesan manusia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saring pesan manusia": {
+      "main": [
+        [
+          {
+            "node": "Siapkan konteks AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan konteks AI": {
+      "main": [
+        [
+          {
+            "node": "Hanya chat AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hanya chat AI": {
+      "main": [
+        [
+          {
+            "node": "Gemini obrolan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini obrolan": {
+      "main": [
+        [
+          {
+            "node": "Periksa jawaban AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Periksa jawaban AI": {
+      "main": [
+        [
+          {
+            "node": "Kirim dari bot pegawai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}
