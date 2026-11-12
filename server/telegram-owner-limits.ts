@@ -2,7 +2,7 @@
 // Keep a generous daily budget and a short burst guard to prevent accidental floods.
 export const ownerMessageDailyLimit=1000;
 export const ownerMessageMinimumGapMs=2000;
-export const ownerUpdateHistorySize=1200;
+export const ownerUpdateHistorySize=2400;
 
 export function evaluateOwnerGroupUpdate(snapshot,updateId,now,today) {
   const earlier=Array.isArray(snapshot?.seen)?snapshot.seen:[];
