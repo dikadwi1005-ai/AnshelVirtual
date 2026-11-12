@@ -68,6 +68,44 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
 
   return {
     close: () => pool.end(),
+    async claimTelegramNotification() {
+      return transaction(async client => {
+        // Different advisory lock from task claims; serializes multiple n8n polls.
+        await query('SELECT pg_advisory_xact_lock(17293107)',[],client);
+        const key='telegram_notifications_v1';
+        const checkpoint=await readSetting(key,null,client);
+        if (!checkpoint) {
+          const row=await one('SELECT COALESCE(MAX(id),0) AS id FROM anshel.audit',[],client);
+          await writeSetting(key,{cursor:row.id,pending:null},client);
+          return null;
+        }
+        if (checkpoint.pending && checkpoint.pending.until > now()) return null;
+        const event=await one(`SELECT a.id AS "eventId",a.at,a.task AS "taskId",a.action,
+          t.division,t.project FROM anshel.audit AS a JOIN anshel.tasks AS t ON t.id=a.task
+          WHERE a.id>$1 AND a.action IN ('completed','blocked','failed')
+          ORDER BY a.id LIMIT 1`,[checkpoint.cursor],client);
+        if (!event) return null;
+        const token=randomUUID();
+        await writeSetting(key,{cursor:checkpoint.cursor,
+          pending:{id:event.eventId,token,until:now()+10*60_000}},client);
+        return {...event,token};
+      });
+    },
+    async ackTelegramNotification(eventId,token) {
+      if (!Number.isSafeInteger(eventId) || eventId<1 || typeof token !== 'string' || !token) {
+        throw new Fault(400,'Konfirmasi notifikasi tidak valid.');
+      }
+      return transaction(async client => {
+        await query('SELECT pg_advisory_xact_lock(17293107)',[],client);
+        const key='telegram_notifications_v1';
+        const checkpoint=await readSetting(key,null,client);
+        if (!checkpoint?.pending || checkpoint.pending.id!==eventId ||
+          checkpoint.pending.token!==token || checkpoint.pending.until<=now()) {
+          throw new Fault(409,'Sewa notifikasi sudah berakhir atau tidak cocok.');
+        }
+        await writeSetting(key,{cursor:eventId,pending:null},client);
+      });
+    },
     async sessionActive(token) {
       const hash = createHash('sha256').update(token).digest('hex');
       const session = await one('SELECT expires_at FROM anshel.sessions WHERE token_hash=$1', [hash]);
