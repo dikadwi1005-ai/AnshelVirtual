@@ -49,7 +49,7 @@ test('panggilan kolektif membangun satu Gemini JSON tanpa nama/identitas sensiti
   const prompt=req.systemInstruction.parts[0].text;
   assert.match(prompt,/PEMILIK sekaligus pimpinan/);
   assert.match(prompt,/PALING BANYAK SATU|paling banyak SATU/i);
-  assert.match(prompt,/Kamu/); // Basic structured-prompt smoke test.
+  assert.match(prompt,/pegawai yang sedang bebas/i);
   assert.match(prompt,/operations/);
   assert.match(prompt,/Bermain PS5/);
   assert.ok(!prompt.includes('Password privat'));
@@ -65,7 +65,7 @@ test('single employee Gemini recognizes the owner without repeating their name o
   assert.match(instructions,/boleh kadang menyebut "Pak"/i);
   assert.match(instructions,/JANGAN setiap balasan/);
   assert.match(instructions,/Jangan sebut nama pemilik/i);
-  assert.match(instructions,/bukan chatbot/i);
+  assert.match(instructions,/Jangan bersikap seperti bot layanan pelanggan/i);
 });
 
 test('panggilan "guys" dari pemilik memakai satu request dan tiga bot bebas, exclude Bima saat running',async()=>{
