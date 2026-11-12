@@ -1,7 +1,7 @@
 import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
-  sendOfficeGroupOwnerMessage,officeGroupReply } from './telegram-office.ts';
+  sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask } from './telegram-office.ts';
 import { isCollectiveCall,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse } from './telegram-group.ts';
 
@@ -19,7 +19,7 @@ const persona={
   qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
   finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
-const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek)(?:\s|$)/i;
+const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor)(?:\s|$)/i;
 const actionClaim=/\b(?:sudah|telah|berhasil)\s+(?:(?:aku|saya|kami|kita)\s+)?(?:mengirim|mempublikasikan|memposting|menghapus|membayar|mentransfer|menginstal|mendeploy)\b/i;
 const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 // Only use company-wide totals when the user actually asks about the office as a whole.
@@ -194,7 +194,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     throw new Fault(403,'Pesan bukan dari pemilik dalam grup yang diizinkan.');
   if(typeof data.text!=='string' || !data.text.trim() || data.text.length>1500 || !validId(data.updateId))
     throw new Fault(400,'Pesan Telegram tidak valid.');
-  if(command.test(data.text.trim())) {
+  if(command.test(data.text.trim())||parseOwnerNaturalTask(data.text)) {
     const done=await sendOfficeGroupOwnerMessage(store,env,data,fetchImpl);
     return {mode:'handled',...done};
   }
