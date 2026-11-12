@@ -357,3 +357,59 @@ test('endpoint check-in hanya boleh dengan N8N_TOKEN, tidak menerima parameter',
     assert.deepEqual(await r.json(),{sent:false,reason:'outside-checkin-window'});
   } finally{s.close();}
 });
+
+test('perintah ringkasan dari HP merangkum status tugas yang benar-benar tercatat',()=>{
+  const state={counts:{queued:2,running:1,completed:6,blocked:1,failed:3},tasks:[]};
+  const out=officeGroupReply(state,'/ringkasan',env);
+  assert.equal(out.division,'management');
+  assert.match(out.text,/2 antre/);
+  assert.match(out.text,/1 dikerjakan/);
+  assert.match(out.text,/6 selesai/);
+  assert.match(out.text,/1 terhambat/);
+  assert.match(out.text,/3 gagal/);
+  assert.match(out.text,/bukan hanya aktivitas hari ini/);
+  assert.deepEqual(officeGroupReply(state,'/ringkas',env),out);
+});
+
+test('perintah kendala memakai data tugas tanpa membuka isi tugas atau mengarang status server',()=>{
+  const state={counts:{blocked:2,failed:1},tasks:[
+    {division:'administration',project:'Dokumen',status:'blocked',description:'Isi sangat rahasia',error:'token rahasia'},
+    {division:'operations',project:'Integrasi',status:'failed',description:'Rahasia lagi',error:'stack trace'},
+    {division:'hr',project:'Rekrutmen',status:'blocked',description:'Rahasia staf'},
+    {division:'management',project:'Lain',status:'completed'}
+  ]};
+  const out=officeGroupReply(state,'/kendala',env);
+  assert.equal(out.division,'operations');
+  assert.match(out.text,/2 terhambat, 1 gagal/);
+  assert.match(out.text,/Citra \(Dokumen\): terhambat/);
+  assert.match(out.text,/Bima \(Integrasi\): gagal/);
+  assert.match(out.text,/bukan diagnosis kondisi server/);
+  assert.doesNotMatch(out.text,/rahasia|stack trace/i);
+  const none=officeGroupReply({counts:{blocked:0,failed:0},tasks:[]},'/kendala',env);
+  assert.equal(none.division,'operations');
+  assert.match(none.text,/belum memastikan sistem bebas masalah/);
+});
+
+test('perintah cek diarahkan ke empat pegawai aktif dan tidak menyalakan delapan bot tertunda',()=>{
+  const state={counts:{},tasks:[
+    {division:'operations',project:'Website',status:'running',description:'Kredensial privat'},
+    {division:'hr',project:'',status:'completed'},
+  ]};
+  const ops=officeGroupReply(state,'/cek Bima',env);
+  assert.equal(ops.division,'operations');
+  assert.match(ops.text,/Website/);
+  assert.match(ops.text,/sedang dikerjakan/);
+  assert.doesNotMatch(ops.text,/Kredensial privat/);
+  const hr=officeGroupReply(state,'/cek Dara',env);
+  assert.equal(hr.division,'hr');
+  assert.match(hr.text,/hasil drafnya sudah dibuat/);
+  const alya=officeGroupReply(state,'/cek Alya',env);
+  assert.equal(alya.division,'management');
+  assert.match(alya.text,/belum ada tugas/);
+  const eka=officeGroupReply(state,'/cek Eka',env);
+  assert.equal(eka.division,'management');
+  assert.match(eka.text,/Delapan pegawai lainnya belum diaktifkan/);
+  const unknown=officeGroupReply(state,'/cek TidakAda',env);
+  assert.equal(unknown.division,'management');
+  assert.match(unknown.text,/\/cek Bima/);
+});
