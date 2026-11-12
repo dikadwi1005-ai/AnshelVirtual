@@ -121,7 +121,7 @@ async function refresh(force = false) {
     if (!force) return;
   }
   refreshing = api('state').then(value=>{
-    const signature = JSON.stringify([value.phase,value.mode,value.schedule,value.worker,value.capabilities,value.tasks,value.audit,value.counts,value.projects]);
+    const signature = JSON.stringify([value.phase,value.mode,value.schedule,value.worker,value.capabilities,value.people,value.tasks,value.audit,value.counts,value.projects]);
     const changes = office?.signature !== signature;
     clockOffset = value.now-Date.now();
     clock();
@@ -317,9 +317,40 @@ function renderSettings() {
     '<button type="submit" class="primary">Simpan pengaturan</button><button type="button" id="logout">Keluar</button></form>';
 }
 
+function renderMonitoring() {
+  title('Data aktual · 4 bot aktif','Monitor aktivitas');
+  const watched=['management','operations','administration','hr'];
+  const names=watched.map(id=>team(id)).filter(Boolean);
+  const snapshot=office;
+  const overview=stats([
+    ['Worker',snapshot.worker?'Terlihat aktif belakangan ini':'Tidak ada heartbeat dalam 40 detik'],
+    ['Antre',snapshot.counts?.queued??0],
+    ['Sedang diproses',snapshot.counts?.running??0],
+    ['Menunggu persetujuan',snapshot.counts?.awaiting_approval??0],
+    ['Terhambat',snapshot.counts?.blocked??0],
+    ['Gagal',snapshot.counts?.failed??0],
+  ]);
+  const roster='<p class="section-label">Pegawai Telegram aktif</p><ul class="task-list">'+
+    names.map(p=>{
+      const avatar=snapshot.people?.[p.id]||{};
+      const jobs=snapshot.tasks.filter(t=>t.division===p.id);
+      const current=jobs.find(t=>t.status==='running')||jobs.find(t=>t.status==='queued')||jobs[0];
+      const inProgress=avatar.executing===true||jobs.some(t=>t.status==='running');
+      const activity=activities[avatar.activity]||'Belum tercatat';
+      return '<li class="task-card"><button type="button" data-employee="'+escape(p.id)+'">'+escape(p.employee)+'</button>'+
+        stats([['Aktivitas avatar',activity],['Status kerja',inProgress?'Eksekusi tugas sedang berjalan':
+          current?.status==='queued'?'Tugas menunggu worker':'Tidak sedang mengeksekusi tugas']])+
+        (current?'<p>'+escape(current.project||'Tanpa proyek')+' · '+escape(statusNames[current.status]||current.status)+'</p>':
+          '<p class="status-text">Belum ada tugas tercatat</p>')+'</li>';
+    }).join('')+'</ul>';
+  const results=snapshot.tasks.filter(t=>watched.includes(t.division)&&t.status==='completed').slice(0,4);
+  $('panel-content').innerHTML='<p class="status-text">Data ini berasal dari tugas dan aktivitas avatar yang tercatat. Status worker bukan pemeriksaan menyeluruh terhadap server.</p>'+
+    overview+roster+'<p class="section-label">Hasil draf terbaru</p>'+renderTasks(results,false);
+}
 function render() {
   if (!office || !panel) return;
   if (panel==='office') return renderOffice();
+  if (panel==='monitor') return renderMonitoring();
   if (panel==='workstation') return renderWorkstation();
   if (panel==='settings') return renderSettings();
   if (panel==='projects') {
