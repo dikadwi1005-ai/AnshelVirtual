@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { readFile, mkdir, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,7 +55,10 @@ export function officeHandler(store, env = process.env) {
   let windowStart = Date.now();
   const ttl = 8 * 3600_000;
   const cookie = (token,age,secure) => 'anshel='+token+'; Path=/; HttpOnly; SameSite=Strict; Max-Age='+age+(secure?'; Secure':'');
-  const staticRoots = {
+  const buildDirectory=resolve(root,'.vercel-public');
+  const built=existsSync(resolve(buildDirectory,'index.html'));
+  const staticDirectory=built?buildDirectory:resolve(root,'public');
+  const staticRoots = built?{}:{
     '/lib/three/':resolve(root,'node_modules/three'),
     '/fonts/dm/':resolve(root,'node_modules/@fontsource-variable/dm-sans'),
     '/fonts/space/':resolve(root,'node_modules/@fontsource-variable/space-grotesk'),
@@ -161,14 +165,16 @@ export function officeHandler(store, env = process.env) {
       }
       if (!['GET','HEAD'].includes(req.method)) throw new Fault(405,'Metode tidak diizinkan.');
       const prefix = Object.keys(staticRoots).find(key => path.startsWith(key));
-      const base = prefix ? staticRoots[prefix] : resolve(root,'public');
+      const base = prefix ? staticRoots[prefix] : staticDirectory;
       const relative = prefix ? path.slice(prefix.length) : path === '/' ? 'index.html' : path.slice(1);
       const file = resolve(base,relative);
       if (!file.startsWith(base+sep) || !mime[extname(file)] || !(await stat(file).catch(()=>null))?.isFile()) {
         throw new Fault(404,'File tidak ditemukan.');
       }
       const content = await readFile(file);
-      res.writeHead(200,{'Content-Type':mime[extname(file)],'Content-Length':content.length});
+      const cache=/^assets\/(?:app|scene|chunk)-[A-Z0-9]+\.js$/.test(relative)
+        ? 'public, max-age=31536000, immutable' : 'no-store';
+      res.writeHead(200,{'Content-Type':mime[extname(file)],'Content-Length':content.length,'Cache-Control':cache});
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch(error) {
       if (error instanceof Fault) return respond({error:error.message},error.status);
