@@ -118,3 +118,11 @@ Sofa santai diperlebar untuk mengatasi tangan yang menembus sandaran lengan deng
 **Implemented dan Tested.** Workflow manual `office_gemini_pilot.json` mengambil tepat satu draf melalui UUID dan menyimpan hasil lengkap lewat kontrak worker. Rute baru mengharuskan token worker dan mengikuti jadwal, izin tugas mendesak, serta sewa eksekusi yang sudah ada. Uji n8n 2.47.4 dengan PostgreSQL 17 dan respons Gemini tiruan membuktikan tugas terpilih selesai, tugas lain tetap antre, eksekusi ulang tidak memanggil provider, respons 429 membuat tugas terhambat, dan unduhan privat cocok dengan SHA-256. Build dan 33 tes lulus.
 
 **Pending Credentials dan deployment.** Pilot belum diimpor ke n8n Cloud. Pengujian live memerlukan endpoint baru di deployment yang dipakai, kredensial worker yang cocok dengan deployment, serta kredensial Gemini di n8n. Telegram dan peluncuran otomatis masih terbuka. [Panduan pilot](../workflows/README.md#pilot-satu-tugas-gemini).
+
+## Checkpoint Phase 3 · Workflow satu draf dari antrean
+
+**Implemented in branch; pending live verification.** Ditambahkan workflow n8n `workflows/office_gemini_queue.json` untuk mengambil **satu** draf berikutnya melalui `POST /api/worker/claim` tanpa mencari UUID dari `/api/state`. Workflow secara sengaja tetap manual (`active:false`) dan tidak memiliki Schedule Trigger supaya tidak menghasilkan biaya/kuota AI tanpa persetujuan. Pemeriksaan kredensial, batas jam kerja, prioritas, pembatasan per divisi, penyimpanan dan SHA-256 tetap mengikuti backend yang sudah ada. Workflow pilot UUID lama dipertahankan, tidak diganti.
+
+Tes regresi `test/gemini-queue.test.ts` menargetkan: autentikasi negatif, prioritas satu tugas, draf kedua tetap antre, konteks divisi, tidak membocorkan lease ke Gemini, heartbeat, penyelesaian dan checksum. **Tes CI, import n8n Cloud, dan eksekusi live belum diverifikasi** pada saat checkpoint ini disiapkan.
+
+**Berikutnya:** jalankan `npm.cmd test` serta build, lalu impor workflow baru secara terpisah dan uji dua tugas nonrahasia. Sesudah lulus, rancang scheduler dengan kuota/biaya dan notifikasi Telegram. Kemampuan gambar, video, dan kode dengan aksi GitHub masih merupakan adapter yang memerlukan pekerjaan dan izin berbeda; alur ini tetap hanya menghasilkan draf teks.
