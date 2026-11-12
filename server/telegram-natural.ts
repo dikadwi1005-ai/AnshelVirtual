@@ -3,7 +3,7 @@ import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply } from './telegram-office.ts';
 import { isCollectiveCall,availableOfficeResponders,buildOfficeCollectiveRequest,
-  parseOfficeCollectiveResponse } from './telegram-group.ts';
+  resolveOfficeCollectiveResponse } from './telegram-group.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -239,8 +239,9 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
     const available=new Set(availableOfficeResponders(state,configuredOfficeBots(env).configured));
     const recipients=pending.recipients.filter(id=>available.has(id));
     if(!recipients.length) return {sent:false,group:true,divisions:[],reason:'everyone-busy'};
-    const answers=parseOfficeCollectiveResponse(input?.output,recipients,pending.question,
-      cleanOfficeNaturalResponse);
+    const result=resolveOfficeCollectiveResponse(input?.output,recipients,pending.question,
+      cleanOfficeNaturalResponse,state);
+    const answers=result.answers;
     // Send in parallel; n8n's HTTP timeout is 12 seconds and Telegram has a 6s timeout.
     const attempts=await Promise.allSettled(recipients.map(id=>
       sendOfficeBotMessage(env,id,answers[id].text,{fetchImpl})));
@@ -253,7 +254,9 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
       }
     }
     return {sent:successful.length>0,group:true,divisions:successful,
-      ai:successful.some(id=>answers[id].ai),failed:recipients.length-successful.length};
+      ai:successful.some(id=>answers[id].ai),failed:recipients.length-successful.length,
+      // These codes help diagnose model failures in n8n without leaking its output.
+      fallbackReason:result.fallbackReason,generated:successful.filter(id=>answers[id].ai).length};
   }
   const asksAtmosphere=/\b(?:suasana|ramai|sepi|heboh)\b.{0,35}\bkantor\b|\bkantor\b.{0,35}\b(?:suasana|ramai|sepi|heboh)\b/i.test(pending.question);
   const counts=state.counts||{};

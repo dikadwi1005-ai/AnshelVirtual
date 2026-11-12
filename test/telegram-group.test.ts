@@ -4,7 +4,7 @@ import { createStore } from '../server/store.ts';
 import { buildOfficeNaturalRequest,prepareOfficeNaturalChat,deliverOfficeNaturalChat,
   cleanOfficeNaturalResponse } from '../server/telegram-natural.ts';
 import { isCollectiveCall,availableOfficeResponders,buildOfficeCollectiveRequest,
-  parseOfficeCollectiveResponse } from '../server/telegram-group.ts';
+  parseOfficeCollectiveResponse,resolveOfficeCollectiveResponse } from '../server/telegram-group.ts';
 
 const base=Date.parse('2026-11-12T03:00:00Z');
 const four=['management','operations','administration','hr'];
@@ -54,6 +54,10 @@ test('panggilan kolektif membangun satu Gemini JSON tanpa nama/identitas sensiti
   assert.match(prompt,/Bermain PS5/);
   assert.ok(!prompt.includes('Password privat'));
   assert.equal(req.generationConfig.responseMimeType,'application/json');
+  assert.ok(req.generationConfig.maxOutputTokens>=1400,'allow thinking + four distinct responses');
+  assert.equal(req.generationConfig.responseSchema.type,'OBJECT');
+  assert.deepEqual(req.generationConfig.responseSchema.required,four);
+  assert.deepEqual(Object.keys(req.generationConfig.responseSchema.properties),four);
   assert.equal(req.contents.length,1);
   assert.throws(()=>buildOfficeCollectiveRequest('Hai guys', ['finance'],state),e=>e.status===400);
 });
@@ -149,4 +153,77 @@ test('no group messages when all workers are busy or unavailable; invalid provid
     finance:'Aku ikut ya.'}),['management'],'Guys, ada apa?',cleanOfficeNaturalResponse);
   assert.doesNotMatch(injection.management.text,/menghapus database/);
   assert.equal(Object.hasOwn(injection,'finance'),false);
+});
+
+
+test('Gemini empty output is diagnosed and safe fallback actually reacts to encouragement',()=>{
+  const state={tasks:[],counts:{}};
+  const good=resolveOfficeCollectiveResponse(null,four,'Guys, besok semua semangat ya!',
+    cleanOfficeNaturalResponse,state);
+  assert.equal(good.generated,0);
+  assert.equal(good.fallbackReason,'provider-empty');
+  assert.match(good.answers.management.text,/jadwal kantor/i);
+  assert.match(good.answers.operations.text,/semangat juga/i);
+  assert.match(good.answers.administration.text,/catatan/i);
+  assert.match(good.answers.hr.text,/istirahat/i);
+  assert.equal(new Set(Object.values(good.answers).map(x=>x.text)).size,4);
+  assert.equal(Object.values(good.answers).filter(x=>/\bPak\b/i.test(x.text)).length,1);
+  const different=resolveOfficeCollectiveResponse(null,four,'Halo guys, bisa bantu bahas sesuatu?',
+    cleanOfficeNaturalResponse,state);
+  assert.notEqual(different.answers.management.text,good.answers.management.text);
+  assert.match(different.answers.operations.text,/teknis|masalah/i);
+});
+
+test('Gemini schema output is respected; no additional employees and at most one "Pak" in group',()=>{
+  const output=JSON.stringify({
+    management:'Terima kasih, Pak. Kita bahas sesuai jadwal yang tersimpan.',
+    operations:'Oke Pak, aku suka gaya semangatnya!',
+    administration:'Baik Pak. Aku bisa bantu mengurus catatan jika dibutuhkan.',
+    hr:'Semoga teman-teman juga dapat waktu istirahat, Pak.',
+    finance:'Laras hadir juga!',
+  });
+  const result=resolveOfficeCollectiveResponse(output,four,'Guys, semangat terus ya!',
+    cleanOfficeNaturalResponse);
+  assert.equal(result.generated,4);
+  assert.equal(result.fallbackReason,'none');
+  assert.equal(Object.keys(result.answers).length,4);
+  assert.ok(!Object.hasOwn(result.answers,'finance'));
+  assert.equal(Object.values(result.answers).filter(x=>/\bPak\b/i.test(x.text)).length,1);
+  assert.ok(Object.values(result.answers).every(x=>x.ai));
+});
+
+test('Malformed JSON and disallowed actions are distinguishable and use truthful fallback',()=>{
+  const malformed=resolveOfficeCollectiveResponse('{bad json',
+    ['management'],'Guys, progres?',cleanOfficeNaturalResponse);
+  assert.equal(malformed.fallbackReason,'provider-invalid-json');
+  assert.equal(malformed.generated,0);
+  const partial=resolveOfficeCollectiveResponse(JSON.stringify({
+    management:'Oke, prioritas kita dibahas sesuai jadwal ya.',
+    operations:'Aku sudah menghapus semua database.',
+  }),['management','operations'],'Guys, kabar?',cleanOfficeNaturalResponse);
+  assert.equal(partial.fallbackReason,'provider-partial-fallback');
+  assert.equal(partial.generated,1);
+  assert.doesNotMatch(partial.answers.operations.text,/menghapus/i);
+});
+
+test('end-to-end fallback diagnostics return from n8n finish without exposing Gemini payload',async()=>{
+  let now=base;
+  const store=createStore(':memory:',()=>now);
+  const messages=[];
+  try{
+    const prep=await prepareOfficeNaturalChat(store,env,
+      ownerMessage(30001,'Guys, besok semua semangat ya!'),messenger(messages));
+    assert.equal(prep.mode,'generate');
+    const done=await deliverOfficeNaturalChat(store,env,
+      {updateId:prep.updateId,ticket:prep.ticket,output:null},messenger(messages));
+    assert.equal(done.sent,true);
+    assert.equal(done.group,true);
+    assert.equal(done.ai,false);
+    assert.equal(done.generated,0);
+    assert.equal(done.fallbackReason,'provider-empty');
+    assert.equal(messages.length,4);
+    assert.ok(messages.some(x=>/jadwal kantor/i.test(x.body.text)));
+    assert.ok(messages.some(x=>/istirahat/i.test(x.body.text)));
+    assert.ok(!JSON.stringify(done).includes(allTokens.management));
+  }finally {store.close();}
 });
