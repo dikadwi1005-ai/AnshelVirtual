@@ -320,7 +320,10 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   // consumed without using daily quota or attempting an unconfigured bot.
   if (!activeAuto.has(event.division)||!configured.has(event.division)) {
     await store.ackTelegramNotification(event.eventId,event.token,false);
-    return {sent:false,skipped:'not-in-four-bot-pilot',eventId:event.eventId};
+    // Skipping an inactive division must not starve the end-of-day summary.
+    const routine=await dispatchOfficeGroupRoutine(store,env,fetchImpl);
+    return routine ? {...routine,skipped:'not-in-four-bot-pilot',eventId:event.eventId} :
+      {sent:false,skipped:'not-in-four-bot-pilot',eventId:event.eventId};
   }
   const message=officeTaskConversation(event);
   if (!message) throw new Fault(500,'Audit tugas tidak bisa dipetakan ke pegawai kantor.');
