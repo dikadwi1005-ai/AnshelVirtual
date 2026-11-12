@@ -24,11 +24,10 @@ const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 export function buildOfficeNaturalRequest(division,question,state,history=[]) {
   const person=divisions.find(d=>d.id===division);
   if(!person || typeof question!=='string' || question.length>1500) throw new Fault(400,'Konteks chat tidak valid.');
-  // Addressing Alya by name is not the same as greeting Alya.
-  const escapedName=person.employee.replace(/[.*+?^\\$\{\}()|[\]\\]/g,'\\  const taskData=(state.tasks||[]).filter(t=>t.division===division).slice(0,3)');
-  const addressed=new RegExp('^'+escapedName+'\\s*[,：:]\\s*','i');
+  // A name followed by a comma is an address, not a greeting.
+  const addressed=new RegExp('^'+person.employee+'\\s*[,：:]\\s*','i');
   const spokenQuestion=question.replace(addressed,'').trim() || question;
-  const greeted=/^(?:hai|halo|hello|hi|selamat\\s+(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|assalamualaikum)\\b/i.test(spokenQuestion);
+  const greeted=/^(?:hai|halo|hello|hi|selamat\s+(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|assalamualaikum)\b/i.test(spokenQuestion);
   const taskData=(state.tasks||[]).filter(t=>t.division===division).slice(0,3)
     .map(t=>({status:t.status,kind:t.kind,project:typeof t.project==='string'?t.project.slice(0,70):''}));
   const facts={pegawai:person.employee,divisi:person.name,phase:state.phase,
