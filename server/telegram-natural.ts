@@ -24,6 +24,11 @@ const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 export function buildOfficeNaturalRequest(division,question,state,history=[]) {
   const person=divisions.find(d=>d.id===division);
   if(!person || typeof question!=='string' || question.length>1500) throw new Fault(400,'Konteks chat tidak valid.');
+  // Addressing Alya by name is not the same as greeting Alya.
+  const escapedName=person.employee.replace(/[.*+?^\\$\{\}()|[\]\\]/g,'\\  const taskData=(state.tasks||[]).filter(t=>t.division===division).slice(0,3)');
+  const addressed=new RegExp('^'+escapedName+'\\s*[,：:]\\s*','i');
+  const spokenQuestion=question.replace(addressed,'').trim() || question;
+  const greeted=/^(?:hai|halo|hello|hi|selamat\\s+(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|assalamualaikum)\\b/i.test(spokenQuestion);
   const taskData=(state.tasks||[]).filter(t=>t.division===division).slice(0,3)
     .map(t=>({status:t.status,kind:t.kind,project:typeof t.project==='string'?t.project.slice(0,70):''}));
   const facts={pegawai:person.employee,divisi:person.name,phase:state.phase,
@@ -33,7 +38,12 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     persona[division],
     'Balas dalam Bahasa Indonesia sehari-hari, alami, spesifik dan mengalir. Biasanya cukup 1-3 kalimat, kurang dari 420 karakter.',
     'Jangan emoji, markdown, JSON, nama pembicara, atau narasi panggung. Hindari kalimat pembuka dan pola jawaban yang sama berulang.',
-    'Kalau disapa, sapa balik secara santai. Jangan memaksa membahas status tugas jika pengguna hanya menyapa atau mengobrol ringan.',
+    greeted
+      ? 'Pesan terbaru benar-benar mengandung sapaan; boleh membalas sapaan secara singkat, lalu jawab maksud pesannya.'
+      : 'Pesan terbaru TIDAK memiliki sapaan. Langsung jawab inti pertanyaan; JANGAN memulai dengan Halo, Hai, Halo juga, Hai juga, atau salam lain.',
+    'Panggilan nama pegawai seperti "Alya, gimana suasana kantor?" BUKAN salam. Jawaban harus menanggapi pertanyaan, bukan menyapa balik.',
+    'Kalau ditanya suasana kantor, jangan mengaku menyaksikan kantor ramai, tenang, fokus, sibuk atau ada cerita menarik tanpa bukti. Hanya ceritakan catatan aktivitas/tugas yang benar-benar tersedia; akui jika tidak ada pengamatan langsung.',
+    'Jangan otomatis mengakhiri dengan "Kamu sendiri gimana kabarnya?" atau pertanyaan balik klise yang tidak relevan.',
     'FAKTA KERJA HANYA DARI DATA KANTOR. Riwayat pesan berguna untuk kesinambungan, bukan bukti telah menyelesaikan pekerjaan.',
     'Jangan mengarang tugas, status, hasil tes, kode yang telah dijalankan, publikasi, audit, tanggal, keuangan, atau interaksi nyata.',
     'Status queued berarti belum dikerjakan; completed hanya berarti hasil draf tersedia, bukan sudah lolos review atau dipublikasikan.',
@@ -48,7 +58,7 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
       contents.push({role:'model',parts:[{text:t.reply.slice(0,500)}]});
     }
   }
-  contents.push({role:'user',parts:[{text:question}]});
+  contents.push({role:'user',parts:[{text:spokenQuestion}]});
   return {systemInstruction:{parts:[{text:instructions}]},contents,
     generationConfig:{temperature:0.8,maxOutputTokens:320}};
 }
@@ -71,19 +81,32 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
     division:target.division,request:buildOfficeNaturalRequest(target.division,data.text,state,saved.history)};
 }
-export function cleanOfficeNaturalResponse(text,fallback) {
-  const safe=(typeof text==='string'?text.trim():'')
+export function cleanOfficeNaturalResponse(text,fallback,question='') {
+  let safe=(typeof text==='string'?text.trim():'')
     .replace(/<think>[\s\S]*?<\/think>/gi,'')
     .replace(/^\x60\x60\x60[\w-]*\s*|\s*\x60\x60\x60$/g,'').trim();
-  if(safe.length<4||safe.length>700||/[\x00-\x08\x0e-\x1f]/.test(safe)||actionClaim.test(safe))
+  const askedGreeting=/^(?:hai|halo|hello|hi|selamat\s+(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|assalamualaikum)\b/i
+    .test(question.replace(/^[A-Za-z]+\s*[,：:]\s*/,'').trim());
+  if(question && !askedGreeting) safe=safe.replace(/^(?:halo|hai|hello|hi)(?:\s+juga)?[!,.\s-]+/i,'').trim();
+  // A language model cannot observe the physical office. Avoid unsupported observations.
+  const atmosphere=/\b(?:suasana|kantor)\b.{0,60}\b(?:tenang|ramai|sepi|sibuk|fokus|heboh)\b|\b(?:di sini|di kantor|suasananya)\b.{0,35}\b(?:tenang|ramai|sepi|sibuk|heboh)\b/i;
+  const askedAtmosphere=/\b(?:suasana|ramai|sepi|heboh)\b.{0,35}\bkantor\b|\bkantor\b.{0,35}\b(?:suasana|ramai|sepi|heboh)\b/i.test(question);
+  if(safe.length<4||safe.length>700||/[\x00-\x08\x0e-\x1f]/.test(safe)||
+      actionClaim.test(safe)||(askedAtmosphere&&atmosphere.test(safe)))
     return fallback;
   return safe;
 }
 export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) {
   officeGroupConfig(env);
   const pending=await store.consumeOfficeGroupAI(String(input?.updateId??''),input?.ticket);
-  const fallback=officeGroupReply(await store.state(),pending.question,env).text;
-  const text=cleanOfficeNaturalResponse(input?.output,fallback);
+  const state=await store.state();
+  const asksAtmosphere=/\b(?:suasana|ramai|sepi|heboh)\b.{0,35}\bkantor\b|\bkantor\b.{0,35}\b(?:suasana|ramai|sepi|heboh)\b/i.test(pending.question);
+  const counts=state.counts||{};
+  const fallback=asksAtmosphere
+    ? 'Kalau dari catatan Anshel, sekarang ada '+(Number(counts.queued)||0)+' tugas antre dan '+
+      (Number(counts.running)||0)+' berjalan. Belum ada laporan kejadian khusus yang tercatat, jadi aku nggak mau nebak-nebak suasana kantor.'
+    : officeGroupReply(state,pending.question,env).text;
+  const text=cleanOfficeNaturalResponse(input?.output,fallback,pending.question);
   await sendOfficeBotMessage(env,pending.division,text,{fetchImpl});
   await store.rememberOfficeGroupAI(pending.division,pending.question,text);
   return {sent:true,division:pending.division,ai:typeof input.output==='string'&&text!==fallback};
