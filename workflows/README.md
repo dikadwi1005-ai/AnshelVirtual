@@ -38,18 +38,37 @@ Backend `POST /api/worker/claim-scheduled` memaksa jenis tugas `draft` dan secar
 
 Batas 3 **klaim** bukan batas biaya absolut: tarif provider, model, retry internal, request manual, dan perubahan endpoint lain dapat menimbulkan biaya/kuota terpisah. Hindari mengaktifkan dua workflow terjadwal yang sama. Workflow ini hanya menghasilkan **teks** dan belum mengirim Telegram, membuat gambar/video, atau melakukan perubahan GitHub.
 
-## Notifikasi Telegram untuk tugas selesai, gagal, atau terhambat (Phase 3)
 
-Impor `office_telegram_notifications.json` sebagai **workflow baru**, tanpa mengubah Gemini Auto Worker. Ini terpisah dari perintah bot `office_telegram_intake.json` dan ringkasan `office_daily_report.json`. Workflow baru tetap **nonaktif** setelah impor dan berjalan setiap **30 menit sepanjang minggu** setelah Publish (sekitar 1.440 poll per bulan; cek batas n8n Cloud). Setiap polling hanya menangani **satu** event; tidak ada pemanggilan Gemini.
+## Grup Anshel: 12 pegawai AI, 12 bot Telegram (PR #7)
 
-**Konfigurasi aman:**
-1. Di Vercel Production, atur `N8N_TOKEN` acak panjang minimal 24 karakter dan `TELEGRAM_CHAT_ID` berupa ID numerik **chat pribadi** yang menerima pesan. Jangan salin token atau ID ke repo maupun chat publik. Variabel `TELEGRAM_USER_ID` hanya diperlukan jika kelak mengaktifkan perintah masuk via Telegram, bukan untuk notifikasi keluar.
-2. Di n8n, pasang **Header Auth** `Authorization: Bearer <N8N_TOKEN>` pada node **Ambil notifikasi** dan **Konfirmasi terkirim**. Pasang **Telegram API credential** (token bot dari BotFather) pada node **Kirim ke Telegram**. Bot harus sudah pernah menerima `/start` dari chat tujuan.
-3. Pastikan deployment Production endpoint baru **Ready**, lalu dengan alur belum dipublikasikan jalankan **Execute Workflow** **sekali**. Panggilan pertama hanya mengatur titik awal berdasarkan audit terakhir dan mengembalikan `notification:null`, agar tidak membanjiri chat dengan riwayat lama. Setelah itu buat dan selesaikan satu tugas draf **uji nonrahasia**.
-4. Jalankan **Execute Workflow** lagi. Alur seharusnya mengambil satu notifikasi, mengirim pesan Telegram, lalu mengonfirmasi sukses ke server. Jika ada event lain, eksekusi ulang untuk event berikutnya. Pastikan event terhambat/gagal juga terkirim tanpa menampilkan teks draf.
-5. Setelah berhasil, **Publish** alur dan periksa bahwa `Asia/Jakarta` dipakai. **Unpublish** kapan pun untuk menghentikan polling. Cegah dua workflow notifikasi serupa sama-sama aktif.
+Fitur ini berbeda dari notifikasi satu bot. Setiap divisi dalam public/catalog.js memiliki bot Telegram sendiri, sedangkan Alya menjadi satu-satunya bot penerima pesan grup melalui n8n. Semua pegawai lain mengirim pesan memakai token masing-masing yang disimpan hanya di Vercel. Tidak ada akun, username, ataupun token yang dibuat otomatis lewat repository.
 
-**Jaminan pengiriman:** backend menahan satu notifikasi dalam sewa 10 menit dan memindahkan penanda terakhir hanya setelah Telegram node sukses dan endpoint `ack` berhasil. Jika Telegram atau n8n gagal, event boleh diambil lagi setelah sewa habis; dalam kasus pesan terkirim tetapi konfirmasi gagal, **pesan duplikat mungkin terjadi**. Tugas dan status lama diabaikan saat aktivasi pertama. Hanya metadata status, divisi, proyek, dan UUID dikirim—bukan instruksi, artefak, rincian error, atau token. Periksa pemakaian n8n Cloud; 30 menit adalah kompromi biaya dan keterlambatan, **bukan pesan instan**.
+### Siapkan 12 bot dan grup privat
+
+1. Buat satu grup privat dengan nama misalnya Anshel Virtual Tech - Internal Office. Buat 12 bot lewat @BotFather: Alya (management), Bima (operations), Citra (administration), Dara (hr), Eka (development), Fara (creative), Galih (video), Hana (social), Indra (research), Jihan (marketing), Kirana (qa), Laras (finance). Tambahkan semuanya sebagai anggota grup dan izinkan mereka mengirim pesan.
+2. Gunakan akun bot Alya sebagai pendengar. Nonaktifkan Group Privacy khusus Alya di pengaturan BotFather agar ia dapat menerima pesan manusia dalam grup. Bot-to-Bot Communication Mode dapat diaktifkan untuk pengalaman Telegram, tetapi backend Anshel tetap menolak semua update dari bot sehingga tidak terjadi loop antarbot.
+3. Dapatkan TELEGRAM_CHAT_ID numerik negatif dari message.chat.id Telegram Trigger, dan TELEGRAM_USER_ID dari message.from.id pesan pemilik. Jangan tempel token rahasia ke chat ini atau repository.
+4. Atur variabel privat di Vercel Production: N8N_TOKEN (minimal 24 karakter, berbeda dari WORKER_TOKEN), TELEGRAM_CHAT_ID, TELEGRAM_USER_ID, TELEGRAM_BOT_TOKENS_JSON. Nilai terakhir merupakan satu objek JSON dengan 12 key divisi yang disebut di atas, masing-masing bernilai token BotFather berbeda. Contoh isi nilai yang tidak boleh digunakan sungguhan: management: TOKEN_BOT_ALYA, development: TOKEN_BOT_EKA, dan seterusnya; gunakan format objek JSON valid.
+5. Opsional TELEGRAM_BOT_USERNAMES_JSON adalah objek JSON yang berisi key divisi dan username masing-masing bot tanpa awalan @. Ini membantu pemetaan pesan @AnshelEkaBot. Jika tidak diisi, perintah /tanya Eka | pertanyaan dan sapaan Eka, pertanyaan tetap bisa dipakai.
+6. Redeploy Vercel, lalu cek endpoint POST /api/integrations/office-group/config dengan Header Auth Authorization: Bearer N8N_TOKEN dan body JSON {}. Jika semua siap, respons mengandung configured berisi 12 divisi, missing kosong, dan total 12; tidak ada token yang dikembalikan.
+
+### Dua workflow n8n yang baru
+
+- office_telegram_group_intake.json: Trigger Telegram dari bot Alya, node saring pesan manusia, lalu POST /api/integrations/office-group/message dengan N8N_TOKEN. Hanya menerima pemilik dengan ID pengguna dan grup yang telah diizinkan. Jangan Publish workflow lama office_telegram_intake.json bersamaan untuk bot Alya: satu bot hanya boleh memakai satu Telegram Trigger/webhook aktif.
+- office_telegram_notifications.json: pemicu terjadwal tiap 30 menit Senin-Jumat 09:00-17:30 WIB, kemudian POST /api/integrations/office-group/dispatch dengan N8N_TOKEN. Satu eksekusi menyiarkan maksimum satu event tugas selesai, gagal, atau terhambat. Bot pegawai pemilik divisi mengirim pesan; pada tugas selesai satu respons singkat dari pegawai lain bisa ditambahkan. Maksimal dua pesan per perubahan tugas.
+
+Tidak ada percakapan acak yang mengarang progres. Semua template percakapan mengacu pada audit/status nyata Anshel. Balasan grup bergaya santai tetapi tetap transparan sebagai akun AI. Tidak ada panggilan Gemini tambahan untuk chat, jadi tidak ada biaya LLM yang dipicu hanya karena obrolan.
+
+### Uji dahulu sebelum Publish
+
+1. Pastikan PR sudah di-merge, deployment Production Ready, 12 bot sudah di grup, token privat dan kedua workflow baru sudah diimpor tetapi belum di-Publish.
+2. Pasang Header Auth N8N_TOKEN di node HTTP dari dua workflow. Pasang Telegram bot credential Alya di Trigger masuk.
+3. Jalankan satu kali workflow jadwal grup **sebelum** menyelesaikan tugas baru. Respons sent:false benar karena sistem melewatkan backlog lama.
+4. Buat satu tugas Draf AI fiktif di Anshel; jalankan worker Gemini sampai selesai; jalankan workflow jadwal grup sekali lagi. Harus ada pesan dari bot divisi yang bersangkutan, dan dapat diikuti balasan satu rekan kerja.
+5. Di grup, kirim dari akun pemilik: /bantuan, Eka, progresnya gimana?, /tanya Kirana | ada tugas QA?, dan /tugas desain | Buat tiga konsep desain fiktif. Jeda minimal 8 detik antara pesan. Perintah /tugas benar-benar menambah draf ke antrean; pengerjaannya mengikuti jadwal dan kuota worker yang sudah ada.
+6. Setelah tes privat berhasil, Publish kedua workflow. Unpublish untuk menghentikan aktivitas otomatis. Jangan Publish Telegram Trigger lama Alya bersamaan.
+
+Keamanan: pesan dari akun bot diabaikan; ID grup/pemilik diperiksa ulang di backend; token N8N digunakan pada API; maksimum 20 pesan owner per hari WIB, minimum 8 detik antar pesan, update ID diproses sekali. Pesan status memuat divisi, proyek singkat, ID tugas; tidak pernah mengirim teks tugas, artefak, detail error, atau token. Pengiriman terjadwal hanya pada jam kantor, bukan setiap malam. Jika Telegram sudah menerima pesan tetapi ACK gagal, pengiriman ulang dapat terjadi setelah lease 10 menit. Panggilan satu event belum menjamin tepat satu kali secara mutlak.
 
 ## Workflow Telegram lama (perintah masuk dan ringkasan harian)
 
