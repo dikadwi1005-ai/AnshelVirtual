@@ -38,9 +38,22 @@ Backend `POST /api/worker/claim-scheduled` memaksa jenis tugas `draft` dan secar
 
 Batas 3 **klaim** bukan batas biaya absolut: tarif provider, model, retry internal, request manual, dan perubahan endpoint lain dapat menimbulkan biaya/kuota terpisah. Hindari mengaktifkan dua workflow terjadwal yang sama. Workflow ini hanya menghasilkan **teks** dan belum mengirim Telegram, membuat gambar/video, atau melakukan perubahan GitHub.
 
-## Workflow Telegram yang sudah ada
+## Notifikasi Telegram untuk tugas selesai, gagal, atau terhambat (Phase 3)
 
-Kedua workflow masih nonaktif. Gunakan instance n8n Cloud milik Dika. Perintah Telegram dan laporan menggunakan token khusus integrasi. Worker mengambil pekerjaan dari API kantor. Jadwal kerja dan antrean tetap berada di SQLite.
+Impor `office_telegram_notifications.json` sebagai **workflow baru**, tanpa mengubah Gemini Auto Worker. Ini terpisah dari perintah bot `office_telegram_intake.json` dan ringkasan `office_daily_report.json`. Workflow baru tetap **nonaktif** setelah impor dan berjalan setiap **30 menit sepanjang minggu** setelah Publish (sekitar 1.440 poll per bulan; cek batas n8n Cloud). Setiap polling hanya menangani **satu** event; tidak ada pemanggilan Gemini.
+
+**Konfigurasi aman:**
+1. Di Vercel Production, atur `N8N_TOKEN` acak panjang minimal 24 karakter dan `TELEGRAM_CHAT_ID` berupa ID numerik **chat pribadi** yang menerima pesan. Jangan salin token atau ID ke repo maupun chat publik. Variabel `TELEGRAM_USER_ID` hanya diperlukan jika kelak mengaktifkan perintah masuk via Telegram, bukan untuk notifikasi keluar.
+2. Di n8n, pasang **Header Auth** `Authorization: Bearer <N8N_TOKEN>` pada node **Ambil notifikasi** dan **Konfirmasi terkirim**. Pasang **Telegram API credential** (token bot dari BotFather) pada node **Kirim ke Telegram**. Bot harus sudah pernah menerima `/start` dari chat tujuan.
+3. Pastikan deployment Production endpoint baru **Ready**, lalu dengan alur belum dipublikasikan jalankan **Execute Workflow** **sekali**. Panggilan pertama hanya mengatur titik awal berdasarkan audit terakhir dan mengembalikan `notification:null`, agar tidak membanjiri chat dengan riwayat lama. Setelah itu buat dan selesaikan satu tugas draf **uji nonrahasia**.
+4. Jalankan **Execute Workflow** lagi. Alur seharusnya mengambil satu notifikasi, mengirim pesan Telegram, lalu mengonfirmasi sukses ke server. Jika ada event lain, eksekusi ulang untuk event berikutnya. Pastikan event terhambat/gagal juga terkirim tanpa menampilkan teks draf.
+5. Setelah berhasil, **Publish** alur dan periksa bahwa `Asia/Jakarta` dipakai. **Unpublish** kapan pun untuk menghentikan polling. Cegah dua workflow notifikasi serupa sama-sama aktif.
+
+**Jaminan pengiriman:** backend menahan satu notifikasi dalam sewa 10 menit dan memindahkan penanda terakhir hanya setelah Telegram node sukses dan endpoint `ack` berhasil. Jika Telegram atau n8n gagal, event boleh diambil lagi setelah sewa habis; dalam kasus pesan terkirim tetapi konfirmasi gagal, **pesan duplikat mungkin terjadi**. Tugas dan status lama diabaikan saat aktivasi pertama. Hanya metadata status, divisi, proyek, dan UUID dikirim—bukan instruksi, artefak, rincian error, atau token. Periksa pemakaian n8n Cloud; 30 menit adalah kompromi biaya dan keterlambatan, **bukan pesan instan**.
+
+## Workflow Telegram lama (perintah masuk dan ringkasan harian)
+
+Kedua workflow lama ini terpisah dari notifikasi status terbaru dan belum teraktivasi. Gunakan instance n8n Cloud milik Dika. Perintah Telegram dan laporan menggunakan token khusus integrasi. Worker mengambil pekerjaan dari API kantor. Jadwal kerja dan antrean tetap berada di database privat Anshel (PostgreSQL pada produksi, SQLite pada pengujian lokal).
 
 1. Siapkan bot Telegram khusus untuk kantor. Isi `TELEGRAM_USER_ID` dan `TELEGRAM_CHAT_ID` dengan ID numerik dari percakapan privat Dika. Gunakan token acak minimal 24 karakter sebagai `N8N_TOKEN`, lalu jalankan ulang server.
 2. Setelah jalur jaringan diotorisasi, siapkan gateway HTTPS yang meneruskan **hanya** `POST /api/integrations/telegram` dan `POST /api/integrations/report` ke server lokal. Layar kantor dan API worker tetap menggunakan loopback. Terapkan pembatasan permintaan di gateway.
@@ -49,7 +62,7 @@ Kedua workflow masih nonaktif. Gunakan instance n8n Cloud milik Dika. Perintah T
 5. Uji `/status` dari chat Dika. Verifikasi kode 403 dari identitas lain dan ketiadaan balasan. Coba `/diagnostik` saat worker lokal hidup dan jadwal mengizinkan eksekusi. Ambil UUID dari balasan, lalu jalankan `/hasil UUID`.
 6. Uji Ringkasan harian secara manual. Jadwalnya 17:05 WIB pada hari kerja. Isi laporan menampilkan status antrean saat laporan diambil. Aktifkan workflow setelah uji privat berhasil.
 
-Perintah tersedia lewat `/bantuan`. Frasa seperti “Suruh tim SEO audit website BCIFT” memetakan divisi dan membuat tugas draf. Draf memerlukan Ollama. Eksekusi audit situs belum terpasang. Tugas draf dan diagnostik menghasilkan artefak lokal.
+Perintah tersedia lewat `/bantuan`. Frasa seperti “Suruh tim SEO audit website BCIFT” memetakan divisi dan membuat tugas draf. Draf teks dapat dikerjakan worker Gemini cloud jika diklaim; eksekusi audit situs asli belum tersedia. Artefak disimpan secara privat di database Anshel.
 
 Persetujuan dan penolakan diproses oleh API kantor. Pekerjaan publikasi, pembayaran, akses repositori, dan perubahan eksternal belum memiliki alat eksekusi. Notifikasi perubahan status dan kegagalan per tugas belum dihubungkan ke Telegram.
 
