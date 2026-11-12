@@ -1,5 +1,17 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Perbaikan jam operasional kantor virtual di chat Telegram
+
+Pertanyaan tentang jam masuk/kerja, jadwal kantor, briefing, libur, atau apakah pegawai sedang berada di kantor virtual kini memakai **data `state.schedule` dan `state.phase` asli** dari Anshel. Jangan lagi mengaku kantor tidak memiliki jam masuk atau semua pegawai selalu fleksibel.
+
+- Jadwal bawaan jika belum disesuaikan: Senin–Jumat, kedatangan 08.45 WIB, buka dan briefing 09.00–09.15, istirahat 12.00–13.00, review 16.30, selesai 17.00.
+- Jam dan hari yang **diubah lewat dashboard** serta hari libur tersimpan mengalahkan jadwal bawaan. Kata **besok** dihitung berdasarkan kalender Asia/Jakarta, sehingga libur akhir pekan/jadwal khusus disampaikan dengan benar.
+- Jika pertanyaan juga memuat **sekarang/lagi di kantor**, bot menjelaskan **fase simulasi saat ini** dan aktivitas avatar bila tercatat, bukan mengaku benar-benar berada di bangunan atau selalu siap bekerja kapan saja.
+- Balasan memakai bot karyawan yang dipanggil, tanpa request Gemini tambahan. Hak akses pemilik, pembatasan 20 pesan/hari WIB, jeda delapan detik, dan penolakan duplikat tetap berlaku. Pesan biasa tetap melalui Gemini.
+- Riwayat jawaban Gemini yang keliru seperti **tidak pakai jam masuk** dikeluarkan dari konteks percakapan berikutnya.
+
+**Cara uji lewat HP** setelah PR di-merge dan Vercel Production Ready: ketik `Alya, besok masuk jam berapa di kantor virtual? Lagi di kantor virtual sekarang?` pada grup Telegram. Pada malam hari di luar jam operasional seharusnya dijelaskan status tutup. Tidak perlu impor atau mengubah workflow n8n mana pun.
+
 ## Phase 3D — Kontrol status kantor langsung dari Telegram (HP)
 
 Ini perubahan backend saja. Workflow Natural Gemini dan Auto Office yang sudah Published **tidak perlu diimpor ulang**, dan tidak ada credential/Telegram Trigger baru. Hanya Alya, Bima, Citra, dan Dara yang merespons perintah khusus berikut:
