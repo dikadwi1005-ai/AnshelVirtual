@@ -153,3 +153,21 @@ test('endpoint natural terlindungi token n8n dan memvalidasi chat pemilik',async
     assert.equal((await post('finish',{updateId:ready.updateId,ticket:'wrong',output:'Teks'})).status,400);
   } finally{s.close();}
 });
+
+test('Alya dipanggil tanpa salam: tidak menambahkan Halo juga dan tidak mengarang suasana kantor',()=>{
+  const state={phase:'work',counts:{queued:0,running:0,completed:0},tasks:[]};
+  const user='Alya, gimana suasana kantor hari ini? Ada cerita menarik nggak?';
+  const prepared=buildOfficeNaturalRequest('management',user,state);
+  const instruction=prepared.systemInstruction.parts[0].text;
+  assert.match(instruction,/TIDAK memiliki sapaan/);
+  assert.match(instruction,/jangan mengaku menyaksikan kantor/i);
+  assert.equal(prepared.contents.at(-1).parts[0].text,'gimana suasana kantor hari ini? Ada cerita menarik nggak?');
+  assert.equal(cleanOfficeNaturalResponse('Halo juga, belum ada berita baru.','fallback',user),
+    'belum ada berita baru.');
+  assert.equal(cleanOfficeNaturalResponse('Halo juga, suasana kantor lumayan tenang dan semua fokus.','fallback',user),
+    'fallback');
+  const greeted=buildOfficeNaturalRequest('management','Alya, halo! Apa kabar?',state);
+  assert.match(greeted.systemInstruction.parts[0].text,/benar-benar mengandung sapaan/);
+  assert.equal(cleanOfficeNaturalResponse('Halo! Baik, ada yang perlu dibantu?','fallback',
+    'Alya, halo! Apa kabar?'),'Halo! Baik, ada yang perlu dibantu?');
+});
