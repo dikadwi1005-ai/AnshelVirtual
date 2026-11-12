@@ -1,8 +1,8 @@
 import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
-  sendOfficeGroupOwnerMessage,officeGroupReply } from './telegram-office.ts';
-import { isCollectiveCall,availableOfficeResponders,buildOfficeCollectiveRequest,
+  sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask } from './telegram-office.ts';
+import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse } from './telegram-group.ts';
 
 const persona={
@@ -19,7 +19,7 @@ const persona={
   qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
   finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
-const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek)(?:\s|$)/i;
+const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor)(?:\s|$)/i;
 const actionClaim=/\b(?:sudah|telah|berhasil)\s+(?:(?:aku|saya|kami|kita)\s+)?(?:mengirim|mempublikasikan|memposting|menghapus|membayar|mentransfer|menginstal|mendeploy)\b/i;
 const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 // Only use company-wide totals when the user actually asks about the office as a whole.
@@ -194,14 +194,16 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     throw new Fault(403,'Pesan bukan dari pemilik dalam grup yang diizinkan.');
   if(typeof data.text!=='string' || !data.text.trim() || data.text.length>1500 || !validId(data.updateId))
     throw new Fault(400,'Pesan Telegram tidak valid.');
-  if(command.test(data.text.trim())) {
+  if(command.test(data.text.trim())||parseOwnerNaturalTask(data.text)) {
     const done=await sendOfficeGroupOwnerMessage(store,env,data,fetchImpl);
     return {mode:'handled',...done};
   }
   const state=await store.state();
   const configured=configuredOfficeBots(env).configured;
-  if(isCollectiveCall(data.text)) {
-    const recipients=availableOfficeResponders(state,configured);
+  const discussion=requestedOfficeDiscussion(data.text);
+  if(isCollectiveCall(data.text)||discussion) {
+    const available=availableOfficeResponders(state,configured);
+    const recipients=discussion?discussion.filter(id=>available.includes(id)):available;
     if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
     // All four currently busy or not connected: no ungrounded "all present" message.
     if(!recipients.length) return {mode:'handled',sent:false,reason:'all-workers-busy-or-offline'};
@@ -250,7 +252,7 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
   officeGroupConfig(env);
   const pending=await store.consumeOfficeGroupAI(String(input?.updateId??''),input?.ticket);
   const state=await store.state();
-  if(isCollectiveCall(pending.question) && Array.isArray(pending.recipients)) {
+  if(Array.isArray(pending.recipients)) {
     // The saved server-side ticket fixes allowed identities. Recheck active
     // execution at delivery: someone who became busy must not answer.
     const available=new Set(availableOfficeResponders(state,configuredOfficeBots(env).configured));
@@ -259,9 +261,27 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
     const result=resolveOfficeCollectiveResponse(input?.output,recipients,pending.question,
       cleanOfficeNaturalResponse,state);
     const answers=result.answers;
-    // Send in parallel; n8n's HTTP timeout is 12 seconds and Telegram has a 6s timeout.
-    const attempts=await Promise.allSettled(recipients.map(id=>
-      sendOfficeBotMessage(env,id,answers[id].text,{fetchImpl})));
+    // Normal all-hands calls stay parallel. A targeted two-person discussion
+    // is sent in order, with second worker replying to the first worker's message.
+    const pair=!!requestedOfficeDiscussion(pending.question);
+    let attempts;
+    if(pair&&recipients.length===2) {
+      attempts=[];
+      let previous=null;
+      for(const id of recipients) {
+        try {
+          const messageId=await sendOfficeBotMessage(env,id,answers[id].text,
+            {...(previous?{replyTo:previous}:{}),fetchImpl});
+          attempts.push({status:'fulfilled',value:messageId});
+          previous=messageId;
+        }catch(error){
+          attempts.push({status:'rejected',reason:error});
+        }
+      }
+    }else{
+      attempts=await Promise.allSettled(recipients.map(id=>
+        sendOfficeBotMessage(env,id,answers[id].text,{fetchImpl})));
+    }
     const successful=[];
     for(let i=0;i<recipients.length;i++) {
       if(attempts[i].status==='fulfilled') {

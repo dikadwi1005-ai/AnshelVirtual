@@ -1,5 +1,39 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3I — Operasional Telegram, monitoring, laporan, dan kontrol dari HP
+
+**Hanya empat bot yang sudah aktif:** Alya, Bima, Citra, Dara. Delapan bot lain tetap ditunda. Workflow n8n Auto Office yang sudah Published tetap bisa dipakai, karena backend memanfaatkan panggilan `POST /api/integrations/office-group/dispatch` setiap jam pada hari kerja pukul 09–17 WIB. Tidak ada Telegram Trigger baru, credential baru, atau database schema baru. Setelah perubahan masuk Production, cek bahwa workflow Auto Office itu memang Published dan berjalan pada jam tersebut.
+
+### Pemantauan langsung
+- Dashboard web privat memiliki panel **Monitor** khusus, di samping Ruang, Proyek, Aktivitas, dan Tugas. Panel menunjukkan kegiatan avatar, tugas berjalan/antre, hasil draf terakhir, status worker yang tercatat, antrean menunggu persetujuan, dan masalah. Tampilan otomatis mengikuti respons `/api/state` yang sudah butuh login pemilik. Status worker bermakna **heartbeat baru-baru ini** (40 detik), bukan audit semua server.
+- Dari Telegram grup, pemilik bisa mengetik **/aktivitas**, **/pegawai**, atau **/monitor**. Alya memberi ringkasan empat pegawai dari data, bukan mengarang kerja fisik atau hasil tes.
+
+### Notifikasi masalah
+- Notifikasi `blocked` dan `failed` yang bersumber dari audit worker asli tetap dikirim lewat alur Auto Office yang ada, dibatasi maksimal tiga event per hari WIB dengan jeda satu jam.
+- Tambahan: ketika ada tugas **empat divisi aktif** yang antre sedikitnya **dua jam** dan worker tidak punya heartbeat dalam 40 detik saat jam kerja, **Bima mengirim peringatan satu kali per hari WIB**. Teks peringatan mengatakan ini indikasi antrean, **bukan bukti server mati**. Belum ada akses monitoring eksternal (Vercel/Supabase/Google API) untuk mengumumkan kondisi layanan lain sebagai fakta.
+- Bila tidak ada kondisi terdeteksi, bot tidak membuat peringatan. Notifikasi antrean disimpan secara atomik di `office_group_signals_v1`.
+
+### Ringkasan sore Alya
+- Pada pemanggilan terjadwal pertama yang terjadi setelah **jam tutup kantor** (default 17.00 WIB, hari operasional menurut `state.schedule`) hingga dua jam sesudahnya, Alya mengirim **satu ringkasan per hari WIB**.
+- Jumlah **tugas selesai/blocked/failed hari itu** dihitung dari audit bertanggal WIB; status **antre/diproses/menunggu persetujuan** dijelaskan sebagai snapshot seluruh antrean saat laporan dibuat, bukan salah disebut hasil kerja hari itu.
+- Hasil draf yang baru selesai di empat divisi diperlihatkan hanya melalui nama proyek dan divisi, tidak membocorkan teks tugas, output, error log, atau token. Draf belum dianggap sudah ditinjau/dipublikasikan.
+- Ringkasan ini **tidak memerlukan workflow Ringkasan Harian lama** dan tidak perlu mengaktifkannya, untuk menghindari dua laporan ganda. Jika Auto Office Cron tidak memanggil `/dispatch` sesudah jam tutup, ringkasan tidak dapat terkirim—jadi jadwal trigger n8n tetap perlu dicek.
+
+### Percakapan antarkaryawan
+- Obrolan virtual siang pada `/checkin` kini memilih dua pegawai yang **tidak sedang mengeksekusi tugas** dan, jika ada tugas yang tercatat, membahas status tugas/proyek tersebut secara terbatas. Tidak mengarang status penyelesaian atau aktivitas di server.
+- Perhatikan: obrolan otomatis ini masih **disusun secara deterministik dari data kantor**, bukan percakapan Gemini bebas yang selalu berubah. Untuk obrolan AI antarkaryawan yang sepenuhnya generatif dibutuhkan perubahan workflow n8n dan persetujuan kuota khusus; perubahan ini tidak berpura-pura sudah mengaktifkannya.
+- Pemilik tetap bisa memanggil `Guys` untuk memperoleh jawaban terpisah satu permintaan Gemini melalui workflow Natural Gemini. Memori singkat lintas pegawai dari Phase 3H tetap tersedia.
+- **Diskusi dua pegawai yang benar-benar ditulis Gemini**, dipicu pemilik: `Alya dan Bima, diskusikan status pemeriksaan API terbaru` atau `Citra dan Dara, bahas catatan rapat yang kemarin`. Backend memilih hanya dua bot aktif yang disebut dan tidak sibuk. Satu request Gemini menghasilkan dua pendapat berdasarkan konteks dan status tugas; balasan pegawai kedua di-*reply* ke pesan pegawai pertama dalam grup agar alurnya jelas. Tidak mengklaim telah memeriksa server, menyelesaikan tugas atau berkomunikasi tanpa perintah pemilik. Ini berbeda dari **check-in siang otomatis**, yang masih berbasis data dan variasi teks aman.
+
+### Kontrol melalui Telegram
+- Perintah manual `/ringkasan`, `/status`, `/kendala`, `/cek Nama`, dan `/tugas Nama | instruksi` tetap aktif.
+- Pengguna juga bisa memberi instruksi tugas draf eksplisit tanpa slash, contohnya **`Tolong Bima buat draf pemeriksaan layanan API`** atau **`Citra, tolong rangkum catatan rapat besok`**. Backend menerima hanya nama empat bot dan kata kerja yang jelas. Hasilnya **antrean tugas draf**, bukan klaim sudah dikerjakan atau tindakan langsung di server/akun lain.
+- Permintaan ambigu, percakapan biasa, dan panggilan bersama tidak otomatis menciptakan tugas. Pemilik dan grup tetap diverifikasi, update Telegram diproses satu kali, dan pembatasan 1.000 pesan/hari WIB dengan jeda dua detik masih berlaku.
+
+### Pengujian dari HP sesudah Production Ready
+Kirim `/aktivitas`, kemudian `Tolong Citra buat catatan ringkas rapat pagi nanti`, lalu `/cek Citra`. Pastikan bot hanya mengaku tugas **masuk antrean** hingga worker benar-benar menyelesaikan draf. Buka panel **Monitor** untuk melihat hasil dan status. Peringatan worker dan laporan sore harus didasarkan pada **kejadian nyata**, jangan membuat kegagalan produksi hanya untuk memicu pesan.
+
+
 ## Phase 3H — Memori percakapan grup Telegram lintas pegawai
 
 Sebelumnya, panggilan "Guys" hanya memakai pertanyaan terbaru dan fakta tugas. Meskipun kantor sudah menyimpan jawaban masing-masing pegawai, grup tidak memiliki konteks bersama. Sekarang saat **panggilan kolektif** ditujukan kepada pegawai bebas, satu request Gemini menerima **ringkasan maksimal lima putaran percakapan terbaru** dari Alya, Bima, Citra, dan Dara, termasuk saat sebelumnya pengguna berbicara secara pribadi di grup dengan salah satu pegawai. **Balasan yang dicatat berasal dari grup Telegram privat yang sama**, bukan sumber luar.

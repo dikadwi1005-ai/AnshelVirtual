@@ -1,5 +1,6 @@
 import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
+import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert } from './office-monitoring.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
 // Pilot automation uses the four connected bots only. More workers remain opt-in.
@@ -174,7 +175,9 @@ function latestTask(state,division) {
 export function officeGroupReply(state,input,env) {
   const msg=input.trim().slice(0,1500);
   if (msg==='/bantuan'||msg==='/help') return {division:'management',
-    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. Perintah dari HP: /ringkasan untuk rekap seluruh tugas, /kendala untuk tugas terhambat atau gagal, /cek Bima (bisa juga Alya, Citra, Dara) untuk status pegawai, /status dan /tim untuk informasi kantor. Untuk memberi tugas, pakai /tugas Nama | instruksi. Semua akun ini bot AI; hasil kerja perlu ditinjau.'};
+    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai.'};
+  if(/^\/(?:aktivitas|pegawai|monitor)$/i.test(msg))
+    return {division:'management',text:officeActivityReply(state,configuredOfficeBots(env).configured)};
   // Mobile-friendly commands use actual task state and never ask Gemini to
   // invent health checks. The bot routing is fixed per command.
   if (/^\/(?:ringkasan|ringkas)$/i.test(msg)) {
@@ -266,6 +269,23 @@ export function parseOfficeGroupTask(text) {
   if (!division)throw new Fault(400,'Nama divisi tidak dikenal. Gunakan /tim.');
   return {division,description:match[2].trim(),kind:'draft',urgent:false};
 }
+/** Only explicit and specific drafts for four connected employees. */
+export function parseOwnerNaturalTask(text) {
+  if(typeof text!=='string'||text.length>1500)return null;
+  const value=text.trim();
+  const name='(Alya|Bima|Citra|Dara)';
+  const verb='(?:buatkan|buat|susun|tulis|rangkum|rancang|siapkan|review|cek)';
+  const direct=new RegExp('^(?:tolong|minta|suruh)\\s+'+name+'\\s+(?:untuk\\s+)?'+verb+'\\s+(.+)$','i').exec(value);
+  const addressed=new RegExp('^'+name+'\\s*[,：:]\\s*(?:tolong|bantu)\\s+'+verb+'\\s+(.+)$','i').exec(value);
+  const match=direct||addressed;
+  if(!match)return null;
+  const division=personFrom(match[1]);
+  if(!activeAuto.has(division))return null;
+  const description=match[2].trim();
+  // Only queue textual drafts, never execute external actions.
+  if(description.length<10||description.length>1200)return null;
+  return {division,description,kind:'draft',urgent:false};
+}
 export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch) {
   const {chatId,userId}=officeGroupConfig(env);
   if (String(data.chatId)!==chatId || String(data.userId)!==userId || data.isBot!==false)
@@ -275,7 +295,7 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const updateId=String(data.updateId);
   const novel=await store.reserveOfficeGroupUpdate(updateId);
   if (!novel)return {duplicate:true};
-  const task=parseOfficeGroupTask(data.text);
+  const task=parseOfficeGroupTask(data.text)||parseOwnerNaturalTask(data.text);
   if(task) {
     const created=await store.create(task,'Pemilik · grup Telegram','office-group:'+updateId);
     const target=divisions.find(d=>d.id===task.division);
@@ -291,13 +311,19 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
 export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   officeGroupConfig(env);
   const event=await store.claimTelegramNotification();
-  if (!event)return {sent:false};
+  if (!event) {
+    const routine=await dispatchOfficeGroupRoutine(store,env,fetchImpl);
+    return routine||{sent:false};
+  }
   const configured=new Set(configuredOfficeBots(env).configured);
   // Ignore event types/identities outside this four-bot pilot. Mark them
   // consumed without using daily quota or attempting an unconfigured bot.
   if (!activeAuto.has(event.division)||!configured.has(event.division)) {
     await store.ackTelegramNotification(event.eventId,event.token,false);
-    return {sent:false,skipped:'not-in-four-bot-pilot',eventId:event.eventId};
+    // Skipping an inactive division must not starve the end-of-day summary.
+    const routine=await dispatchOfficeGroupRoutine(store,env,fetchImpl);
+    return routine ? {...routine,skipped:'not-in-four-bot-pilot',eventId:event.eventId} :
+      {sent:false,skipped:'not-in-four-bot-pilot',eventId:event.eventId};
   }
   const message=officeTaskConversation(event);
   if (!message) throw new Fault(500,'Audit tugas tidak bisa dipetakan ke pegawai kantor.');
@@ -315,7 +341,31 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
       followedUp=false;
     }
   }
-  return {sent:true,eventId:event.eventId,division:message.division,followedUp};
+  const routine=await dispatchOfficeGroupRoutine(store,env,fetchImpl);
+  return {sent:true,eventId:event.eventId,division:message.division,followedUp,
+    ...(routine?{routine:routine.kind}:{})};
+}
+
+/**
+ * Reuse the hourly published n8n Auto Office /dispatch route.
+ * Distinct once-a-day signal keys prevent repeated reports and warning spam.
+ */
+export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
+  officeGroupConfig(env);
+  const state=await store.state();
+  const configured=new Set(configuredOfficeBots(env).configured);
+  if(officeSummaryDue(state)&&configured.has('management') &&
+     await store.claimOfficeGroupSignal('daily-summary')) {
+    await sendOfficeBotMessage(env,'management',officeDailySummary(state),{fetchImpl});
+    return {sent:true,kind:'daily-summary',division:'management'};
+  }
+  const warning=officeQueueDelayAlert(state);
+  if(warning&&configured.has('operations') &&
+     await store.claimOfficeGroupSignal('queued-worker-silent')) {
+    await sendOfficeBotMessage(env,'operations',warning,{fetchImpl});
+    return {sent:true,kind:'queue-delay-alert',division:'operations'};
+  }
+  return null;
 }
 
 export function officeCheckinWindow(timestamp) {
@@ -327,16 +377,39 @@ export function officeCheckinWindow(timestamp) {
 }
 
 export function officeVirtualCheckin(state,configured) {
+  const busy=new Set((state.running||[]).map(t=>t.division));
+  for(const t of state.tasks||[])if(t.status==='running')busy.add(t.division);
   const eligible=automaticOfficeDivisions.filter(id=>configured.includes(id) &&
+    !busy.has(id) && state.people?.[id]?.executing!==true &&
     state.people?.[id] && Object.hasOwn(activities,state.people[id].activity));
   if(eligible.length<2)return null;
   const localDay=Math.floor((Number(state.now)+7*3600_000)/86400_000);
   const idx=((localDay%eligible.length)+eligible.length)%eligible.length;
-  const first=eligible[idx];
-  const second=eligible[(idx+1)%eligible.length];
+  // Prefer an actual recorded task over repetitive fictional office banter.
+  const relevant=(state.tasks||[]).find(task=>eligible.includes(task.division) &&
+    ['queued','blocked','failed','completed','awaiting_approval'].includes(task.status));
+  const first=relevant?.division||eligible[idx];
+  const second=eligible[(eligible.indexOf(first)+1)%eligible.length];
   const names=Object.fromEntries(divisions.map(d=>[d.id,d.employee]));
   const p1=activities[state.people[first].activity].toLowerCase();
   const p2=activities[state.people[second].activity].toLowerCase();
+  if(relevant) {
+    const project=clean(relevant.project)||'pekerjaan terbaru';
+    const fact={
+      queued:'masih menunggu eksekusi',blocked:'terhambat',failed:'gagal diproses',
+      completed:'hasil drafnya sudah tercatat',awaiting_approval:'menunggu persetujuan',
+    }[relevant.status];
+    const firstText='Di catatan Anshel, '+project+' '+fact+'. '+names[second]+
+      ', menurutmu langkah berikutnya perlu difokuskan ke mana?';
+    const answers={
+      management:'Kalau dari status di Anshel, kita prioritaskan sesuai jadwal dulu. Belum bisa menganggapnya final.',
+      operations:'Kalau masih ada hambatan, perlu diperiksa penyebabnya dulu. Aku belum punya hasil cek sistem.',
+      administration:'Kita bisa rapikan daftar tindak lanjut dari catatan tugas, tanpa menganggap hasilnya sudah disetujui.',
+      hr:'Kalau ada hambatan, kita bisa diskusikan pembagian perhatian tim tanpa menyimpulkan semua sudah beres.',
+    };
+    return {first,second,text:firstText,reply:answers[second]};
+  }
+
   const openers=[
     'Di kantor virtual, avatarku lagi '+p1+' nih. '+names[second]+', kalau kamu lagi apa?',
     'Kelihatannya avatarku lagi '+p1+' di simulasi kantor. '+names[second]+', kamu lagi di mana?',
