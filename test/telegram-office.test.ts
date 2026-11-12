@@ -162,3 +162,37 @@ test('endpoint grup memerlukan N8N_TOKEN, ID grup, dan tidak membocorkan token b
     assert.equal((await call('dispatch',{extra:1})).status,400);
   } finally{s.close();}
 });
+
+test('nama pegawai bisa muncul di awal, tengah, atau akhir percakapan',()=>{
+  const state={tasks:[],counts:{}};
+  const cases=[
+    ['Bima, lagi ngapain?','operations'],
+    ['Eh, Bima lagi ngapain sekarang?','operations'],
+    ['Ada kendala IT nggak, Bima?','operations'],
+    ['Tolong tanya Citra soal dokumen itu ya','administration'],
+    ['Hari ini Dara lagi ngapain?','hr'],
+    ['Gimana menurut Fara untuk desain?', 'creative'],
+    ['Bisa Eka bantu cek kode?','development'],
+    ['Kalau soal video mending tanya Galih ya?','video'],
+    ['Konten ini mau dibahas sama Hana nggak?','social'],
+    ['Indra bisa jelasin sumbernya?','research'],
+    ['Ada saran SEO dari Jihan?','marketing'],
+    ['Butuh dicek Kirana, gimana?','qa'],
+    ['Anggarannya gimana, Laras?','finance'],
+    ['Alya, tolong lihat progres Bima','management'],
+    ['Bima, kamu sudah bicara dengan Dara?','operations'],
+    ['Eh, @AnshelKiranaBot bisa bantu review QA?', 'qa'],
+    ['Tolong cek @AnshelEkaBot untuk kodenya', 'development'],
+    ['@AnshelKiranaBot sudah ada tugas?', 'qa'],
+    ['Bima', 'operations'],
+    ['Eh, Bima?','operations'],
+    ['Halo, kantor aman?','management'],
+    ['Ini bukan Bimawan ya?','management'],
+    ['Buka https://example.com/Bima di browser','management'],
+    ['/tanya Dara | ada jadwal HR?', 'hr'],
+  ];
+  for(const [message,expected] of cases) {
+    assert.equal(officeGroupReply(state,message,env).division,expected,
+      'Salah routing untuk '+message);
+  }
+});

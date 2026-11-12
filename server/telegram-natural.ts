@@ -61,6 +61,7 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     persona[division],
     'Balas dalam Bahasa Indonesia sehari-hari seperti rekan kerja saat chat, alami dan spesifik. Biasanya 1-3 kalimat pendek, di bawah 320 karakter.',
     'Utamakan pertanyaan TERAKHIR. Kalau ada dua pertanyaan, jawab keduanya. Jangan menyelipkan statistik atau topik lain yang tidak diminta.',
+    'Nama kamu boleh disebut di tengah atau akhir pesan, misalnya "Eh, Bima lagi ngapain?". Anggap itu pertanyaan untukmu jika kamu adalah Bima; jawab langsung sebagai dirimu sendiri, bukan melaporkan Bima sebagai orang ketiga.',
     'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar YANG TERCATAT di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
     'Belum ada tugas IT tercatat tidak berarti server pasti aman. Tanpa bukti pemeriksaan, jangan klaim kondisi sistem aman, stabil, normal, atau bebas kendala.',
     'Jangan mengaku sedang mantengin log, cek server, bekerja, ngobrol dengan staf, mengirim sesuatu, atau melakukan kegiatan konkret yang tidak tersedia pada DATA KANTOR.',
