@@ -107,13 +107,35 @@ function getUsernames(env) {
     .map(([id,value])=>[value.toLowerCase(),id]));
 }
 const personFrom=input=>divisionByName.get(input.toLowerCase()) ?? null;
+// Only match complete employee names, never substrings inside unrelated words.
+// Match names anywhere in a message so the owner can speak naturally.
+const employeeNamePattern=new RegExp('(^|[^A-Za-z0-9_])('+divisions.map(d=>d.employee).join('|')+')(?=$|[^A-Za-z0-9_])','ig');
 function getAddressedDivision(input,env) {
   const fromCommand=/^\/(?:tanya|ask)\s+([a-zA-Z0-9_]+)\s*\|\s*(.*)$/is.exec(input);
   if (fromCommand) return {division:personFrom(fromCommand[1]),text:fromCommand[2],explicit:true};
-  const mention=/^@([A-Za-z][A-Za-z0-9_]{4,31})[\s,:]*(.*)$/s.exec(input);
-  if (mention) return {division:getUsernames(env).get(mention[1].toLowerCase()) ?? null,text:mention[2],explicit:true};
+  const usernames=getUsernames(env);
+  const leadingMention=/^@([A-Za-z][A-Za-z0-9_]{4,31})[\s,:]*(.*)$/s.exec(input);
+  if (leadingMention) return {division:usernames.get(leadingMention[1].toLowerCase()) ?? null,
+    text:leadingMention[2],explicit:true};
+  // When a recognized employee is explicitly addressed at the start, they win
+  // even if another employee is also discussed later in the same message.
   const prefix=/^([a-zA-Z]+)[,:]\s*(.*)$/s.exec(input);
-  if (prefix) return {division:personFrom(prefix[1]),text:prefix[2],explicit:!!personFrom(prefix[1])};
+  if (prefix) {
+    const addressed=personFrom(prefix[1]);
+    if (addressed) return {division:addressed,text:prefix[2],explicit:true};
+  }
+  // Telegram usernames may appear mid-sentence, but only configured usernames
+  // can route: do not guess identities from arbitrary @mentions.
+  const mentions=input.matchAll(/(^|[^A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{4,31})(?=$|[^A-Za-z0-9_])/g);
+  for(const match of mentions) {
+    const id=usernames.get(match[2].toLowerCase());
+    if(id) return {division:id,text:input,explicit:true};
+  }
+  // Ignore URLs and @mentions while scanning names to avoid accidental matches.
+  const prose=input.replace(/https?:\/\/\S+/gi,' ').replace(/@[A-Za-z][A-Za-z0-9_]{4,31}/g,' ');
+  employeeNamePattern.lastIndex=0;
+  const found=employeeNamePattern.exec(prose);
+  if(found) return {division:personFrom(found[2]),text:input,explicit:true};
   return {division:'management',text:input,explicit:false};
 }
 function latestTask(state,division) {
