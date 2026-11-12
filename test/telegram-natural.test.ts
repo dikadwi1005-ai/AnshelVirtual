@@ -333,6 +333,7 @@ test('Alya menyebut jam masuk besok dari jadwal kantor WIB, bukan mengaku kerja 
   assert.match(answer,/aktivitas avatar yang tercatat: bersosialisasi/i);
   assert.doesNotMatch(answer,/jam masuk resmi|fleksibel|selalu siap|kapan pun/i);
   assert.equal(officeScheduleReply('management','Alya, semangat besok ya!',state),null);
+  assert.equal(officeScheduleReply('management','Alya, jam berapa sekarang?',state),null);
 });
 
 test('jadwal khusus dan hari libur diambil dari pengaturan, bukan angka tetap',()=>{
