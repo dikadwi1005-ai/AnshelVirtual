@@ -272,10 +272,21 @@ export function parseOfficeGroupTask(text) {
 /** Only explicit and specific drafts for four connected employees. */
 export function parseOwnerNaturalTask(text) {
   if(typeof text!=='string'||text.length>1500)return null;
-  const clean=text.trim();
-  const named=String.raw`(Alya|Bima|Citra|Dara)`;
-  const action=String.raw`(?:buatkan|buat|susun|tulis|rangkum|rancang|siapkan|review|cek)`;
-  const first=new RegExp('^(?:tolong|minta|suruh)\\s+'+named+'\\s+(?:untuk\\s+)?'+action+'\\s+(.+)
+  const value=text.trim();
+  const name='(Alya|Bima|Citra|Dara)';
+  const verb='(?:buatkan|buat|susun|tulis|rangkum|rancang|siapkan|review|cek)';
+  const direct=new RegExp('^(?:tolong|minta|suruh)\\s+'+name+'\\s+(?:untuk\\s+)?'+verb+'\\s+(.+)$','i').exec(value);
+  const addressed=new RegExp('^'+name+'\\s*[,：:]\\s*(?:tolong|bantu)\\s+'+verb+'\\s+(.+)$','i').exec(value);
+  const match=direct||addressed;
+  if(!match)return null;
+  const division=personFrom(match[1]);
+  if(!activeAuto.has(division))return null;
+  const description=match[2].trim();
+  // Only queue textual drafts, never execute external actions.
+  if(description.length<10||description.length>1200)return null;
+  return {division,description,kind:'draft',urgent:false};
+}
+export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch) {
   const {chatId,userId}=officeGroupConfig(env);
   if (String(data.chatId)!==chatId || String(data.userId)!==userId || data.isBot!==false)
     throw new Fault(403,'Pesan bukan dari pemilik dalam grup yang diizinkan.');
