@@ -106,6 +106,23 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         await writeSetting(key,{cursor:eventId,pending:null},client);
       });
     },
+    async reserveOfficeGroupUpdate(updateId) {
+      if (typeof updateId !== 'string' || !/^[0-9]{1,24}$/.test(updateId)) throw new Fault(400,'ID pesan Telegram tidak valid.');
+      return transaction(async client => {
+        await query('SELECT pg_advisory_xact_lock(17293108)',[],client);
+        const key='office_group_updates_v1';
+        const snapshot=await readSetting(key,{seen:[],at:0,date:'',used:0},client);
+        const cutoff=now()-24*3600_000;
+        const seen=(snapshot.seen||[]).filter(item => item.at>cutoff).slice(-100);
+        if (seen.some(item => item.id===updateId)) return false;
+        const today=scheduledDraftDay(new Date(now()));
+        const used=snapshot.date===today ? snapshot.used : 0;
+        if (now()-snapshot.at<8000 || used>=20) throw new Fault(429,'Batas pesan grup tercapai. Coba lagi nanti.');
+        seen.push({id:updateId,at:now()});
+        await writeSetting(key,{seen,at:now(),date:today,used:used+1},client);
+        return true;
+      });
+    },
     async sessionActive(token) {
       const hash = createHash('sha256').update(token).digest('hex');
       const session = await one('SELECT expires_at FROM anshel.sessions WHERE token_hash=$1', [hash]);
