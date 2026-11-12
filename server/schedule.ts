@@ -26,6 +26,13 @@ export function phase(at = new Date(), schedule = defaults, mode = 'auto') {
   return 'review';
 }
 
+// Counts one scheduled Gemini claim per task, in the office's WIB timezone.
+export const scheduledDraftDailyLimit = 3;
+export function scheduledDraftDay(at = new Date()) {
+  const parts = Object.fromEntries(formatter.formatToParts(at).map(part => [part.type,part.value]));
+  return [parts.year,parts.month,parts.day].join('-');
+}
+
 export function validSchedule(value) {
   const keys = ['arrival','open','briefingEnd','lunch','lunchEnd','review','close'];
   return value && keys.every((key,i) => typeof value[key] === 'string' &&

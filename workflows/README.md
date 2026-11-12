@@ -24,6 +24,20 @@ File `office_gemini_queue.json` adalah **workflow baru yang terpisah** dari pilo
 
 **Batas keselamatan:** Alur ini belum terjadwal dan tidak menyalakan eksekusi berulang, sehingga tidak ada panggilan Gemini tanpa pemicu manual. Untuk otomasi penuh perlu batas harian/biaya, pengendalian retry, perlindungan atas pekerjaan sensitif, dan persetujuan Dika terlebih dahulu. Bukan worker gambar/video, bukan audit internet nyata, bukan penulis otomatis ke GitHub, dan bukan Telegram bot. Pastikan impor ulang file setelah perubahan GitHub; n8n tidak menyinkronkan file repository secara otomatis.
 
+## Jadwal Gemini dengan kuota backend (checkpoint Phase 3)
+
+`office_gemini_scheduled.json` adalah **workflow terpisah** dari pilot UUID dan Queue Manual. Saat impor, `active:false` (belum dipublikasikan). Pemicu **Schedule Trigger** berjalan setiap 20 menit, Senin–Jumat pukul 09.00–16.40 **WIB**, setelah workflow dipublikasikan di n8n.
+
+Backend `POST /api/worker/claim-scheduled` memaksa jenis tugas `draft` dan secara atomik membatasi **3 tugas yang diklaim per tanggal WIB**, bukan 3 permintaan Gemini yang sukses. Kuota dipakai saat klaim (termasuk respons 429/timeout), **tidak otomatis dikembalikan** jika gagal atau tugas dibatalkan. Jika kuota habis, tidak ada tugas, sedang istirahat/ditutup/libur/jeda, respons `{"task":null}` dan Gemini tidak dipanggil. Kuota tersimpan dalam `anshel.setting` pada skema privat dan tidak memerlukan perubahan tabel. Tugas yang menunggu tetap antre untuk hari kerja berikutnya. Worker manual tetap tersedia terpisah dan **tidak** memakai kuota jadwal.
+
+1. Tunggu PR diterima dan endpoint terpasang di **Production**; jangan menguji endpoint baru sebelum deployment Ready.
+2. Impor `office_gemini_scheduled.json` sebagai workflow baru, **jangan mengubah workflow antrean manual yang lulus uji**.
+3. Setel kredensial Header Auth worker di **Klaim draf dengan batas harian**, **Perpanjang sewa**, dan **Simpan hasil**. Kredensial Gemini hanya pada node **Gemini**.
+4. Dengan workflow belum dipublikasikan, uji secara manual pada jam kerja dengan tugas draf **nonrahasia**. Cek satu tugas per eksekusi, `task:null` saat antrean kosong, dan data hasil privat.
+5. Setelah lolos pengujian dan persetujuan aktivasi, **Publish** workflow terjadwal di n8n dan cek zona waktu `Asia/Jakarta`. Batasi hak pengelola dan awasi kuota. **Unpublish** untuk menghentikan pemicu kapan pun.
+
+Batas 3 **klaim** bukan batas biaya absolut: tarif provider, model, retry internal, request manual, dan perubahan endpoint lain dapat menimbulkan biaya/kuota terpisah. Hindari mengaktifkan dua workflow terjadwal yang sama. Workflow ini hanya menghasilkan **teks** dan belum mengirim Telegram, membuat gambar/video, atau melakukan perubahan GitHub.
+
 ## Workflow Telegram yang sudah ada
 
 Kedua workflow masih nonaktif. Gunakan instance n8n Cloud milik Dika. Perintah Telegram dan laporan menggunakan token khusus integrasi. Worker mengambil pekerjaan dari API kantor. Jadwal kerja dan antrean tetap berada di SQLite.

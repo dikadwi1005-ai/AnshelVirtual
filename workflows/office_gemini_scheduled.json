@@ -1,0 +1,223 @@
+{
+  "name": "Anshel · Gemini terjadwal (maks 3 draf per hari)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/20 9-16 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "714c23f1-8b6f-4ee5-bf18-000000000001",
+      "name": "Jadwal kerja WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/worker/claim-scheduled",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "714c23f1-8b6f-4ee5-bf18-000000000002",
+      "name": "Klaim draf dengan batas harian",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const task = $input.first().json.task;\nif (!task) return [];\nif (typeof task.id !== 'string' || task.kind !== 'draft' || typeof task.token !== 'string') {\n  throw new Error('Worker menerima tugas yang tidak cocok dengan uji ini.');\n}\nconst divisions = {\n  management:'Manajemen', operations:'IT & Operasional', administration:'Administrasi',\n  hr:'SDM', development:'Pengembangan', creative:'Kreatif & Desain',\n  video:'Produksi Video', social:'Media Sosial', research:'Riset & Intelijen',\n  marketing:'SEO & Pemasaran', qa:'Jaminan Mutu', finance:'Keuangan'\n};\nconst division = divisions[task.division] || 'Tim kantor';\nconst project = typeof task.project === 'string' && task.project.trim()\n  ? task.project.trim().slice(0, 120) : 'Tidak disebutkan';\nconst instructions = [\n  'Anda adalah asisten Anshel Virtual Tech, divisi ' + division + ', proyek ' + project + '.',\n  'Buat draf Bahasa Indonesia yang menjawab instruksi pengguna secara langsung, siap ditinjau.',\n  'Jika instruksi umum tidak menjelaskan topik, gunakan konteks divisi: misalnya Keuangan membahas anggaran, bukan otomatis mengubahnya menjadi agenda pemasaran.',\n  'Ikuti jumlah poin yang diminta persis; jika tiga poin, buat tiga agenda utama.',\n  'Jangan mengarang tanggal, lokasi, peserta, angka, sumber, atau laporan yang sudah dikirim sebagai fakta. Jika tidak diberikan, tulis Belum ditentukan bila memang perlu.',\n  'Jika contoh bersifat fiktif, nyatakan sebagai contoh, bukan kejadian yang benar-benar terjadi.',\n  'Jangan mengaku telah menelusuri internet, mengakses repositori, mengirim email, atau melakukan perubahan nyata.',\n  'Jika instruksi dan konteks divisi bertentangan, prioritaskan instruksi eksplisit pengguna.'\n].join('\\n');\nreturn [{ json: {\n  id: task.id,\n  token: task.token,\n  request: {\n    systemInstruction: { parts: [{ text: instructions }] },\n    contents: [{ role: 'user', parts: [{ text: task.description }] }],\n    generationConfig: { maxOutputTokens: 1200 }\n  }\n} }];"
+      },
+      "id": "714c23f1-8b6f-4ee5-bf18-000000000003",
+      "name": "Siapkan draf",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 25000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "714c23f1-8b6f-4ee5-bf18-000000000004",
+      "name": "Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { id, token } = $('Siapkan draf').first().json;\nconst response = $input.first().json;\nconst status = Number(response.statusCode);\nconst finish = (error, unavailable = false) => [{ json: { id, token, error, unavailable } }];\nif (!status || status < 200 || status >= 300) {\n  const temporary = !status || [401, 403, 404, 408, 429].includes(status) || status >= 500;\n  if (!status) return finish('Gemini tidak dapat dihubungi atau melewati batas waktu.', true);\n  if (status === 429) return finish('Kuota Gemini sedang terbatas. Coba lagi setelah kuota tersedia.', true);\n  return finish('Gemini menolak permintaan (HTTP ' + status + ').', temporary);\n}\nconst candidate = response.body?.candidates?.[0];\nconst parts = candidate?.content?.parts;\nconst output = Array.isArray(parts) ? parts\n  .filter(part => part?.thought !== true && typeof part?.text === 'string')\n  .map(part => part.text).join('').trim() : '';\nif (candidate?.finishReason === 'MAX_TOKENS') return finish('Draf Gemini terpotong oleh batas keluaran.');\nif (candidate?.finishReason !== 'STOP' || !output || output.length > 99000) {\n  return finish('Gemini tidak mengembalikan draf lengkap yang dapat disimpan.');\n}\nreturn [{ json: { id, token, output } }];"
+      },
+      "id": "714c23f1-8b6f-4ee5-bf18-000000000005",
+      "name": "Periksa hasil",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/worker/heartbeat",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.id, token: $json.token }) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "714c23f1-8b6f-4ee5-bf18-000000000007",
+      "name": "Perpanjang sewa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/worker/finish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Periksa hasil').first().json) }}",
+        "options": {
+          "timeout": 12000
+        }
+      },
+      "id": "714c23f1-8b6f-4ee5-bf18-000000000006",
+      "name": "Simpan hasil",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Siapkan draf": {
+      "main": [
+        [
+          {
+            "node": "Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini": {
+      "main": [
+        [
+          {
+            "node": "Periksa hasil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Periksa hasil": {
+      "main": [
+        [
+          {
+            "node": "Perpanjang sewa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perpanjang sewa": {
+      "main": [
+        [
+          {
+            "node": "Simpan hasil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jadwal kerja WIB": {
+      "main": [
+        [
+          {
+            "node": "Klaim draf dengan batas harian",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Klaim draf dengan batas harian": {
+      "main": [
+        [
+          {
+            "node": "Siapkan draf",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}
