@@ -1,5 +1,6 @@
 import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
+import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert } from './office-monitoring.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
 // Pilot automation uses the four connected bots only. More workers remain opt-in.
@@ -174,7 +175,9 @@ function latestTask(state,division) {
 export function officeGroupReply(state,input,env) {
   const msg=input.trim().slice(0,1500);
   if (msg==='/bantuan'||msg==='/help') return {division:'management',
-    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. Perintah dari HP: /ringkasan untuk rekap seluruh tugas, /kendala untuk tugas terhambat atau gagal, /cek Bima (bisa juga Alya, Citra, Dara) untuk status pegawai, /status dan /tim untuk informasi kantor. Untuk memberi tugas, pakai /tugas Nama | instruksi. Semua akun ini bot AI; hasil kerja perlu ditinjau.'};
+    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai.'};
+  if(/^\/(?:aktivitas|pegawai|monitor)$/i.test(msg))
+    return {division:'management',text:officeActivityReply(state,configuredOfficeBots(env).configured)};
   // Mobile-friendly commands use actual task state and never ask Gemini to
   // invent health checks. The bot routing is fixed per command.
   if (/^\/(?:ringkasan|ringkas)$/i.test(msg)) {
@@ -266,6 +269,256 @@ export function parseOfficeGroupTask(text) {
   if (!division)throw new Fault(400,'Nama divisi tidak dikenal. Gunakan /tim.');
   return {division,description:match[2].trim(),kind:'draft',urgent:false};
 }
+/** Only explicit and specific drafts for four connected employees. */
+export function parseOwnerNaturalTask(text) {
+  if(typeof text!=='string'||text.length>1500)return null;
+  const clean=text.trim();
+  const named=String.raw`(Alya|Bima|Citra|Dara)`;
+  const action=String.raw`(?:buatkan|buat|susun|tulis|rangkum|rancang|siapkan|review|cek)`;
+  const first=new RegExp('^(?:tolong|minta|suruh)\\s+'+named+'\\s+(?:untuk\\s+)?'+action+'\\s+(.+)
+  const {chatId,userId}=officeGroupConfig(env);
+  if (String(data.chatId)!==chatId || String(data.userId)!==userId || data.isBot!==false)
+    throw new Fault(403,'Pesan bukan dari pemilik dalam grup yang diizinkan.');
+  if (typeof data.text!=='string' || data.text.length>1500 || !/^[0-9]{1,24}$/.test(String(data.updateId||'')))
+    throw new Fault(400,'Format pesan grup tidak valid.');
+  const updateId=String(data.updateId);
+  const novel=await store.reserveOfficeGroupUpdate(updateId);
+  if (!novel)return {duplicate:true};
+  const task=parseOfficeGroupTask(data.text)||parseOwnerNaturalTask(data.text);
+  if(task) {
+    const created=await store.create(task,'Pemilik · grup Telegram','office-group:'+updateId);
+    const target=divisions.find(d=>d.id===task.division);
+    const message='Siap, tugas baru untuk '+target.name+' sudah masuk antrean (ID: '+created.id+
+      '). Aku mulai kalau jadwal dan kuota worker mengizinkan, ya.';
+    await sendOfficeBotMessage(env,target.id,message,{fetchImpl});
+    return {sent:true,division:target.id,createdTaskId:created.id};
+  }
+  const reply=officeGroupReply(await store.state(),data.text,env);
+  await sendOfficeBotMessage(env,reply.division,reply.text,{fetchImpl});
+  return {sent:true,division:reply.division};
+}
+export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
+  officeGroupConfig(env);
+  const event=await store.claimTelegramNotification();
+  if (!event) {
+    const routine=await dispatchOfficeGroupRoutine(store,env,fetchImpl);
+    return routine||{sent:false};
+  }
+  const configured=new Set(configuredOfficeBots(env).configured);
+  // Ignore event types/identities outside this four-bot pilot. Mark them
+  // consumed without using daily quota or attempting an unconfigured bot.
+  if (!activeAuto.has(event.division)||!configured.has(event.division)) {
+    await store.ackTelegramNotification(event.eventId,event.token,false);
+    return {sent:false,skipped:'not-in-four-bot-pilot',eventId:event.eventId};
+  }
+  const message=officeTaskConversation(event);
+  if (!message) throw new Fault(500,'Audit tugas tidak bisa dipetakan ke pegawai kantor.');
+  const replyId=await sendOfficeBotMessage(env,message.division,message.text,{fetchImpl});
+  await store.ackTelegramNotification(event.eventId,event.token,true);
+  let followedUp=false;
+  if (message.followUp && activeAuto.has(message.followUp.division) &&
+      configured.has(message.followUp.division)) {
+    try {
+      await sendOfficeBotMessage(env,message.followUp.division,message.followUp.text,{fetchImpl,replyTo:replyId});
+      followedUp=true;
+    } catch {
+      // Main update was acknowledged. A secondary response is optional;
+      // do not resend the worker update on retry.
+      followedUp=false;
+    }
+  }
+  const routine=await dispatchOfficeGroupRoutine(store,env,fetchImpl);
+  return {sent:true,eventId:event.eventId,division:message.division,followedUp,
+    ...(routine?{routine:routine.kind}:{})};
+}
+
+/**
+ * Reuse the hourly published n8n Auto Office /dispatch route.
+ * Distinct once-a-day signal keys prevent repeated reports and warning spam.
+ */
+export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
+  officeGroupConfig(env);
+  const state=await store.state();
+  const configured=new Set(configuredOfficeBots(env).configured);
+  if(officeSummaryDue(state)&&configured.has('management') &&
+     await store.claimOfficeGroupSignal('daily-summary')) {
+    await sendOfficeBotMessage(env,'management',officeDailySummary(state),{fetchImpl});
+    return {sent:true,kind:'daily-summary',division:'management'};
+  }
+  const warning=officeQueueDelayAlert(state);
+  if(warning&&configured.has('operations') &&
+     await store.claimOfficeGroupSignal('queued-worker-silent')) {
+    await sendOfficeBotMessage(env,'operations',warning,{fetchImpl});
+    return {sent:true,kind:'queue-delay-alert',division:'operations'};
+  }
+  return null;
+}
+
+export function officeCheckinWindow(timestamp) {
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Jakarta',weekday:'short',
+    hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date(timestamp));
+  const day=parts.find(p=>p.type==='weekday')?.value;
+  const hour=Number(parts.find(p=>p.type==='hour')?.value);
+  return ['Mon','Tue','Wed','Thu','Fri'].includes(day)&&hour>=11&&hour<=14;
+}
+
+export function officeVirtualCheckin(state,configured) {
+  const eligible=automaticOfficeDivisions.filter(id=>configured.includes(id) &&
+    state.people?.[id] && Object.hasOwn(activities,state.people[id].activity));
+  if(eligible.length<2)return null;
+  const localDay=Math.floor((Number(state.now)+7*3600_000)/86400_000);
+  const idx=((localDay%eligible.length)+eligible.length)%eligible.length;
+  const first=eligible[idx];
+  const second=eligible[(idx+1)%eligible.length];
+  const names=Object.fromEntries(divisions.map(d=>[d.id,d.employee]));
+  const p1=activities[state.people[first].activity].toLowerCase();
+  const p2=activities[state.people[second].activity].toLowerCase();
+  const openers=[
+    'Di kantor virtual, avatarku lagi '+p1+' nih. '+names[second]+', kalau kamu lagi apa?',
+    'Kelihatannya avatarku lagi '+p1+' di simulasi kantor. '+names[second]+', kamu lagi di mana?',
+  ];
+  const responses=[
+    'Aku lagi '+p2+' di kantor virtual. Kalau nanti ada perkembangan tugas, kita lihat catatan Anshel, ya.',
+    'Avatarku lagi '+p2+' di simulasi kantor. Kalau nanti ada update kerjaan, kita bahas dari catatan Anshel.',
+  ];
+  return {first,second,text:openers[localDay%openers.length],
+    reply:responses[localDay%responses.length]};
+}
+
+export async function dispatchOfficeGroupCheckin(store,env,fetchImpl=fetch) {
+  officeGroupConfig(env);
+  const state=await store.state();
+  if(!officeCheckinWindow(state.now))return {sent:false,reason:'outside-checkin-window'};
+  const configured=configuredOfficeBots(env).configured;
+  const conversation=officeVirtualCheckin(state,configured);
+  if(!conversation)return {sent:false,reason:'not-enough-active-bots'};
+  if(!await store.claimOfficeGroupCheckin())return {sent:false,reason:'already-sent-today'};
+  const replyId=await sendOfficeBotMessage(env,conversation.first,conversation.text,{fetchImpl});
+  let followedUp=false;
+  try {
+    await sendOfficeBotMessage(env,conversation.second,conversation.reply,{fetchImpl,replyTo:replyId});
+    followedUp=true;
+  } catch {
+    // The daily lock prevents repeat attempts and spam on partial failure.
+    followedUp=false;
+  }
+  return {sent:true,division:conversation.first,followedUp};
+}
+,'i').exec(clean);
+  const second=new RegExp('^'+named+'\\s*[,：:]\\s*(?:tolong|bantu)\\s+'+action+'\\s+(.+)
+  const {chatId,userId}=officeGroupConfig(env);
+  if (String(data.chatId)!==chatId || String(data.userId)!==userId || data.isBot!==false)
+    throw new Fault(403,'Pesan bukan dari pemilik dalam grup yang diizinkan.');
+  if (typeof data.text!=='string' || data.text.length>1500 || !/^[0-9]{1,24}$/.test(String(data.updateId||'')))
+    throw new Fault(400,'Format pesan grup tidak valid.');
+  const updateId=String(data.updateId);
+  const novel=await store.reserveOfficeGroupUpdate(updateId);
+  if (!novel)return {duplicate:true};
+  const task=parseOfficeGroupTask(data.text);
+  if(task) {
+    const created=await store.create(task,'Pemilik · grup Telegram','office-group:'+updateId);
+    const target=divisions.find(d=>d.id===task.division);
+    const message='Siap, tugas baru untuk '+target.name+' sudah masuk antrean (ID: '+created.id+
+      '). Aku mulai kalau jadwal dan kuota worker mengizinkan, ya.';
+    await sendOfficeBotMessage(env,target.id,message,{fetchImpl});
+    return {sent:true,division:target.id,createdTaskId:created.id};
+  }
+  const reply=officeGroupReply(await store.state(),data.text,env);
+  await sendOfficeBotMessage(env,reply.division,reply.text,{fetchImpl});
+  return {sent:true,division:reply.division};
+}
+export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
+  officeGroupConfig(env);
+  const event=await store.claimTelegramNotification();
+  if (!event)return {sent:false};
+  const configured=new Set(configuredOfficeBots(env).configured);
+  // Ignore event types/identities outside this four-bot pilot. Mark them
+  // consumed without using daily quota or attempting an unconfigured bot.
+  if (!activeAuto.has(event.division)||!configured.has(event.division)) {
+    await store.ackTelegramNotification(event.eventId,event.token,false);
+    return {sent:false,skipped:'not-in-four-bot-pilot',eventId:event.eventId};
+  }
+  const message=officeTaskConversation(event);
+  if (!message) throw new Fault(500,'Audit tugas tidak bisa dipetakan ke pegawai kantor.');
+  const replyId=await sendOfficeBotMessage(env,message.division,message.text,{fetchImpl});
+  await store.ackTelegramNotification(event.eventId,event.token,true);
+  let followedUp=false;
+  if (message.followUp && activeAuto.has(message.followUp.division) &&
+      configured.has(message.followUp.division)) {
+    try {
+      await sendOfficeBotMessage(env,message.followUp.division,message.followUp.text,{fetchImpl,replyTo:replyId});
+      followedUp=true;
+    } catch {
+      // Main update was acknowledged. A secondary response is optional;
+      // do not resend the worker update on retry.
+      followedUp=false;
+    }
+  }
+  return {sent:true,eventId:event.eventId,division:message.division,followedUp};
+}
+
+export function officeCheckinWindow(timestamp) {
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Jakarta',weekday:'short',
+    hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date(timestamp));
+  const day=parts.find(p=>p.type==='weekday')?.value;
+  const hour=Number(parts.find(p=>p.type==='hour')?.value);
+  return ['Mon','Tue','Wed','Thu','Fri'].includes(day)&&hour>=11&&hour<=14;
+}
+
+export function officeVirtualCheckin(state,configured) {
+  const eligible=automaticOfficeDivisions.filter(id=>configured.includes(id) &&
+    state.people?.[id] && Object.hasOwn(activities,state.people[id].activity));
+  if(eligible.length<2)return null;
+  const localDay=Math.floor((Number(state.now)+7*3600_000)/86400_000);
+  const idx=((localDay%eligible.length)+eligible.length)%eligible.length;
+  const first=eligible[idx];
+  const second=eligible[(idx+1)%eligible.length];
+  const names=Object.fromEntries(divisions.map(d=>[d.id,d.employee]));
+  const p1=activities[state.people[first].activity].toLowerCase();
+  const p2=activities[state.people[second].activity].toLowerCase();
+  const openers=[
+    'Di kantor virtual, avatarku lagi '+p1+' nih. '+names[second]+', kalau kamu lagi apa?',
+    'Kelihatannya avatarku lagi '+p1+' di simulasi kantor. '+names[second]+', kamu lagi di mana?',
+  ];
+  const responses=[
+    'Aku lagi '+p2+' di kantor virtual. Kalau nanti ada perkembangan tugas, kita lihat catatan Anshel, ya.',
+    'Avatarku lagi '+p2+' di simulasi kantor. Kalau nanti ada update kerjaan, kita bahas dari catatan Anshel.',
+  ];
+  return {first,second,text:openers[localDay%openers.length],
+    reply:responses[localDay%responses.length]};
+}
+
+export async function dispatchOfficeGroupCheckin(store,env,fetchImpl=fetch) {
+  officeGroupConfig(env);
+  const state=await store.state();
+  if(!officeCheckinWindow(state.now))return {sent:false,reason:'outside-checkin-window'};
+  const configured=configuredOfficeBots(env).configured;
+  const conversation=officeVirtualCheckin(state,configured);
+  if(!conversation)return {sent:false,reason:'not-enough-active-bots'};
+  if(!await store.claimOfficeGroupCheckin())return {sent:false,reason:'already-sent-today'};
+  const replyId=await sendOfficeBotMessage(env,conversation.first,conversation.text,{fetchImpl});
+  let followedUp=false;
+  try {
+    await sendOfficeBotMessage(env,conversation.second,conversation.reply,{fetchImpl,replyTo:replyId});
+    followedUp=true;
+  } catch {
+    // The daily lock prevents repeat attempts and spam on partial failure.
+    followedUp=false;
+  }
+  return {sent:true,division:conversation.first,followedUp};
+}
+,'i').exec(clean);
+  const match=first||second;
+  if(!match)return null;
+  const division=personFrom(match[1]);
+  if(!activeAuto.has(division))return null;
+  const description=match[2].trim();
+  // Short/ambiguous requests remain chat. Only create textual drafts, no
+  // external side effects such as posting, payments, server changes or audits.
+  if(description.length<10||description.length>1200)return null;
+  return {division,description,kind:'draft',urgent:false};
+}
+
 export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch) {
   const {chatId,userId}=officeGroupConfig(env);
   if (String(data.chatId)!==chatId || String(data.userId)!==userId || data.isBot!==false)
