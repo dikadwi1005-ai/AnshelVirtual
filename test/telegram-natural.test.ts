@@ -276,3 +276,17 @@ test('riwayat pesan lama yang mengarang pemantauan log tidak dijadikan konteks b
   assert.equal(result.contents[0].parts[0].text,'Bima, lagi apa?');
   assert.equal(result.contents[1].parts[0].text,'Belum ada tugas IT yang tercatat, ada yang mau dicek?');
 });
+
+test('chat Gemini memakai persona pegawai meski namanya ada di tengah atau akhir',async()=>{
+  const s=createStore(':memory:',()=>start);
+  try {
+    const first=await prepareOfficeNaturalChat(s,env,userMessage(1142,'Eh, Bima lagi ngapain sekarang?'));
+    assert.equal(first.mode,'generate');
+    assert.equal(first.division,'operations');
+    assert.match(first.request.systemInstruction.parts[0].text,/Kamu adalah Bima/);
+    assert.equal(first.request.contents.at(-1).parts[0].text,'Eh, Bima lagi ngapain sekarang?');
+    assert.ok(!JSON.stringify(first.request).includes(tokens.operations));
+    assert.deepEqual(await prepareOfficeNaturalChat(s,env,userMessage(1142,'Eh, Bima lagi ngapain sekarang?')),
+      {mode:'skip',duplicate:true});
+  } finally{s.close();}
+});
