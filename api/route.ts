@@ -93,7 +93,7 @@ async function route(request, injectedStore = null, env = process.env) {
         }
       }
       if (path === '/api/integrations/notifications/claim') {
-        if (!/^-?\\d{1,20}$/.test(env.TELEGRAM_CHAT_ID || '')) {
+        if (!/^-?[0-9]{1,20}$/.test(env.TELEGRAM_CHAT_ID || '')) {
           throw new Fault(503,'TELEGRAM_CHAT_ID belum dikonfigurasi.');
         }
         const input = await readJson(request);
