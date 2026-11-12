@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
+import { evaluateOwnerGroupUpdate,ownerMessageDailyLimit,ownerMessageMinimumGapMs } from './telegram-owner-limits.ts';
 
 export class Fault extends Error {
   status: number;
@@ -137,14 +138,14 @@ export function createStore(path: string, now = Date.now) {
       return transaction(() => {
         const key='office_group_updates_v1';
         const snapshot=readSetting(key,{seen:[],at:0,date:'',used:0});
-        const cutoff=now()-24*3600_000;
-        const seen=(snapshot.seen||[]).filter(item => item.at>cutoff).slice(-100);
-        if (seen.some(item => item.id===updateId)) return false;
-        const today=scheduledDraftDay(new Date(now()));
-        const used=snapshot.date===today ? snapshot.used : 0;
-        if (now()-snapshot.at<8000 || used>=20) throw new Fault(429,'Batas pesan grup tercapai. Coba lagi nanti.');
-        seen.push({id:updateId,at:now()});
-        writeSetting(key,{seen,at:now(),date:today,used:used+1});
+        const day=scheduledDraftDay(new Date(now()));
+        const result=evaluateOwnerGroupUpdate(snapshot,updateId,now(),day);
+        if(result.duplicate) return false;
+        if(result.reason==='daily-limit') throw new Fault(429,
+          'Kuota '+ownerMessageDailyLimit+' pesan pemilik per hari WIB tercapai. Coba lagi setelah 00.00 WIB.');
+        if(result.reason==='too-fast') throw new Fault(429,
+          'Pesan terlalu cepat. Beri jeda minimal '+(ownerMessageMinimumGapMs/1000)+' detik sebelum mengirim berikutnya.');
+        writeSetting(key,result.checkpoint);
         return true;
       });
     },
