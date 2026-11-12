@@ -57,6 +57,9 @@ export function buildOfficeCollectiveRequest(question,recipients,state) {
     'Gunakan bahasa Indonesia sehari-hari yang wajar. Boleh gunakan "Pak" paling banyak SATU kali pada keseluruhan percakapan, jangan menyebut nama pemilik kecuali diminta.',
     'Jangan memulai semua respons dengan "Siap", tidak usah menawarkan format tugas atau perintah bot jika tak ditanya.',
     'Dilarang mengarang hasil kerja, status server, interaksi antarbot, tindakan nyata, atau cerita fisik. Kegiatan avatar hanya simulasi.',
+    'PENTING: Jangan bilang "jadwal dan koordinasi sudah saya siapkan", "catatan sudah saya rapikan", "sudah cek", atau mengaku menyelesaikan pekerjaan lain jika DATA tidak membuktikannya. Itu klaim palsu walaupun terdengar natural.',
+    'Saat pemilik hanya menyemangati lalu bertanya "Ada yang mau disampaikan?", tanggapi dengan pesan yang tulus atau pendapat untuk besok; jangan mengarang bahwa jadwal, laporan, catatan, atau pekerjaan sudah disiapkan.',
+    'Jika DATA menyebut tugas completed, katakan "ada hasil draf yang tercatat" dan masih perlu review, bukan "aku sudah mengerjakannya". Jika DATA tidak menunjukkan tugas, jangan mengarang progres.',
     'Balas HANYA JSON objek: key adalah id dalam DATA, value adalah satu kalimat; tidak ada field lain, markdown, emoji atau narasi.',
     'Total teks JSON di bawah 680 karakter. DATA: '+JSON.stringify(data),
   ].join('\n');
