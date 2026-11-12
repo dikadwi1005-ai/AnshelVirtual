@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createCloudStore } from '../server/cloud-store.ts';
 import { createDialogue } from '../server/dialogue.ts';
 import { telegram } from '../server/telegram.ts';
+import { formatTelegramTaskNotification } from '../server/telegram-notifications.ts';
 import { Fault } from '../server/store.ts';
 
 // Server-side only. Credentials must be configured in Vercel Environment Variables.
@@ -90,6 +91,23 @@ async function route(request, injectedStore = null, env = process.env) {
           if (error instanceof Fault && [400,404,409].includes(error.status)) return respond({reply:error.message});
           throw error;
         }
+      }
+      if (path === '/api/integrations/notifications/claim') {
+        if (!/^-?\\d{1,20}$/.test(env.TELEGRAM_CHAT_ID || '')) {
+          throw new Fault(503,'TELEGRAM_CHAT_ID belum dikonfigurasi.');
+        }
+        const input = await readJson(request);
+        if (Object.keys(input).length) throw new Fault(400,'Klaim notifikasi tidak menerima parameter.');
+        const event = await office.claimTelegramNotification();
+        return respond({notification:event ? {
+          eventId:event.eventId,token:event.token,chatId:env.TELEGRAM_CHAT_ID,
+          text:formatTelegramTaskNotification(event),
+        } : null});
+      }
+      if (path === '/api/integrations/notifications/ack') {
+        const input = await readJson(request);
+        await office.ackTelegramNotification(input.eventId,input.token);
+        return respond({ok:true});
       }
       if (path === '/api/integrations/report') {
         if (!env.TELEGRAM_CHAT_ID) throw new Fault(503,'Telegram belum dikonfigurasi.');
