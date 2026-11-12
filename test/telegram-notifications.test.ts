@@ -42,6 +42,7 @@ test('saat kirim gagal event dapat diulang setelah lease, dengan token baru',()=
     assert.notEqual(retried.token,first.token);
     assert.throws(()=>s.ackTelegramNotification(first.eventId,first.token),e=>e.status===409);
     s.ackTelegramNotification(retried.eventId,retried.token);
+    now+=60*60_000; // Notification throttle now requires a one-hour gap.
     s.create(task('finance'));
     const next=s.claim(['draft']);
     s.finish(next.id,next.token,{error:'Kuota terbatas',unavailable:true});

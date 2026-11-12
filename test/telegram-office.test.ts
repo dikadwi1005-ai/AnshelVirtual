@@ -8,6 +8,7 @@ import {
   configuredOfficeBots,officeGroupConfig,sendOfficeBotMessage,
   officeTaskConversation,officeGroupReply,parseOfficeGroupTask,
   sendOfficeGroupOwnerMessage,dispatchOfficeGroupEvent,
+  automaticOfficeDivisions,officeCheckinWindow,officeVirtualCheckin,dispatchOfficeGroupCheckin,
 } from '../server/telegram-office.ts';
 
 const start=Date.parse('2026-11-12T03:00:00Z');
@@ -79,11 +80,11 @@ test('12 bot memiliki token terpisah; server tidak menyelipkan token dalam balas
   }),e=>e.status===502&&!e.message.includes('Sensitive details'));
 });
 
-test('laporan antarbot hanya muncul untuk tugas nyata, maksimal dua balasan',async()=>{
+test('laporan antarempat bot hanya muncul untuk pekerjaan nyata, maksimal dua balasan',async()=>{
   const s=createStore(':memory:',()=>start);
   try {
     assert.deepEqual(await dispatchOfficeGroupEvent(s,env,async()=>{throw Error('No events');}),{sent:false});
-    s.create({division:'development',description:'Ini rahasia',project:'Demo',kind:'draft'});
+    s.create({division:'operations',description:'Ini rahasia',project:'Demo',kind:'draft'});
     const running=s.claim(['draft']);
     s.finish(running.id,running.token,{output:'Teks draf privat'});
     const sent=[];
@@ -93,11 +94,11 @@ test('laporan antarbot hanya muncul untuk tugas nyata, maksimal dua balasan',asy
     };
     const result=await dispatchOfficeGroupEvent(s,env,fake);
     assert.equal(result.sent,true);
-    assert.equal(result.division,'development');
+    assert.equal(result.division,'operations');
     assert.equal(result.followedUp,true);
     assert.equal(sent.length,2);
-    assert.ok(sent[0].url.includes(allTokens.development));
-    assert.ok(sent[1].url.includes(allTokens.qa));
+    assert.ok(sent[0].url.includes(allTokens.operations));
+    assert.ok(sent[1].url.includes(allTokens.management));
     assert.equal(sent[1].payload.reply_parameters.message_id,801);
     assert.ok(!JSON.stringify(sent.map(v=>v.payload)).includes('Ini rahasia'));
     assert.ok(!JSON.stringify(sent.map(v=>v.payload)).includes('Teks draf privat'));
@@ -105,6 +106,7 @@ test('laporan antarbot hanya muncul untuk tugas nyata, maksimal dua balasan',asy
     const preview=officeTaskConversation({eventId:5,division:'finance',project:'Tester',taskId:'id',action:'failed'});
     assert.equal(preview.followUp,null);
     assert.match(preview.text,/gagal|kendala/i);
+    assert.deepEqual(automaticOfficeDivisions,['management','operations','administration','hr']);
   } finally{s.close();}
 });
 
@@ -195,4 +197,163 @@ test('nama pegawai bisa muncul di awal, tengah, atau akhir percakapan',()=>{
     assert.equal(officeGroupReply(state,message,env).division,expected,
       'Salah routing untuk '+message);
   }
+});
+
+
+test('workflow jadwal otomatis punya dua cron terpisah dan tidak mengganggu Telegram Trigger',async()=>{
+  const workflow=JSON.parse(await readFile('workflows/office_telegram_fourbot_auto.json','utf8'));
+  assert.equal(workflow.active,false);
+  assert.equal(workflow.nodes.length,4);
+  assert.equal(workflow.settings.timezone,'Asia/Jakarta');
+  assert.ok(workflow.nodes.every(n=>!n.credentials));
+  assert.equal(workflow.nodes.filter(n=>n.type==='n8n-nodes-base.telegramTrigger').length,0);
+  assert.equal(workflow.nodes.filter(n=>n.type==='n8n-nodes-base.scheduleTrigger').length,2);
+  const nodes=Object.fromEntries(workflow.nodes.map(n=>[n.name,n]));
+  assert.equal(nodes['Cek hasil kerja tiap jam'].parameters.rule.interval[0].expression,'0 9-17 * * 1-5');
+  assert.equal(nodes['Obrolan kantor virtual siang'].parameters.rule.interval[0].expression,'0 12 * * 1-5');
+  assert.match(nodes['Kirim update kerja empat bot'].parameters.url,/office-group\/dispatch$/);
+  assert.match(nodes['Dua bot ngobrol aktivitas virtual'].parameters.url,/office-group\/checkin$/);
+  assert.equal(workflow.connections['Cek hasil kerja tiap jam'].main[0][0].node,'Kirim update kerja empat bot');
+  assert.equal(workflow.connections['Obrolan kantor virtual siang'].main[0][0].node,'Dua bot ngobrol aktivitas virtual');
+});
+
+test('event dari delapan divisi yang ditunda diabaikan; hanya empat bot mengirim dan menghabiskan kuota',async()=>{
+  let clock=start;
+  const s=createStore(':memory:',()=>clock);
+  const fourEnv={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(
+    Object.fromEntries(automaticOfficeDivisions.map(k=>[k,allTokens[k]])))};
+  const sent=[];
+  const fake=async(url,opts)=>{
+    sent.push({url,payload:JSON.parse(opts.body)});
+    return goodResponse(400+sent.length);
+  };
+  const complete=division=>{
+    s.create({division,description:'Draft contoh',project:'Tester',kind:'draft'});
+    const claimed=s.claim(['draft']);
+    assert.equal(claimed.division,division);
+    s.finish(claimed.id,claimed.token,{output:'Draf jadi'});
+  };
+  try {
+    assert.deepEqual(await dispatchOfficeGroupEvent(s,fourEnv,fake),{sent:false});
+    complete('development');
+    let result=await dispatchOfficeGroupEvent(s,fourEnv,fake);
+    assert.equal(result.sent,false);
+    assert.equal(result.skipped,'not-in-four-bot-pilot');
+    assert.equal(sent.length,0);
+    complete('administration');
+    result=await dispatchOfficeGroupEvent(s,fourEnv,fake);
+    assert.equal(result.sent,true);
+    assert.equal(result.division,'administration');
+    assert.equal(result.followedUp,true);
+    assert.equal(sent.length,2);
+    assert.ok(sent[0].url.includes(allTokens.administration));
+    assert.ok(sent[1].url.includes(allTokens.hr));
+    assert.doesNotMatch(sent[0].payload.text,/draft contoh|Draf jadi/i);
+    assert.match(sent[0].payload.text,/Tester/i);
+  } finally{s.close();}
+});
+
+test('update pekerjaan otomatis dibatasi tiga event sehari WIB dan jeda minimal satu jam',async()=>{
+  let clock=start;
+  const s=createStore(':memory:',()=>clock);
+  const sent=[];
+  const fake=async(url,options)=>{
+    sent.push({url,body:JSON.parse(options.body)});
+    return goodResponse(300+sent.length);
+  };
+  const complete=()=>{
+    s.create({division:'management',description:'Draf contoh',project:'Pilot',kind:'draft',urgent:true});
+    const claimed=s.claim(['draft']);
+    assert.ok(claimed);
+    s.finish(claimed.id,claimed.token,{output:'Draf selesai'});
+  };
+  try {
+    assert.deepEqual(await dispatchOfficeGroupEvent(s,env,fake),{sent:false});
+    complete();
+    assert.equal((await dispatchOfficeGroupEvent(s,env,fake)).sent,true);
+    complete();
+    assert.deepEqual(await dispatchOfficeGroupEvent(s,env,fake),{sent:false});
+    clock+=60*60_000;
+    assert.equal((await dispatchOfficeGroupEvent(s,env,fake)).sent,true);
+    clock+=60*60_000;
+    complete();
+    assert.equal((await dispatchOfficeGroupEvent(s,env,fake)).sent,true);
+    clock+=60*60_000;
+    complete();
+    assert.deepEqual(await dispatchOfficeGroupEvent(s,env,fake),{sent:false});
+    assert.equal(sent.length,6);
+    clock+=24*60*60_000+1;
+    const next=await dispatchOfficeGroupEvent(s,env,fake);
+    // Work item is older than 24 hours and must not be announced as recent.
+    assert.deepEqual(next,{sent:false});
+  } finally{s.close();}
+});
+
+test('obrolan aktivitas avatar empat bot sekali setiap hari WIB, siang hari kerja',async()=>{
+  const noon=Date.parse('2026-11-12T05:00:00Z');
+  const morning=Date.parse('2026-11-12T03:00:00Z');
+  assert.equal(officeCheckinWindow(noon),true);
+  assert.equal(officeCheckinWindow(morning),false);
+  assert.equal(officeCheckinWindow(Date.parse('2026-11-14T05:00:00Z')),false);
+  let clock=noon;
+  const s=createStore(':memory:',()=>clock);
+  const fourEnv={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(
+    Object.fromEntries(automaticOfficeDivisions.map(k=>[k,allTokens[k]])))};
+  const sent=[];
+  const fake=async(url,opts)=>{
+    sent.push({url,payload:JSON.parse(opts.body)});
+    return goodResponse(700+sent.length);
+  };
+  try {
+    const state=s.state();
+    const conversation=officeVirtualCheckin(state,automaticOfficeDivisions);
+    assert.ok(conversation);
+    assert.ok(automaticOfficeDivisions.includes(conversation.first));
+    assert.ok(automaticOfficeDivisions.includes(conversation.second));
+    assert.notEqual(conversation.first,conversation.second);
+    const first=await dispatchOfficeGroupCheckin(s,fourEnv,fake);
+    assert.equal(first.sent,true);
+    assert.equal(first.followedUp,true);
+    assert.equal(sent.length,2);
+    assert.equal(sent[1].payload.reply_parameters.message_id,701);
+    assert.match(sent[0].payload.text,/kantor virtual|simulasi kantor/i);
+    assert.match(sent[1].payload.text,/kantor virtual|catatan anshel/i);
+    assert.deepEqual(await dispatchOfficeGroupCheckin(s,fourEnv,fake),
+      {sent:false,reason:'already-sent-today'});
+    clock+=24*60*60_000;
+    assert.equal((await dispatchOfficeGroupCheckin(s,fourEnv,fake)).sent,true);
+    assert.equal(sent.length,4);
+    clock+=24*60*60_000;
+    assert.deepEqual(await dispatchOfficeGroupCheckin(s,fourEnv,fake),
+      {sent:false,reason:'outside-checkin-window'});
+    assert.equal(sent.length,4);
+  } finally{s.close();}
+});
+
+test('check-in tidak mengirim jika hanya satu bot tersedia atau timestamp di luar jadwal',async()=>{
+  const noon=Date.parse('2026-11-12T05:00:00Z');
+  const s=createStore(':memory:',()=>noon);
+  const oneEnv={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify({management:allTokens.management})};
+  try {
+    const result=await dispatchOfficeGroupCheckin(s,oneEnv,async()=>{throw Error('Must not send');});
+    assert.deepEqual(result,{sent:false,reason:'not-enough-active-bots'});
+    await assert.rejects(dispatchOfficeGroupCheckin(s,{...oneEnv,TELEGRAM_CHAT_ID:'123'},
+      async()=>{throw Error('Must not send');}),e=>e.status===503);
+  } finally{s.close();}
+});
+
+test('endpoint check-in hanya boleh dengan N8N_TOKEN, tidak menerima parameter',async()=>{
+  const s=createStore(':memory:',()=>start);
+  const api=createCloudApi({...s,sessionActive:async()=>false},env);
+  const request=(body,auth=true)=>api.fetch(new Request('https://anshel.test/api/integrations/office-group/checkin',{
+    method:'POST',headers:{'Content-Type':'application/json',...(auth?{Authorization:'Bearer '+env.N8N_TOKEN}:{})},
+    body:JSON.stringify(body),
+  }));
+  try {
+    assert.equal((await request({},false)).status,401);
+    assert.equal((await request({arbitrary:true})).status,400);
+    const r=await request({});
+    assert.equal(r.status,200);
+    assert.deepEqual(await r.json(),{sent:false,reason:'outside-checkin-window'});
+  } finally{s.close();}
 });

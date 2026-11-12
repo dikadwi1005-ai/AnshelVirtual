@@ -1,5 +1,30 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3C — Otomatisasi Telegram kantor, hanya empat bot aktif
+
+**Scope pilot:** Alya (management), Bima (operations), Citra (administration), Dara (hr). Delapan bot lainnya **tetap ditunda**. Tidak ada pembuatan bot atau perubahan token, dan workflow Natural Gemini tidak perlu diganti.
+
+Impor file **office_telegram_fourbot_auto.json** sebagai workflow n8n baru; kedua node HTTP Request memakai credential Header Auth **Anshel API** yang sudah ada. Tidak memerlukan credential Telegram atau Gemini tambahan. Workflow ini memakai dua Schedule Trigger dengan timezone Asia/Jakarta.
+
+- **Cek hasil kerja tiap jam:** Senin–Jumat pukul **09.00–17.00 WIB**; endpoint POST /api/integrations/office-group/dispatch mengirim laporan untuk event completed, blocked, atau failed dari audit tugas asli, **maksimal 3 event per hari WIB** dan **jeda satu jam**. Tiap event menghasilkan paling banyak dua pesan dari bot yang dikonfigurasi. Respons kolega hanya mengakui status, tidak berpura-pura sudah melakukan review atau menerbitkan hasil.
+- **Obrolan virtual siang:** Senin–Jumat pukul **12.00 WIB**; endpoint POST /api/integrations/office-group/checkin mengirim **satu percakapan dua pesan per hari WIB**, berdasar aktivitas avatar aktual dari state.people, misalnya main PS5 atau mengambil kopi. Ini adalah aktivitas simulasi, bukan bukti kegiatan teknis di dunia nyata. Server hanya mengizinkan waktu 11.00–14.59 WIB pada hari kerja.
+- Event dari delapan divisi yang ditunda dilewati tanpa mengirim pesan dan tanpa mengurangi kuota. Jika tidak ada tugas baru yang selesai/terhambat/gagal, tidak ada laporan kerja.
+- Total batas **8 pesan otomatis per hari kerja**: 3 peristiwa × maksimal 2 balasan dan satu check-in × 2 balasan. Tidak ada Telegram Trigger baru sehingga tidak memicu loop dengan bot yang lain.
+- Update otomatis menggunakan variasi template berdasarkan audit dan persona (bukan Gemini bebas) untuk menghindari laporan palsu serta biaya API tambahan. Percakapan pemilik tetap memakai workflow Natural Gemini yang sudah aktif.
+- Check-in dicatat satu kali saat diambil untuk mencegah spam: jika kirim gagal setelah diambil, tidak ada retry hari itu. Laporan pekerjaan hanya mengumumkan event yang muncul dalam 24 jam terakhir.
+
+### Cara mengaktifkan
+
+1. Pastikan PR fitur sudah di-merge dan Vercel Production Ready.
+2. Di n8n pilih Import from File untuk **workflows/office_telegram_fourbot_auto.json**.
+3. Pada node **Kirim update kerja empat bot** dan **Dua bot ngobrol aktivitas virtual**, pilih credential **Anshel API** yang sudah ada. Save. Jangan bagikan token.
+4. Jalankan node **Kirim update kerja empat bot** sekali untuk inisialisasi cursor. Hasil sent:false normal; tugas lama tidak akan diumumkan. Tugas baru yang benar-benar selesai setelah inisialisasi akan dikirim pada jadwal berikut.
+5. Jika sedang hari kerja pukul 11–14 WIB, node obrolan virtual boleh diuji manual satu kali. Di luar jadwal akan merespons sent:false. Jangan membuat tugas fiktif untuk menguji notifikasi.
+6. Publish workflow **Auto Office** setelah semua credential siap. Biarkan workflow Natural Gemini tetap Published: keduanya tidak bentrok karena Auto Office hanya punya Schedule Trigger.
+7. Untuk berhenti, Unpublish Auto Office saja. Percakapan pribadi dengan keempat bot tetap berjalan.
+
+**Catatan:** Ini laporan event nyata dan percakapan avatar simulasi, bukan model yang mengobrol bebas tanpa batas. Workflow lain seperti worker Gemini tetap terpisah.
+
 ## Phase 3B — Percakapan Telegram natural dengan Gemini
 
 **Penyempurnaan setelah tes Alya/Bima:** Pertanyaan tentang aktivitas pegawai kini dapat memakai `state.people[division].activity` (label simulasi di `public/catalog.js`). Itu **aktivitas avatar virtual**, bukan bukti akses log atau pemeriksaan server. Jumlah tugas lintas divisi hanya dikirim ke Gemini jika pemilik menanyakan kondisi kantor secara keseluruhan; pertanyaan spesifik ke pegawai hanya mendapat tugas divisinya. Semua 12 persona disesuaikan, dan keluaran yang mengaku memantau log/menyatakan IT aman tanpa bukti akan memakai respons cadangan yang tidak mengarang. Percakapan sebelumnya yang memuat klaim semacam itu tidak dipakai ulang sebagai contoh Gemini.

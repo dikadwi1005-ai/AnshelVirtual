@@ -84,29 +84,31 @@ export function createStore(path: string, now = Date.now) {
     claimTelegramNotification() {
       return transaction(() => {
         const key='telegram_notifications_v1';
-        let checkpoint=readSetting(key,null);
-        // First poll starts from NOW to avoid spamming historical completed tasks.
+        const checkpoint=readSetting(key,null);
+        // First poll starts at the latest event, not historical tasks.
         if (!checkpoint) {
           const highest=get('SELECT COALESCE(MAX(id),0) AS id FROM audit').id;
-          writeSetting(key,{cursor:highest,pending:null});
+          writeSetting(key,{cursor:highest,pending:null,date:'',used:0,lastSent:0});
           return null;
         }
         if (checkpoint.pending && checkpoint.pending.until > now()) return null;
-        const event=get(`SELECT a.id AS eventId,a.at,a.task AS taskId,a.action,
-          t.division,t.project FROM audit AS a JOIN tasks AS t ON t.id=a.task
-          WHERE a.id>? AND a.action IN ('completed','blocked','failed')
-          ORDER BY a.id LIMIT 1`,checkpoint.cursor);
+        const today=scheduledDraftDay(new Date(now()));
+        const used=checkpoint.date===today?(checkpoint.used||0):0;
+        if (used>=3 || now()-(checkpoint.lastSent||0)<60*60_000) return null;
+        const sql="SELECT a.id AS eventId,a.at,a.task AS taskId,a.action, "+
+          "t.division,t.project FROM audit AS a JOIN tasks AS t ON t.id=a.task "+
+          "WHERE a.id>? AND a.at>=? AND a.action IN ('completed','blocked','failed') "+
+          "ORDER BY a.id LIMIT 1";
+        const event=get(sql,checkpoint.cursor,now()-24*60*60_000);
         if (!event) return null;
         const token=randomUUID();
-        writeSetting(key,{cursor:checkpoint.cursor,
-          pending:{id:event.eventId,token,until:now()+10*60_000}});
+        writeSetting(key,{...checkpoint,pending:{id:event.eventId,token,until:now()+10*60_000}});
         return {...event,token};
       });
     },
-    ackTelegramNotification(eventId,token) {
-      if (!Number.isSafeInteger(eventId) || eventId<1 || typeof token !== 'string' || !token) {
-        throw new Fault(400,'Konfirmasi notifikasi tidak valid.');
-      }
+    ackTelegramNotification(eventId,token,sent=true) {
+      if (!Number.isSafeInteger(eventId) || eventId<1 || typeof token !== 'string' || !token ||
+          typeof sent!=='boolean') throw new Fault(400,'Konfirmasi notifikasi tidak valid.');
       return transaction(() => {
         const key='telegram_notifications_v1';
         const checkpoint=readSetting(key,null);
@@ -114,7 +116,20 @@ export function createStore(path: string, now = Date.now) {
           checkpoint.pending.token!==token || checkpoint.pending.until<=now()) {
           throw new Fault(409,'Sewa notifikasi sudah berakhir atau tidak cocok.');
         }
-        writeSetting(key,{cursor:eventId,pending:null});
+        const today=scheduledDraftDay(new Date(now()));
+        const used=checkpoint.date===today?(checkpoint.used||0):0;
+        writeSetting(key,{cursor:eventId,pending:null,date:today,
+          used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)});
+      });
+    },
+    claimOfficeGroupCheckin() {
+      return transaction(() => {
+        const key='office_virtual_checkin_v1';
+        const day=scheduledDraftDay(new Date(now()));
+        const value=readSetting(key,{date:''});
+        if (value.date===day) return false;
+        writeSetting(key,{date:day});
+        return true;
       });
     },
     reserveOfficeGroupUpdate(updateId) {
