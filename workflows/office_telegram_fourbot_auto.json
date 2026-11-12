@@ -1,0 +1,121 @@
+{
+  "name": "Anshel · Auto Office — Alya Bima Citra Dara",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9-17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "1718bb77-6cca-4c54-9a13-000000000001",
+      "name": "Cek hasil kerja tiap jam",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/office-group/dispatch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 25000
+        }
+      },
+      "id": "1718bb77-6cca-4c54-9a13-000000000002",
+      "name": "Kirim update kerja empat bot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 12 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "1718bb77-6cca-4c54-9a13-000000000003",
+      "name": "Obrolan kantor virtual siang",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/office-group/checkin",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 25000
+        }
+      },
+      "id": "1718bb77-6cca-4c54-9a13-000000000004",
+      "name": "Dua bot ngobrol aktivitas virtual",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "Cek hasil kerja tiap jam": {
+      "main": [
+        [
+          {
+            "node": "Kirim update kerja empat bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obrolan kantor virtual siang": {
+      "main": [
+        [
+          {
+            "node": "Dua bot ngobrol aktivitas virtual",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}
