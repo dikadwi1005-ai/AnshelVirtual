@@ -4,7 +4,8 @@ import { createStore } from '../server/store.ts';
 import { buildOfficeNaturalRequest,prepareOfficeNaturalChat,deliverOfficeNaturalChat,
   cleanOfficeNaturalResponse,unverifiedCompletedWorkClaim } from '../server/telegram-natural.ts';
 import { isCollectiveCall,availableOfficeResponders,buildOfficeCollectiveRequest,
-  parseOfficeCollectiveResponse,resolveOfficeCollectiveResponse } from '../server/telegram-group.ts';
+  parseOfficeCollectiveResponse,resolveOfficeCollectiveResponse,
+  summarizeSharedOfficeConversation } from '../server/telegram-group.ts';
 
 const base=Date.parse('2026-11-12T03:00:00Z');
 const four=['management','operations','administration','hr'];
@@ -277,4 +278,86 @@ test('balasan tunggal pegawai tidak lagi mengaku sudah menyelesaikan pekerjaan y
   const reply='Aku sudah menyiapkan jadwal dan merapikan catatan untuk besok.';
   assert.equal(cleanOfficeNaturalResponse(reply,'Belum ada dokumen baru yang tercatat.',question),
     'Belum ada dokumen baru yang tercatat.');
+});
+
+
+test('team Gemini remembers previous conversations from different employees (not just Alya)',async()=>{
+  let now=base;
+  const store=createStore(':memory:',()=>now);
+  try {
+    store.rememberOfficeGroupAI('operations','Bima, bagaimana error itu?',
+      'Belum ada hasil pemeriksaan; kita perlu gejalanya dulu.');
+    store.rememberOfficeGroupAI('administration','Citra, bagaimana catatan rapat?',
+      'Belum ada notulen rapat yang tercatat.');
+    store.rememberOfficeGroupAI('finance','Laras, data rekening?',
+      'Jangan kirim catatan pribadi ini ke grup.');
+    store.rememberOfficeGroupAI('management','Alya, besok gimana?',
+      'Kita ikuti jadwal yang tersimpan, belum ada keputusan tambahan.');
+    const prep=await prepareOfficeNaturalChat(store,env,
+      ownerMessage(91001,'Guys, lanjut bahasan yang tadi ya?'));
+    assert.equal(prep.mode,'generate');
+    const instruction=prep.request.systemInstruction.parts[0].text;
+    const memory=JSON.parse(instruction.split('DATA: ').at(-1)).recentConversation;
+    assert.equal(memory.length,3);
+    assert.deepEqual(Object.keys(memory[0].responses),['operations']);
+    assert.match(memory[0].responses.operations,/hasil pemeriksaan/);
+    assert.match(memory[1].responses.administration,/notulen rapat/);
+    assert.match(memory[2].responses.management,/jadwal yang tersimpan/);
+    assert.ok(!instruction.includes('data rekening'));
+    assert.match(instruction,/riwayat obrolan BUKAN bukti pekerjaan/i);
+  } finally {store.close();}
+});
+
+test('busy employee does not reply, but prior team discussion is remembered as context',async()=>{
+  const store=createStore(':memory:',()=>base);
+  try {
+    store.rememberOfficeGroupAI('operations','Bima, ada kendala?',
+      'Kalau ada error, kirim gejalanya dulu ya.');
+    const job=store.create({division:'operations',kind:'draft',
+      description:'Draf pemeriksaan sistem',project:'Internal',urgent:true});
+    assert.equal(store.claim(['draft']).id,job.id);
+    const prep=await prepareOfficeNaturalChat(store,env,
+      ownerMessage(91011,'Guys, masih ingat bahasan Bima tadi?'));
+    assert.equal(prep.group,true);
+    assert.ok(!prep.recipients.includes('operations'));
+    const memory=JSON.parse(prep.request.systemInstruction.parts[0].text.split('DATA: ').at(-1));
+    assert.equal(memory.recentConversation[0].responses.operations,
+      'Kalau ada error, kirim gejalanya dulu ya.');
+    assert.ok(!prep.request.generationConfig.responseSchema.properties.operations);
+    assert.match(prep.request.systemInstruction.parts[0].text,/tidak memberi izin untuk memanggil pegawai sibuk/);
+  }finally {store.close();}
+});
+
+test('shared history is grouped, capped, ignores old hallucinated work, and is not a fake task report',()=>{
+  const records=[
+    {division:'management',question:'Guys, ada kabar?',reply:'Belum ada laporan baru yang tercatat.'},
+    {division:'operations',question:'Guys, ada kabar?',reply:'Kalau ada error, kabarin.'},
+    {division:'administration',question:'Guys, ada kabar?',reply:'Catatan tugas masih sama.'},
+    {division:'hr',question:'Guys, ada kabar?',reply:'Semoga tim tetap nyaman.'},
+    {division:'management',question:'Alya, progres?',reply:'Jadwal dan koordinasi sudah saya siapkan.'},
+    {division:'administration',question:'Citra, kabar?',reply:'Aku sudah merapikan semua laporan.'},
+    {division:'research',question:'Indra, sumber?',reply:'Sumber rahasia.'},
+    {division:'operations',question:'Bima, progres?',reply:'Belum ada tugas yang sudah selesai tercatat.'},
+  ];
+  const turns=summarizeSharedOfficeConversation(records);
+  assert.equal(turns.length,2);
+  assert.deepEqual(Object.keys(turns[0].responses),four);
+  assert.equal(turns[1].responses.operations,'Belum ada tugas yang sudah selesai tercatat.');
+  assert.ok(!JSON.stringify(turns).includes('Sumber rahasia'));
+  assert.ok(!JSON.stringify(turns).includes('sudah saya siapkan'));
+  assert.ok(!JSON.stringify(turns).includes('Aku sudah merapikan'));
+  assert.equal(summarizeSharedOfficeConversation(records.slice(0,4).concat(records.slice(0,4))).length,1);
+});
+
+test('shared group memory expires after seven days in store and remains bounded',()=>{
+  let clock=base;
+  const store=createStore(':memory:',()=>clock);
+  try{
+    store.rememberOfficeGroupAI('hr','Dara, ada kabar?','Belum ada perkembangan baru.');
+    const initial=store.prepareOfficeGroupAI('92001','management','Guys, ada kabar?',four);
+    assert.equal(initial.groupHistory.length,1);
+    clock+=8*24*3600_000;
+    const later=store.prepareOfficeGroupAI('92002','management','Guys, bagaimana?',four);
+    assert.deepEqual(later.groupHistory,[]);
+  } finally {store.close();}
 });
