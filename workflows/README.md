@@ -1,5 +1,16 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Pembaruan kapasitas obrolan privat Telegram (1000 pesan/hari)
+
+Untuk percakapan aktif bersama Alya, Bima, Citra, dan Dara, backend kini menerima **maksimal 1.000 pesan pemilik per hari WIB** dengan **jeda minimal 2 detik antar pesan**. Kebijakan ini berlaku konsisten pada database produksi PostgreSQL dan mode lokal SQLite. Pesan baru tidak diblokir pada batas lama 20 pesan; penghitung lama dipertahankan dan dibandingkan dengan kuota baru. Kuota harian berganti pada pukul 00.00 WIB.
+
+- Pesan duplikat dari Telegram tetap dideteksi dan tidak dihitung dua kali; riwayat ID disimpan untuk mencegah pengiriman ulang.
+- Penolakan karena jeda memberi pesan jelas untuk menunggu 2 detik; penolakan karena kuota harian memberi keterangan 1.000 pesan dan reset tengah malam WIB.
+- Kuota ini **hanya untuk pesan yang dikirim pemilik ke grup**. Notifikasi otomatis 4 bot tetap memiliki pembatas terpisah, maksimum 3 laporan tugas dan 1 obrolan avatar per hari kerja.
+- Batas **3 draf Gemini terjadwal per hari** tidak berubah; setiap chat bebas masih dapat memakai satu request Gemini via n8n, sehingga batas/rate limit atau biaya Google AI Studio dan n8n Cloud tetap berlaku secara terpisah.
+- Tidak ada workflow n8n, credential, token, atau database schema yang perlu diubah. Tunggu merge dan Vercel Production Ready, lalu tes balasan Telegram dengan jeda 2 detik.
+
+
 ## Perbaikan jam operasional kantor virtual di chat Telegram
 
 Pertanyaan tentang jam masuk/kerja, jadwal kantor, briefing, libur, atau apakah pegawai sedang berada di kantor virtual kini memakai **data `state.schedule` dan `state.phase` asli** dari Anshel. Jangan lagi mengaku kantor tidak memiliki jam masuk atau semua pegawai selalu fleksibel.
@@ -7,7 +18,7 @@ Pertanyaan tentang jam masuk/kerja, jadwal kantor, briefing, libur, atau apakah 
 - Jadwal bawaan jika belum disesuaikan: Senin–Jumat, kedatangan 08.45 WIB, buka dan briefing 09.00–09.15, istirahat 12.00–13.00, review 16.30, selesai 17.00.
 - Jam dan hari yang **diubah lewat dashboard** serta hari libur tersimpan mengalahkan jadwal bawaan. Kata **besok** dihitung berdasarkan kalender Asia/Jakarta, sehingga libur akhir pekan/jadwal khusus disampaikan dengan benar.
 - Jika pertanyaan juga memuat **sekarang/lagi di kantor**, bot menjelaskan **fase simulasi saat ini** dan aktivitas avatar bila tercatat, bukan mengaku benar-benar berada di bangunan atau selalu siap bekerja kapan saja.
-- Balasan memakai bot karyawan yang dipanggil, tanpa request Gemini tambahan. Hak akses pemilik, pembatasan 20 pesan/hari WIB, jeda delapan detik, dan penolakan duplikat tetap berlaku. Pesan biasa tetap melalui Gemini.
+- Balasan memakai bot karyawan yang dipanggil, tanpa request Gemini tambahan. Hak akses pemilik, pembatasan 1.000 pesan/hari WIB, jeda dua detik, dan penolakan duplikat tetap berlaku. Pesan biasa tetap melalui Gemini.
 - Riwayat jawaban Gemini yang keliru seperti **tidak pakai jam masuk** dikeluarkan dari konteks percakapan berikutnya.
 
 **Cara uji lewat HP** setelah PR di-merge dan Vercel Production Ready: ketik `Alya, besok masuk jam berapa di kantor virtual? Lagi di kantor virtual sekarang?` pada grup Telegram. Pada malam hari di luar jam operasional seharusnya dijelaskan status tutup. Tidak perlu impor atau mengubah workflow n8n mana pun.
@@ -21,13 +32,13 @@ Ini perubahan backend saja. Workflow Natural Gemini dan Auto Office yang sudah P
 - **/cek Bima** → Bima mengabarkan salah satu tugas divisinya yang perlu diperhatikan. Bentuk yang sama berlaku untuk **/cek Alya**, **/cek Citra**, dan **/cek Dara**. Perintah `/cek` bagi delapan nama lain secara eksplisit dikembalikan ke Alya dengan keterangan belum aktif pada pilot Telegram.
 - **/bantuan** → daftar singkat perintah yang bisa dipakai dari HP. Perintah `/status`, `/tim`, dan `/tugas Nama | instruksi` yang sudah ada tetap berjalan.
 
-Keempat perintah baru diproses secara deterministik tanpa memanggil Gemini; hanya pemilik dan grup Telegram yang telah diizinkan bisa memicu balasan. Batas 20 pesan pemilik per hari WIB dan jeda minimal delapan detik tetap berlaku. Chat bebas tetap menggunakan Gemini pada workflow Natural Gemini.
+Keempat perintah baru diproses secara deterministik tanpa memanggil Gemini; hanya pemilik dan grup Telegram yang telah diizinkan bisa memicu balasan. Batas 1.000 pesan pemilik per hari WIB dan jeda minimal dua detik tetap berlaku. Chat bebas tetap menggunakan Gemini pada workflow Natural Gemini.
 
 ### Menguji dari HP setelah PR di-merge dan Production Ready
 
 1. Buka grup Telegram internal Anshel, kirim **/ringkasan** lalu periksa apakah yang membalas Alya.
-2. Setelah jeda minimal **8 detik**, kirim **/kendala**. Bima seharusnya membalas dengan status tugas yang tercatat, tanpa mengaku sudah mengecek server.
-3. Setelah jeda minimal **8 detik**, kirim **/cek Citra**. Balasan harus datang dari bot Citra.
+2. Setelah jeda minimal **2 detik**, kirim **/kendala**. Bima seharusnya membalas dengan status tugas yang tercatat, tanpa mengaku sudah mengecek server.
+3. Setelah jeda minimal **2 detik**, kirim **/cek Citra**. Balasan harus datang dari bot Citra.
 4. Tidak perlu membuka laptop, mengubah workflow n8n, atau membagikan credential.
 
 **Ringkasan harian terjadwal:** workflow lama bernama Ringkasan Harian di n8n belum diubah/diaktifkan melalui PR ini; perintah `/ringkasan` adalah permintaan manual, bukan pengiriman harian otomatis.
@@ -68,7 +79,7 @@ Impor file **office_telegram_fourbot_auto.json** sebagai workflow n8n baru; kedu
 - Setiap dari 12 divisi memiliki gaya bicara dan identitas AI sendiri. Pesan santai bisa dibalas santai; permintaan progres menggunakan status tugas aktual dari database.
 - Riwayat **6 balasan terakhir per pegawai** menjadi konteks Gemini (maks. 7 hari). Penyimpanan dibatasi 24 giliran total di `anshel.setting`, tanpa migrasi database. Hanya status tugas, proyek singkat, dan ringkasan angka dari kantor yang dikirim ke Gemini; bukan isi draf, token, atau detail rahasia.
 - Gemini memakai API `gemini-3.5-flash-lite` via **credential Google AI Studio yang sudah berfungsi di n8n**. Tidak memerlukan kunci Gemini baru di Vercel. Setiap pesan percakapan bebas memicu **satu request Gemini**, sehingga berpotensi memakai kuota API; berbeda dari kuota 3 klaim draf terjadwal.
-- `/status`, `/tim`, `/bantuan`, dan `/tugas Nama | instruksi` tetap diproses deterministik tanpa biaya Gemini. Pesan dari bot lain diabaikan. Batas 20 pesan pemilik/hari WIB dan minimal 8 detik berlaku di kedua alur.
+- `/status`, `/tim`, `/bantuan`, dan `/tugas Nama | instruksi` tetap diproses deterministik tanpa biaya Gemini. Pesan dari bot lain diabaikan. Batas 1.000 pesan pemilik/hari WIB dan minimal 2 detik berlaku di kedua alur.
 - Tiket sementara 5 menit dan satu kali pakai mengikat hasil AI ke divisi asli. Pesan dikirim memakai token bot divisi; input tidak bebas mengganti pengirim. Jawaban Gemini kosong/error memakai fallback berbasis status, sehingga sebagian pesan dapat kembali berupa template ketika provider bermasalah.
 
 ### Penggantian workflow n8n (tanpa menghapus yang lama)
@@ -78,7 +89,7 @@ Impor file **office_telegram_fourbot_auto.json** sebagai workflow n8n baru; kedu
 3. Buka node **Siapkan konteks AI** dan node **Kirim dari bot pegawai**; pilih **Header Auth `Anshel API` yang sudah ada** (nama header `Authorization`, Value `Bearer <N8N_TOKEN>`). Jangan menyalin token ke JSON workflow.
 4. Buka node **Gemini obrolan**, pilih **Header Auth credential Gemini** yang sama seperti workflow Gemini Auto Worker sebelumnya (`x-goog-api-key` di Header Auth). Tidak perlu menambah credential lain.
 5. Telegram mengizinkan satu webhook aktif per bot: **unpublish workflow lama `Anshel · Grup AI 12 pegawai — chat pemilik` sebelum menjalankan/Publish workflow baru**. Simpan workflow lama untuk rollback; jangan aktifkan dua Trigger Alya bersama.
-6. **Test Workflow** baru dengan pesan `Alya, hari ini ada apa?`, lalu `Bima, kamu bisa bantu apa?`, `Citra, kita tadi bahas apa?`, dan `Dara, kabar?` (masing-masing beri jeda minimal 8 detik). Periksa node Gemini, status **ai:true** pada node pengiriman, dan variasi jawaban sesuai karakter bot. Bandingkan dengan data kantor nyata.
+6. **Test Workflow** baru dengan pesan `Alya, hari ini ada apa?`, lalu `Bima, kamu bisa bantu apa?`, `Citra, kita tadi bahas apa?`, dan `Dara, kabar?` (masing-masing beri jeda minimal 2 detik). Periksa node Gemini, status **ai:true** pada node pengiriman, dan variasi jawaban sesuai karakter bot. Bandingkan dengan data kantor nyata.
 7. Uji `/status` dan `/tugas Citra | Susun ringkasan rapat fiktif`. Perintah ini diproses tanpa Gemini, hanya menambah antrean; jangan pakai instruksi sensitif. Lalu lakukan test duplikat pesan dan mode fallback provider. Jika berhasil, barulah Publish workflow baru.
 8. Workflow `office_telegram_notifications.json` tetap boleh dipakai untuk laporan pekerjaan nyata, tetapi **bukan** obrolan bebas; jangan Publish jika bot lain belum dikonfigurasi.
 
@@ -151,10 +162,10 @@ Tidak ada percakapan acak yang mengarang progres. Semua template percakapan meng
 2. Pasang Header Auth N8N_TOKEN di node HTTP dari dua workflow. Pasang Telegram bot credential Alya di Trigger masuk.
 3. Jalankan satu kali workflow jadwal grup **sebelum** menyelesaikan tugas baru. Respons sent:false benar karena sistem melewatkan backlog lama.
 4. Buat satu tugas Draf AI fiktif di Anshel; jalankan worker Gemini sampai selesai; jalankan workflow jadwal grup sekali lagi. Harus ada pesan dari bot divisi yang bersangkutan, dan dapat diikuti balasan satu rekan kerja.
-5. Di grup, kirim dari akun pemilik: /bantuan, Eka, progresnya gimana?, /tanya Kirana | ada tugas QA?, dan /tugas desain | Buat tiga konsep desain fiktif. Jeda minimal 8 detik antara pesan. Perintah /tugas benar-benar menambah draf ke antrean; pengerjaannya mengikuti jadwal dan kuota worker yang sudah ada.
+5. Di grup, kirim dari akun pemilik: /bantuan, Eka, progresnya gimana?, /tanya Kirana | ada tugas QA?, dan /tugas desain | Buat tiga konsep desain fiktif. Jeda minimal 2 detik antara pesan. Perintah /tugas benar-benar menambah draf ke antrean; pengerjaannya mengikuti jadwal dan kuota worker yang sudah ada.
 6. Setelah tes privat berhasil, Publish kedua workflow. Unpublish untuk menghentikan aktivitas otomatis. Jangan Publish Telegram Trigger lama Alya bersamaan.
 
-Keamanan: pesan dari akun bot diabaikan; ID grup/pemilik diperiksa ulang di backend; token N8N digunakan pada API; maksimum 20 pesan owner per hari WIB, minimum 8 detik antar pesan, update ID diproses sekali. Pesan status memuat divisi, proyek singkat, ID tugas; tidak pernah mengirim teks tugas, artefak, detail error, atau token. Pengiriman terjadwal hanya pada jam kantor, bukan setiap malam. Jika Telegram sudah menerima pesan tetapi ACK gagal, pengiriman ulang dapat terjadi setelah lease 10 menit. Panggilan satu event belum menjamin tepat satu kali secara mutlak.
+Keamanan: pesan dari akun bot diabaikan; ID grup/pemilik diperiksa ulang di backend; token N8N digunakan pada API; maksimum 1.000 pesan owner per hari WIB, minimum 2 detik antar pesan, update ID diproses sekali. Pesan status memuat divisi, proyek singkat, ID tugas; tidak pernah mengirim teks tugas, artefak, detail error, atau token. Pengiriman terjadwal hanya pada jam kantor, bukan setiap malam. Jika Telegram sudah menerima pesan tetapi ACK gagal, pengiriman ulang dapat terjadi setelah lease 10 menit. Panggilan satu event belum menjamin tepat satu kali secara mutlak.
 
 ## Workflow Telegram lama (perintah masuk dan ringkasan harian)
 
