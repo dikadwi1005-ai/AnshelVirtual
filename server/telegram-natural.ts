@@ -27,7 +27,9 @@ const unsupportedMonitoring=/\b(?:lagi|sedang|barusan|tadi|sudah)\s+(?:(?:manten
 const unverifiedHealth=/\b(?:it|server|sistem|operasional|jaringan)\b.{0,40}\b(?:aman\s+terkendali|aman\s+semua|normal\s+semua|stabil\s+semua|bebas\s+(?:error|gangguan))\b/i;
 
 
-const officeHoursQuestion=q=>/\b(?:jam\s+(?:berapa|masuk|kerja|buka|pulang|operasional)|masuk\s+jam|mulai\s+(?:kerja|operasional)|jadwal\s+(?:masuk|kerja|kantor|operasional|briefing)|kantor\s+(?:buka|tutup|libur)|(?:besok|hari\s+ini)\s+(?:masuk|kerja|libur)|briefing|istirahat\s+siang)\b/i.test(q)
+const officeHoursQuestion=q=>(/\bjam\s+berapa\b/i.test(q) &&
+    /\b(?:masuk|kerja|kantor|operasional|buka|tutup|briefing)\b/i.test(q))
+  || /\b(?:jam\s+(?:masuk|kerja|buka|pulang|operasional)|masuk\s+jam|mulai\s+(?:kerja|operasional)|jadwal\s+(?:masuk|kerja|kantor|operasional|briefing)|kantor\s+(?:buka|tutup|libur)|(?:besok|hari\s+ini)\s+(?:masuk|kerja|libur)|briefing|istirahat\s+siang)\b/i.test(q)
   || /\b(?:lagi|masih|sedang|sekarang|saat\s+ini)\b.{0,50}\b(?:di\s+)?kantor(?:\s+virtual)?\b/i.test(q)
   || /\bkantor(?:\s+virtual)?\b.{0,45}\b(?:sekarang|saat\s+ini|masih\s+buka)\b/i.test(q);
 const unsupportedHours=/\b(?:nggak|tidak|gak|ga)\s+(?:pakai|ada)\s+jam\s+masuk|\b(?:jam|jadwal)\s+(?:masuk|kerja)\s+(?:fleksibel|bebas)|\b(?:kerja|masuk)\s+kapan\s+(?:aja|saja|pun)/i;
