@@ -2,7 +2,7 @@ import { activities, divisions, timezone } from './catalog.js';
 import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
 import { rooms, roomById, wings } from './layout.js';
-import { importSceneWithRetry, lowGraphics, sceneFailureMessage } from './scene-support.js';
+import { loadSceneModule, lowGraphics, SceneModuleError, sceneFailureMessage } from './scene-support.js';
 
 const $ = id => document.getElementById(id);
 const buttons = query => [...document.querySelectorAll(query)];
@@ -30,6 +30,7 @@ let panel = null, selected = null, selectedRoom = null;
 let workstation = null;
 let workstationPreview = null;
 let scene, office, poller, refreshing, toastTimer, clockOffset = 0;
+let openingScene=false;
 let taskKey = null;
 let lighting = localStorage.getItem('anshel-lighting') ?? 'auto';
 let latestAudit = null;
@@ -80,9 +81,10 @@ async function enter() {
   await refresh(true);
   clearInterval(poller);
   poller = setInterval(()=>refresh().catch(error=>notice(error.message)),1500);
-  if (scene) return;
+  if (scene || openingScene) return;
+  openingScene=true;
   try {
-    const {officeScene} = await importSceneWithRetry(url=>import(url));
+    const officeScene=await loadSceneModule(()=>import('./scene.js'));
     scene = officeScene($('scene'),$('room-labels'),select,(message)=>{
       $('scene-message').textContent = message;
       $('scene-message').hidden = !message;
@@ -101,14 +103,16 @@ async function enter() {
     const retry=document.createElement('button');
     retry.type='button';
     retry.className='scene-retry';
-    retry.textContent='Coba lagi';
+    const reload=error instanceof SceneModuleError;
+    retry.textContent=reload?'Muat ulang halaman':'Coba lagi';
     retry.addEventListener('click',()=>{
+      if (reload) { window.location.reload(); return; }
       $('scene-message').textContent='Memuat ulang kantor 3D…';
       enter().catch(failure=>notice(failure.message));
     });
     $('scene-message').replaceChildren(message,retry);
     $('scene-message').hidden=false;
-  }
+  } finally { openingScene=false; }
 }
 
 async function refresh(force = false) {

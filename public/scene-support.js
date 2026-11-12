@@ -12,6 +12,23 @@ export function sceneFailureMessage(error) {
   return 'Kantor 3D gagal dimuat: '+detail+'. Panel tugas tetap tersedia.';
 }
 
+export class SceneModuleError extends Error {
+  constructor(cause) {
+    super('Paket 3D gagal dimuat. '+(cause?.message ?? String(cause)),{cause});
+  }
+}
+
+export async function loadSceneModule(importer) {
+  try {
+    const module=await importer();
+    if (typeof module?.officeScene!=='function') throw new Error('Versi modul tidak cocok dengan aplikasi.');
+    return module.officeScene;
+  } catch (error) {
+    throw new SceneModuleError(error);
+  }
+}
+
+// Cached app.js from older releases still imports this named export.
 export async function importSceneWithRetry(importer,now=()=>Date.now()) {
   try { return await importer('./scene.bundle.js'); }
   catch(error) {
