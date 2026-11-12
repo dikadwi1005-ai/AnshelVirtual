@@ -278,7 +278,7 @@ test('riwayat pesan lama yang mengarang pemantauan log tidak dijadikan konteks b
 });
 
 test('chat Gemini memakai persona pegawai meski namanya ada di tengah atau akhir',async()=>{
-  const s=createStore(':memory:',()=>start);
+  const s=createStore(':memory:',()=>clock.value);
   try {
     const first=await prepareOfficeNaturalChat(s,env,userMessage(1142,'Eh, Bima lagi ngapain sekarang?'));
     assert.equal(first.mode,'generate');
