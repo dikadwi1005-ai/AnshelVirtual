@@ -37,8 +37,8 @@ export const unverifiedCompletedWorkClaim=text=>{
   if(typeof text!=='string')return false;
   const past=String.raw`(?:sudah|udah|telah|barusan|tadi)`;
   const speaker=String.raw`(?:aku|saya|kami|kita)`;
-  const regexA=new RegExp(String.raw`\\b`+past+String.raw`\\s+(?:`+speaker+String.raw`\\s+)?`+completedWorkVerb+String.raw`\\b`,'i');
-  const regexB=new RegExp(String.raw`\\b`+speaker+String.raw`\\s+`+past+String.raw`\\s+`+completedWorkVerb+String.raw`\\b`,'i');
+  const regexA=new RegExp(String.raw`\b`+past+String.raw`\s+(?:`+speaker+String.raw`\s+)?`+completedWorkVerb+String.raw`\b`,'i');
+  const regexB=new RegExp(String.raw`\b`+speaker+String.raw`\s+`+past+String.raw`\s+`+completedWorkVerb+String.raw`\b`,'i');
   return regexA.test(text)||regexB.test(text);
 };
 
