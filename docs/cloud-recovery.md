@@ -32,3 +32,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Restore gagal.' }
 ```
 
 Bandingkan jumlah baris `setting`, `tasks`, dan `audit` dengan sumber. Uji login baru, pastikan artefak tertutup sebelum login, lalu unduh satu artefak dan cocokkan SHA-256. Pastikan tugas baru mendapat nomor urut lebih tinggi. Jika cadangan memuat tugas berstatus `running`, rekonsiliasi statusnya sebelum menghubungkan kembali worker.
+
+### Snapshot production 12 November 2026
+
+Snapshot baca-saja tersimpan sebagai `data/backups/anshel-production-2026-11-12T06-05-08-856Z.sql` beserta checksum `.sha256`. File SQL memuat definisi skema dari migrasi repo serta 2 pengaturan dan 2 kejadian audit dari production. Saat diambil, tabel tugas dan artefak kosong. Cadangan ini dipulihkan ke PostgreSQL 17 terpisah. Checksum isi data cocok dengan sumber, tabel sesi kosong, dan kedua role publik tetap tidak dapat mengakses skema `anshel`.
+
+Untuk cadangan berformat `.sql`, verifikasi checksum seperti di atas, lalu jalankan `psql --dbname=$env:ANSHEL_RESTORE_DB_URL -X -v ON_ERROR_STOP=1 --file=$archive` ke database uji kosong yang memiliki role `anon` dan `authenticated`. File SQL sudah membungkus pemulihan dalam transaksi.
