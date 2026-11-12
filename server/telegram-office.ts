@@ -174,7 +174,58 @@ function latestTask(state,division) {
 export function officeGroupReply(state,input,env) {
   const msg=input.trim().slice(0,1500);
   if (msg==='/bantuan'||msg==='/help') return {division:'management',
-    text:'Boleh ngobrol di sini. Contoh: "Eka, progresnya gimana?", "/tanya Kirana | sudah ada tugas QA?", atau "/tugas desain | Buat tiga konsep desain." Untuk ringkasan: /status dan /tim. Semua akun di sini bot AI, dan hasil kerja tetap perlu ditinjau.'};
+    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. Perintah dari HP: /ringkasan untuk rekap seluruh tugas, /kendala untuk tugas terhambat atau gagal, /cek Bima (bisa juga Alya, Citra, Dara) untuk status pegawai, /status dan /tim untuk informasi kantor. Untuk memberi tugas, pakai /tugas Nama | instruksi. Semua akun ini bot AI; hasil kerja perlu ditinjau.'};
+  // Mobile-friendly commands use actual task state and never ask Gemini to
+  // invent health checks. The bot routing is fixed per command.
+  if (/^\/(?:ringkasan|ringkas)$/i.test(msg)) {
+    const c=state.counts||{};
+    const number=key=>Number(c[key])||0;
+    return {division:'management',text:'Ringkasan status tugas Anshel saat ini (seluruh divisi): '+
+      number('queued')+' antre, '+number('running')+' dikerjakan, '+
+      number('completed')+' selesai, '+number('blocked')+' terhambat, '+
+      number('failed')+' gagal. Ini akumulasi status tugas yang tercatat, bukan hanya aktivitas hari ini. '+
+      'Kalau mau lihat kendala, kirim /kendala.'};
+  }
+  if (/^\/kendala$/i.test(msg)) {
+    const c=state.counts||{};
+    const blocked=Number(c.blocked)||0;
+    const failed=Number(c.failed)||0;
+    if(!blocked&&!failed) return {division:'operations',
+      text:'Di catatan tugas Anshel saat ini belum ada yang berstatus terhambat atau gagal. '+
+      'Ini bukan hasil pemeriksaan server, jadi belum memastikan sistem bebas masalah.'};
+    const recent=(state.tasks||[]).filter(t=>t.status==='blocked'||t.status==='failed').slice(0,3);
+    const details=recent.map(t=>{
+      const worker=divisions.find(d=>d.id===t.division);
+      const who=worker?.employee||'Divisi tidak dikenal';
+      const project=clean(t.project)||'tanpa nama proyek';
+      return who+' ('+project+'): '+(t.status==='blocked'?'terhambat':'gagal');
+    }).join('; ');
+    return {division:'operations',text:'Dari catatan tugas Anshel: '+blocked+' terhambat, '+
+      failed+' gagal.'+(details?' Contoh dari daftar tugas terbaru: '+details+'.':
+      ' Rincian tugas tersebut tidak terlihat dalam daftar terbaru.')+
+      ' Ini status tugas, bukan diagnosis kondisi server.'};
+  }
+  const check=/^\/cek(?:\s+([A-Za-z0-9_]+))?\s*$/i.exec(msg);
+  if (check) {
+    const division=check[1]&&personFrom(check[1]);
+    if (!division) return {division:'management',
+      text:'Untuk cek pegawai, pakai /cek Alya, /cek Bima, /cek Citra, atau /cek Dara.'};
+    if (!activeAuto.has(division)) return {division:'management',
+      text:'Saat ini /cek pegawai dipakai untuk Alya, Bima, Citra, dan Dara. '+
+      'Delapan pegawai lainnya belum diaktifkan untuk chat Telegram.'};
+    const person=divisions.find(d=>d.id===division);
+    const task=latestTask(state,division);
+    if (!task) return {division,
+      text:'Di catatan Anshel belum ada tugas untuk divisi '+person.name+'. '+
+        (division==='operations'?'Ini bukan tanda bahwa server sudah diperiksa.':
+          'Kalau ada pekerjaan baru, statusnya akan muncul setelah tercatat.')};
+    const status={queued:'masih antre',running:'sedang dikerjakan',completed:'hasil drafnya sudah dibuat, belum tentu disetujui',
+      awaiting_approval:'menunggu persetujuan',blocked:'terhambat',failed:'gagal',paused:'dijeda'};
+    const project=clean(task.project);
+    return {division,text:'Untuk '+person.name+', ada tugas'+(project?' pada proyek '+project:'')+
+      ' yang '+(status[task.status]||'statusnya belum diketahui')+
+      '. Ini catatan tugas Anshel, bukan laporan aktivitas fisik kantor.'};
+  }
   if (msg==='/tim') return {division:'management',
     text:'Tim Anshel hari ini: '+divisions.map(d=>d.employee+' ('+d.name+')').join(', ')+'. Kita berbagi kabar berdasarkan status tugas yang tercatat di sistem, ya.'};
   if (msg==='/status') {
