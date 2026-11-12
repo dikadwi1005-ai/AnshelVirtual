@@ -33,9 +33,10 @@ test('empat pegawai menggunakan persona yang benar-benar berbeda; fakta tidak di
   assert.ok(personalities.every(p=>p.includes('Jangan mengarang')));
   assert.deepEqual(params[2].contents,[{role:'user',parts:[{text:'Gimana kabarnya?'}]}]);
   const privateContext=JSON.parse(personalities[2].split('DATA KANTOR TERPERCAYA: ')[1]);
-  assert.equal(privateContext.tugasDivisi[0].status,'queued');
-  assert.equal(privateContext.tugasDivisi[0].project,'Jadwal uji');
-  assert.deepEqual(JSON.parse(personalities[0].split('DATA KANTOR TERPERCAYA: ')[1]).tugasDivisi,[]);
+  assert.equal(privateContext.contohTugasDivisiTerbaru[0].kondisi,'masih antre');
+  assert.equal(privateContext.contohTugasDivisiTerbaru[0].proyek,'Jadwal uji');
+  assert.equal(privateContext.totalSemuaDivisi.tugasMasihAntre,1);
+  assert.deepEqual(JSON.parse(personalities[0].split('DATA KANTOR TERPERCAYA: ')[1]).contohTugasDivisiTerbaru,[]);
 });
 
 test('memori percakapan per divisi tidak tercampur dan satu ticket tidak bisa dikirim dua kali',()=>{
@@ -160,7 +161,8 @@ test('Alya dipanggil tanpa salam: tidak menambahkan Halo juga dan tidak mengaran
   const prepared=buildOfficeNaturalRequest('management',user,state);
   const instruction=prepared.systemInstruction.parts[0].text;
   assert.match(instruction,/TIDAK memiliki sapaan/);
-  assert.match(instruction,/jangan mengaku menyaksikan kantor/i);
+  assert.match(instruction,/kantor VIRTUAL/i);
+  assert.match(instruction,/JANGAN membuka dengan kalimat defensif/i);
   assert.equal(prepared.contents.at(-1).parts[0].text,'gimana suasana kantor hari ini? Ada cerita menarik nggak?');
   assert.equal(cleanOfficeNaturalResponse('Halo juga, belum ada berita baru.','fallback',user),
     'belum ada berita baru.');
@@ -170,4 +172,42 @@ test('Alya dipanggil tanpa salam: tidak menambahkan Halo juga dan tidak mengaran
   assert.match(greeted.systemInstruction.parts[0].text,/benar-benar mengandung sapaan/);
   assert.equal(cleanOfficeNaturalResponse('Halo! Baik, ada yang perlu dibantu?','fallback',
     'Alya, halo! Apa kabar?'),'Halo! Baik, ada yang perlu dibantu?');
+});
+
+
+test('balasan suasana kantor tidak membeberkan status internal atau menganggap semua tugas milik manajemen',async()=>{
+  const state={tasks:[
+    {division:'operations',status:'completed',kind:'draft',project:'Proyek lain'},
+  ],counts:{completed:5,queued:0,running:0,blocked:0}};
+  const question='Alya, gimana suasana kantor hari ini? Ada cerita menarik nggak?';
+  const ready=buildOfficeNaturalRequest('management',question,state);
+  const instruction=ready.systemInstruction.parts[0].text;
+  const facts=JSON.parse(instruction.split('DATA KANTOR TERPERCAYA: ')[1]);
+  assert.equal(facts.totalSemuaDivisi.tugasTercatatSelesai,5);
+  assert.deepEqual(facts.contohTugasDivisiTerbaru,[]);
+  assert.match(instruction,/Bedakan angka total SEMUA divisi/i);
+  assert.match(instruction,/JANGAN membuka dengan kalimat defensif/i);
+  assert.match(instruction,/jangan menyalin nama key data/i);
+  assert.equal(cleanOfficeNaturalResponse(
+    'Aku nggak bisa lihat langsung keadaan fisik kantor sekarang, tapi lima draf sudah statis complete.',
+    'balasan aman',question),'balasan aman');
+  assert.equal(cleanOfficeNaturalResponse(
+    'Dari data, lima draf status completed untuk manajemen.', 'balasan aman',question),'balasan aman');
+  const messages=[];
+  const memory=[];
+  const fakeStore={
+    consumeOfficeGroupAI:async()=>({division:'management',question}),
+    state:async()=>state,
+    rememberOfficeGroupAI:async(...a)=>memory.push(a),
+  };
+  const sent=await deliverOfficeNaturalChat(fakeStore,env,{
+    updateId:'991',ticket:'unused-for-mock',
+    output:'Aku nggak bisa lihat langsung keadaan fisik kantor sekarang, lima draf status complete.',
+  },transport(messages));
+  assert.deepEqual(sent,{sent:true,division:'management',ai:false});
+  assert.match(messages[0].body.text,/5 tugas dari seluruh tim tercatat sudah selesai/i);
+  assert.doesNotMatch(messages[0].body.text,/\b(?:completed|complete|statis)\b/i);
+  assert.doesNotMatch(messages[0].body.text,/keadaan fisik kantor/i);
+  assert.ok(messages[0].url.includes(tokens.management));
+  assert.equal(memory.length,1);
 });
