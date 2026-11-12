@@ -73,7 +73,7 @@ test('worker offline, lease kedaluwarsa, retry, jeda, dan pembatalan',()=>{
     assert.equal(store.claim(['diagnostic']),null);
     assert.equal(store.state().counts.queued,1);
     const running=store.claim(['draft']);
-    now+=125_000;
+    now+=605_000;
     assert.equal(store.state().worker,false);
     assert.equal(store.state().counts.blocked,1);
     assert.throws(()=>store.finish(running.id,running.token,{output:'basi'}),fault(409));
