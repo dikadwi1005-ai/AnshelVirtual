@@ -331,16 +331,24 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   if (!novel)return {duplicate:true};
   const groupCommand=parseGroupWorkspaceCommand(data.text);
   if(groupCommand) {
-    const result=await store.applyOfficeGroupWorkspace(groupCommand);
+    let result;
+    try{result=await store.applyOfficeGroupWorkspace(groupCommand);}
+    catch(error){
+      if(error?.status===400)throw new Fault(400,error.message);
+      throw error;
+    }
     await sendOfficeBotMessage(env,'management',result.text,
       {fetchImpl,silent:result.workspace.quiet});
     return {sent:true,division:'management',groupCommand:groupCommand.type};
   }
+  const workspace=typeof store.officeGroupWorkspace==='function'
+    ?await store.officeGroupWorkspace():null;
+  const silent=workspace?.quiet===true;
   if(data.mediaType && ['photo','voice','audio','document','video'].includes(data.mediaType)) {
     const supported={photo:'foto',voice:'pesan suara',audio:'audio',document:'dokumen',video:'video'};
     await sendOfficeBotMessage(env,'management',
       'Lampiran '+supported[data.mediaType]+' sudah terlihat di grup, tetapi kontennya belum bisa dianalisis oleh worker saat ini. '+
-      'Kalau ada bagian yang ingin dibahas, tuliskan isi atau ringkasannya di pesan teks.',{fetchImpl});
+      'Kalau ada bagian yang ingin dibahas, tuliskan isi atau ringkasannya di pesan teks.',{fetchImpl,silent});
     return {sent:true,division:'management',attachment:supported[data.mediaType],analyzed:false};
   }
   const task=parseOfficeGroupTask(data.text)||parseOwnerNaturalTask(data.text);
@@ -349,15 +357,18 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
     const target=divisions.find(d=>d.id===task.division);
     const message='Siap, tugas baru untuk '+target.name+' sudah masuk antrean (ID: '+created.id+
       '). Aku mulai kalau jadwal dan kuota worker mengizinkan, ya.';
-    await sendOfficeBotMessage(env,target.id,message,{fetchImpl});
+    await sendOfficeBotMessage(env,target.id,message,{fetchImpl,silent});
     return {sent:true,division:target.id,createdTaskId:created.id};
   }
   const reply=officeGroupReply(await store.state(),data.text,env);
-  await sendOfficeBotMessage(env,reply.division,reply.text,{fetchImpl});
+  await sendOfficeBotMessage(env,reply.division,reply.text,{fetchImpl,silent});
   return {sent:true,division:reply.division};
 }
 export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   officeGroupConfig(env);
+  const preferences=typeof store.officeGroupWorkspace==='function'
+    ?await store.officeGroupWorkspace():null;
+  const silent=preferences?.quiet===true;
   const event=await store.claimTelegramNotification();
   if (!event) {
     const routine=await dispatchOfficeGroupRoutine(store,env,fetchImpl);
@@ -375,13 +386,13 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   }
   const message=officeTaskConversation(event);
   if (!message) throw new Fault(500,'Audit tugas tidak bisa dipetakan ke pegawai kantor.');
-  const replyId=await sendOfficeBotMessage(env,message.division,message.text,{fetchImpl});
+  const replyId=await sendOfficeBotMessage(env,message.division,message.text,{fetchImpl,silent});
   await store.ackTelegramNotification(event.eventId,event.token,true);
   let followedUp=false;
   if (message.followUp && activeAuto.has(message.followUp.division) &&
       configured.has(message.followUp.division)) {
     try {
-      await sendOfficeBotMessage(env,message.followUp.division,message.followUp.text,{fetchImpl,replyTo:replyId});
+      await sendOfficeBotMessage(env,message.followUp.division,message.followUp.text,{fetchImpl,replyTo:replyId,silent});
       followedUp=true;
     } catch {
       // Main update was acknowledged. A secondary response is optional;
@@ -402,9 +413,12 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
   officeGroupConfig(env);
   const state=await store.state();
   const configured=new Set(configuredOfficeBots(env).configured);
+  const settings=typeof store.officeGroupWorkspace==='function'
+    ?await store.officeGroupWorkspace():null;
+  const silent=settings?.quiet===true;
   if(officeSummaryDue(state)&&configured.has('management') &&
      await store.claimOfficeGroupSignal('daily-summary')) {
-    await sendOfficeBotMessage(env,'management',officeDailySummary(state),{fetchImpl});
+    await sendOfficeBotMessage(env,'management',officeDailySummary(state),{fetchImpl,silent});
     return {sent:true,kind:'daily-summary',division:'management'};
   }
   const workspace=typeof store.officeGroupWorkspace==='function'
@@ -428,7 +442,7 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
   const warning=officeQueueDelayAlert(state);
   if(warning&&configured.has('operations') &&
      await store.claimOfficeGroupSignal('queued-worker-silent')) {
-    await sendOfficeBotMessage(env,'operations',warning,{fetchImpl});
+    await sendOfficeBotMessage(env,'operations',warning,{fetchImpl,silent});
     return {sent:true,kind:'queue-delay-alert',division:'operations'};
   }
   return null;
