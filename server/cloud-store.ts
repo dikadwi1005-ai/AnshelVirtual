@@ -217,8 +217,8 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
       if (typeof updateId!=='string' || !/^[0-9]{1,24}$/.test(updateId) ||
           !divisions.some(d=>d.id===division) || typeof question!=='string' ||
           !question.trim() || question.length>1500 || (recipients!==null &&
-          (!Array.isArray(recipients)||recipients.length<1||recipients.length>4||
-          recipients.some(id=>!['management','operations','administration','hr'].includes(id))||
+          (!Array.isArray(recipients)||recipients.length<1||recipients.length>5||
+          recipients.some(id=>!['management','operations','administration','hr','marketing'].includes(id))||
           new Set(recipients).size!==recipients.length)))
         throw new Fault(400,'Permintaan percakapan tidak valid.');
       return transaction(async client => {
@@ -232,7 +232,8 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         // For team calls, recall multiple colleagues' prior Telegram replies,
         // never just Alya's history. Never expose unrelated divisions.
         const groupHistory=recipients?recent
-          .filter(h=>['management','operations','administration','hr'].includes(h.division))
+          .filter(h=>[...['management','operations','administration','hr'],
+            ...(recipients.includes('marketing')?['marketing']:[])].includes(h.division))
           .slice(-12).map(h=>({division:h.division,question:h.question,reply:h.reply})) : null;
         const ticket=randomUUID();
         cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000,
