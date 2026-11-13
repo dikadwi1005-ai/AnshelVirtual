@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { officeNewsResult } from './bcift-news.ts';
+import { exchangeOfficePresence, officePresenceKey } from './office-presence.ts';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
@@ -82,6 +83,13 @@ export function createStore(path: string, now = Date.now) {
   };
 
   return {
+    officePresence(input) {
+      return transaction(()=>{
+        const exchange=exchangeOfficePresence(readSetting(officePresenceKey,null),input,now());
+        if(exchange.write)writeSetting(officePresenceKey,exchange.next);
+        return exchange.result;
+      });
+    },
     close:() => db.close(),
     // Outbox notifications are stored in the existing setting table and survive restarts.
     claimTelegramNotification() {

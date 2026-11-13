@@ -70,6 +70,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const temp=new THREE.Vector3(), offset=new THREE.Vector3(), ray=new THREE.Raycaster();
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
   let world, population, character, state=null, following=null, selected=null, cameraMove=null, drag=null;
+  let shared=null, leading=false;
   const movement={x:0,y:0};
   const characterActive=()=>character?.root.visible===true;
   const viewCamera=()=>characterActive()?chase.camera:camera;
@@ -260,10 +261,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     let closest=null, distance=7.5, x, y;
     if (population && viewZoom()>2.15 && state?.phase!=='paused') {
       const view=viewCamera(), target=viewTarget();
-      const candidates=[...population.turns.values()];
-      if (population.solo) candidates.push(population.solo);
+      const candidates=shared && !leading?[population.sharedTurn].filter(Boolean):[...population.turns.values()];
+      if ((!shared || leading) && population.solo) candidates.push(population.solo);
       candidates.sort((a,b)=>Number(a!==shownTurn)-Number(b!==shownTurn));
-      if (population.directTurn) candidates.unshift(population.directTurn);
+      if ((!shared || leading) && population.directTurn) candidates.unshift(population.directTurn);
       for (const turn of candidates) {
         const actor=turn.speaker;
         const position=actor.root.position;
@@ -319,6 +320,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
     const nav=navigation(world.obstacles);
     population=await createActors(scene,nav,shadow,state,requestDialogue,storage);
+    if(shared) population.apply(shared.snapshot,leading);
     try { character=await createCharacter(scene,nav,shadow); }
     catch (error) { console.error('Avatar Dika gagal dimuat',error); }
     for (const room of rooms) {
@@ -402,7 +404,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       const speechFocus=viewZoom()>2.15 ? viewTarget() : null;
       for (let step=0;step<steps;step++) {
         if (characterActive()) character.update(delta/steps,movement,chase.forward,population.actors);
-        population.update(delta/steps,state,speechFocus,viewZoom()<1.6,characterActive()?character.root:null);
+        if (!shared || leading) population.update(delta/steps,state,speechFocus,viewZoom()<1.6,characterActive()?character.root:null);
+        else population.followSnapshot(delta/steps);
       }
       world?.showDockedControllers(population.game.players);
     }
@@ -448,7 +451,17 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     },
     displayTypes(room) { return world?.displays.types(room) ?? []; },
     gamePlayers() { return population?.game.players.size ?? 0; },
-    employeeLife(id) { return population?.living.snapshot(id); },
+    employeeLife(id) {
+      if(shared && !leading) return shared.snapshot?.actors.find(actor=>actor.id===id)?.life;
+      return population?.living.snapshot(id);
+    },
+    sharedSnapshot() { return leading && population?.actors.length===12?population.capture():undefined; },
+    sharedOffice(value) {
+      if(!value)return;
+      if(!value.leader || !leading || value.resume) population?.apply(value.snapshot,value.leader);
+      leading=value.leader;
+      shared=value;
+    },
     nearbyEmployee() {
       if (!characterActive()) return null;
       const from=character.root.position;
@@ -464,6 +477,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     },
     interact(id,action) {
       if (!characterActive()) return 'Masuk ke mode Dika dulu.';
+      if (shared && !leading) return 'Pegawai sedang dikendalikan oleh sesi Anshel lain. Gunakan sesi itu untuk interaksi.';
       const actor=population.actors.find(item=>item.person.id===id);
       if (!actor) return 'Pegawai belum tersedia.';
       if (action==='invite') return population.invite(actor,state);

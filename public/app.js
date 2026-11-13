@@ -32,6 +32,22 @@ let workstation = null;
 let workstationPreview = null;
 let scene, office, poller, refreshing, toastTimer, clockOffset = 0;
 let openingScene=false;
+const presenceClient=crypto.randomUUID();
+let presenceTimer, presenceBusy=false, claimPresence=false;
+
+async function syncPresence() {
+  if (!scene || presenceBusy || document.hidden || $('workspace').hidden) return;
+  presenceBusy=true;
+  const takeOver=claimPresence;
+  claimPresence=false;
+  try {
+    const snapshot=scene.sharedSnapshot();
+    const value=await api('office-presence',{client:presenceClient,snapshot,takeOver});
+    if (!$('workspace').hidden) scene.sharedOffice(value);
+  } catch {
+    // Keep the most recent office state during a temporary connection failure.
+  } finally { presenceBusy=false; }
+}
 let taskKey = null;
 let lighting = localStorage.getItem('anshel-lighting') ?? 'auto';
 let voiceEnabled = localStorage.getItem('anshel-office-voice')==='on';
@@ -107,6 +123,8 @@ function notice(message) {
 
 function showLogin() {
   clearInterval(poller);
+  clearInterval(presenceTimer);
+  claimPresence=false;
   setCharacterMode(false);
   scene?.suspend(true);
   $('workspace').hidden = true;
@@ -122,6 +140,8 @@ async function enter() {
   scene?.suspend(false);
   clearInterval(poller);
   poller = setInterval(()=>refresh().catch(error=>notice(error.message)),1500);
+  clearInterval(presenceTimer);
+  presenceTimer=setInterval(syncPresence,1500);
   if (scene || openingScene) return;
   openingScene=true;
   try {
@@ -132,6 +152,7 @@ async function enter() {
     },openWorkstation,input=>api('dialogue',input).then(result=>result.lines).catch(()=>[]),
     {low:graphicsPreference()});
     scene.state(office);
+    await syncPresence();
     scene.voice(voiceEnabled);
     scene.spatialAudio(spatialAudio);
     setLighting(lighting);
@@ -586,7 +607,11 @@ $('light-toggle').addEventListener('click',()=>setLighting($('light-toggle').dat
 function toggleCharacterMode() {
   const enable=!characterActive;
   setCharacterMode(enable);
-  if (enable && characterActive) setPanel(null);
+  if (enable && characterActive) {
+    setPanel(null);
+    claimPresence=true;
+    void syncPresence();
+  }
   else if (enable) notice('Area masuk Dika sedang terhalang. Coba lagi sebentar.');
 }
 const characterButton=$('character-mode');

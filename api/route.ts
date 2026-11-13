@@ -5,6 +5,7 @@ import { telegram } from '../server/telegram.ts';
 import { configuredOfficeBots, dispatchOfficeGroupEvent, dispatchOfficeGroupCheckin, officeGroupConfig, sendOfficeGroupOwnerMessage } from '../server/telegram-office.ts';
 import { prepareOfficeNaturalChat, deliverOfficeNaturalChat } from '../server/telegram-natural.ts';
 import { Fault } from '../server/store.ts';
+import { validPresence } from '../server/office-presence.ts';
 
 // Server-side only. Credentials must be configured in Vercel Environment Variables.
 let store;
@@ -140,6 +141,11 @@ async function route(request, injectedStore = null, env = process.env) {
       ...await office.state(), dialogueEnabled:getDialogue().enabled, dialogueStatus:getDialogue().status,
     });
     if (path === '/api/dialogue' && post) return respond(await getDialogue().generate(await readJson(request)));
+    if (path === '/api/office-presence' && post) {
+      const input=await readJson(request);
+      if(!validPresence(input))throw new Fault(400,'Snapshot kantor tidak valid.');
+      return respond(await office.officePresence(input));
+    }
     if (path === '/api/tasks' && post) return respond(await office.create(await readJson(request),undefined,
       request.headers.get('idempotency-key')),201);
     if (path === '/api/settings' && post) return respond(await office.settings(await readJson(request)));

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createStore, Fault } from './store.ts';
 import { telegram } from './telegram.ts';
 import { createDialogue } from './dialogue.ts';
+import { validPresence } from './office-presence.ts';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
 const mime = {
@@ -149,6 +150,11 @@ export function officeHandler(store, env = process.env) {
           ...await store.state(),dialogueEnabled:dialogue.enabled,dialogueStatus:dialogue.status,
         });
         if (path === '/api/dialogue' && post) return respond(await dialogue.generate(await json(req)));
+        if (path === '/api/office-presence' && post) {
+          const input=await json(req);
+          if(!validPresence(input))throw new Fault(400,'Snapshot kantor tidak valid.');
+          return respond(await store.officePresence(input));
+        }
         if (path === '/api/tasks' && post) return respond(await store.create(await json(req),undefined,req.headers['idempotency-key'] ?? null),201);
         if (path === '/api/settings' && post) return respond(await store.settings(await json(req)));
         const match = /^\/api\/tasks\/([a-f0-9-]{36})\/(artifact|action)$/.exec(path);

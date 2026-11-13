@@ -94,6 +94,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   const paperMaterial=new THREE.MeshStandardMaterial({color:0xf1e8cf,roughness:.88});
   const gripLeft=new THREE.Vector3(), gripRight=new THREE.Vector3();
   let solo=null, replanCooldown=0, office=null, lastState, lastPlans, player=null;
+  let sharedTurn=null;
   const actors=[];
   const errors=[];
   for (const [index,result] of settled.entries()) {
@@ -372,8 +373,95 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     game.elapsed=game.players.size ? game.elapsed+delta : 0;
   }
 
+  function capture() {
+    const turn=actors.find(actor=>actor.directTurn)?.directTurn ?? conversations.turns.values().next().value;
+    return {actors:actors.map(actor=>({
+      id:actor.person.id,position:location(actor),y:actor.root.position.y,
+      angle:angleDifference(actor.root.rotation.y,0),stage:actor.stage,activity:actor.activity,actual:actor.actual,
+      anchor:actor.anchor.id,pending:actor.pending?.id,pendingActivity:actor.pendingActivity,room:actor.requestedRoom,
+      animation:actor.animation,seat:actor.seatProgress,path:actor.path,
+      life:living.snapshot(actor.person.id),
+    })),turn:turn?{id:turn.speaker.person.id,text:turn.text}:null};
+  }
+
+  function apply(snapshot,resume=false) {
+    if (!snapshot) return;
+    reservations.clear();
+    for (const actor of actors) {
+      const value=snapshot.actors.find(item=>item.id===actor.person.id);
+      if (!value) continue;
+      const options=activity=>activity==='meet-dika'?conversationAnchors[0]:activityAnchors(actor.person,activity);
+      const anchor=options(value.actual).find(item=>item.id===value.anchor) ?? station(roomById[actor.person.id]);
+      const pending=value.pending && options(value.pendingActivity).find(item=>item.id===value.pending);
+      actor.anchor=anchor;
+      actor.actual=value.actual;
+      actor.activity=value.activity;
+      actor.requestedRoom=value.room;
+      actor.pending=pending || null;
+      actor.pendingActivity=value.pendingActivity;
+      actor.stage=value.stage;
+      actor.seatProgress=value.seat;
+      actor.path=value.path.map(point=>point.slice());
+      actor.wait=actor.blocked=actor.retry=0;
+      actor.directTurn=null;
+      actor.invitation=resume && value.activity==='meet-dika'?{anchor:pending || anchor,remaining:25}:null;
+      if (actor.stage==='departing' && !pending) actor.stage='sitting';
+      reservations.set(anchor.id,actor);
+      if (pending) reservations.set(pending.id,actor);
+      actor.remote=value;
+      if (resume || !actor.sharedPosition) {
+        actor.root.position.set(value.position[0],value.y,value.position[1]);
+        actor.root.rotation.y=value.angle;
+        actor.sharedPosition=true;
+      }
+      play(actor,value.animation,resume?0:.14);
+    }
+    if(resume) {
+      living.resume(actors);
+      solo=null;
+    }
+    const speaker=actors.find(actor=>actor.person.id===snapshot.turn?.id);
+    if (!speaker || resume) sharedTurn=null;
+    else if(sharedTurn?.speaker!==speaker || sharedTurn.text!==snapshot.turn.text)
+      sharedTurn={speaker,text:snapshot.turn.text,duration:Math.max(2.65,snapshot.turn.text.length/17)};
+  }
+
+  function followSnapshot(delta) {
+    const blend=1-Math.exp(-delta*4);
+    for(const actor of actors) {
+      const value=actor.remote;
+      if(!value)continue;
+      const [x,z]=value.position;
+      const jump=Math.hypot(x-actor.root.position.x,z-actor.root.position.z)>4;
+      const t=jump?1:blend;
+      actor.root.position.x=THREE.MathUtils.lerp(actor.root.position.x,x,t);
+      actor.root.position.y=THREE.MathUtils.lerp(actor.root.position.y,value.y,t);
+      actor.root.position.z=THREE.MathUtils.lerp(actor.root.position.z,z,t);
+      actor.root.rotation.y+=angleDifference(value.angle,actor.root.rotation.y)*t;
+      actor.mixer.update(delta);
+      actor.shadowMesh.position.x=actor.root.position.x;
+      actor.shadowMesh.position.z=actor.root.position.z;
+      actor.cup.visible=actor.animation==='drink';
+      actor.book.visible=actor.animation==='read';
+      if(actor.cup.visible) {
+        actor.hands[1].localToWorld(gripRight.set(-.138,-.075,.030));
+        actor.cup.position.copy(actor.root.worldToLocal(gripRight));
+      }
+      if(actor.book.visible) {
+        actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.025));
+        actor.hands[1].localToWorld(gripRight.set(-.138,-.080,.025));
+        actor.book.position.copy(actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5)));
+        actor.book.position.y+=.032;
+        actor.book.rotation.x=.32;
+      }
+    }
+    updateGame(delta);
+  }
+
   return {
     errors,actors,turns:conversations.turns,game,living,
+    capture,apply,followSnapshot,
+    get sharedTurn() { return sharedTurn; },
     get solo() { return solo; },
     get directTurn() { return actors.find(actor=>actor.directTurn)?.directTurn; },
     invite(actor,state) {

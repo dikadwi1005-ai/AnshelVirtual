@@ -32,6 +32,11 @@ test('Vercel Web API: login, sesi, antrean, dan logout tetap privat',async () =>
     assert.equal(login.status,200);
     assert.match(login.headers.get('set-cookie'),/HttpOnly; Secure; SameSite=Strict/);
     const cookie = login.headers.get('set-cookie').split(';')[0];
+    const presence={client:'11111111-1111-4111-8111-111111111111'};
+    assert.equal((await call('/api/office-presence','POST',presence)).status,401);
+    assert.equal((await call('/api/office-presence','POST',presence,{Cookie:cookie,Origin:'https://other.example'})).status,403);
+    assert.equal((await call('/api/office-presence','POST',{client:[]},{Cookie:cookie})).status,400);
+    assert.equal((await (await call('/api/office-presence','POST',presence,{Cookie:cookie})).json()).leader,true);
     const created = await call('/api/tasks','POST',{
       description:'Rancang konten media sosial',division:'social',kind:'draft',
     },{Cookie:cookie,'Idempotency-Key':'cloud-api-1'});

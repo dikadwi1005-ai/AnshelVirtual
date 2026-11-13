@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { officeNewsResult } from './bcift-news.ts';
+import { exchangeOfficePresence, officePresenceKey } from './office-presence.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
@@ -70,6 +71,14 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
   }
 
   return {
+    async officePresence(input) {
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293114)',[],client);
+        const exchange=exchangeOfficePresence(await readSetting(officePresenceKey,null,client),input,now());
+        if(exchange.write)await writeSetting(officePresenceKey,exchange.next,client);
+        return exchange.result;
+      });
+    },
     close: () => pool.end(),
     async claimTelegramNotification() {
       return transaction(async client => {

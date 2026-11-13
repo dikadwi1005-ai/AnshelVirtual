@@ -203,5 +203,24 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
       relations:relations.slice(0,3),history:history.filter(item=>item.participants.includes(id)).slice(-5).reverse()};
   }
 
-  return {step,record,snapshot,persist};
+  function resume(actors) {
+    for(const actor of actors) {
+      const member=staff.get(actor.person.id);
+      if(!member)continue;
+      const activity=Object.hasOwn(effects,actor.activity)?actor.activity:'desk';
+      change(member,activity,14+actor.person.index*1.1);
+      const life=actor.remote?.life;
+      if(!life)continue;
+      for(const key of needs) member.values[key]=life.needs[key];
+      for(const relation of life.relations) ties.set(pairKey(actor.person.id,relation.id),relation.value);
+      for(const entry of life.history) {
+        if(!history.some(item=>item.at===entry.at&&item.speaker===entry.speaker&&item.text===entry.text)) history.push(entry);
+      }
+    }
+    history.sort((a,b)=>a.at-b.at);
+    if(history.length>120)history.splice(0,history.length-120);
+    previousState=undefined;
+  }
+
+  return {step,record,snapshot,persist,resume};
 }
