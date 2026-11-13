@@ -30,9 +30,12 @@ export function newsWeekWindow(at) {
   const current=new Date(now);
   const start=new Date(now-7*86400_000);
   // Labels use the Indonesia calendar date, not UTC.
-  const format=d=>new Intl.DateTimeFormat('en-CA',{
-    timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'
-  }).format(d).replace(/\//g,'-');
+  const format=d=>{
+    const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
+      timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'
+    }).formatToParts(d).map(p=>[p.type,p.value]));
+    return parts.year+'-'+parts.month+'-'+parts.day;
+  };
   return {start:format(start),end:format(current)};
 }
 
@@ -45,7 +48,7 @@ export function extractBciftBlogTitles(html) {
   const out=[];
   const re=/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]{1,750}?)<\/a>/gi;
   for(const match of html.slice(0,260000).matchAll(re)) {
-    if(!\/\/blog\/[^?#/]+\/?(?:[?#]|$)/i.test(match[1]))continue;
+    if(!/\/blog\/[^?#/]+\/?(?:[?#]|$)/i.test(match[1]))continue;
     const title=stripHtml(match[2]);
     if(title.length>=12&&title.length<=155&&!out.includes(title))out.push(title);
     if(out.length>=20)break;
