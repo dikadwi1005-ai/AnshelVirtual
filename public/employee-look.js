@@ -32,7 +32,10 @@ function fabricMap(map, profile) {
 }
 
 export function employeeFigure(asset, division) {
-  const profile=employeeProfile(division);
+  return characterFigure(asset,employeeProfile(division));
+}
+
+export function characterFigure(asset,profile) {
   if (!asset.animations.some(clip=>clip.name==='walk') || !asset.animations.some(clip=>clip.name==='sit')) {
     throw new Error('Rig berjalan/duduk tidak tersedia: '+profile.asset);
   }

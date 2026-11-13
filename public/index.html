@@ -36,8 +36,16 @@
         <button class="icon-button" data-camera="zoomIn" aria-label="Perbesar" title="Perbesar" type="button" data-icon="zoomIn"></button>
         <button class="icon-button" data-camera="zoomOut" aria-label="Perkecil" title="Perkecil" type="button" data-icon="zoomOut"></button>
         <button class="icon-button" data-camera="reset" aria-label="Lihat seluruh kantor" title="Lihat seluruh kantor" type="button" data-icon="reset"></button>
+        <button class="icon-button" id="character-mode" aria-label="Main sebagai Dika" title="Main sebagai Dika" aria-pressed="false" type="button" data-icon="character" disabled></button>
       </div>
       <div class="worker-status hud"><i id="worker-light"></i><span id="worker-status">Memeriksa worker</span></div>
+    </div>
+    <div id="character-controls" class="hud" aria-label="Kontrol gerak Dika" hidden>
+      <span>WASD atau tombol panah</span>
+      <button data-move="up" aria-label="Maju" type="button">↑</button>
+      <button data-move="left" aria-label="Kiri" type="button">←</button>
+      <button data-move="down" aria-label="Mundur" type="button">↓</button>
+      <button data-move="right" aria-label="Kanan" type="button">→</button>
     </div>
 
     <nav class="actions hud" aria-label="Panel kantor">

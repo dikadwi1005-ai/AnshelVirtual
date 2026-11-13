@@ -8,6 +8,7 @@ import { activityAnchors, station } from './furnishings.js';
 import { roomById } from './layout.js';
 import { gamepad } from './lounge.js';
 import { isGameReaction } from './lounge-game.js';
+import { characterClearance } from './character-mode.js';
 import { createLivingOffice } from './living-office.js';
 import { flatMesh, model } from './world.js';
 
@@ -92,7 +93,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   const coverMaterial=new THREE.MeshStandardMaterial({color:0x39788c,roughness:.85});
   const paperMaterial=new THREE.MeshStandardMaterial({color:0xf1e8cf,roughness:.88});
   const gripLeft=new THREE.Vector3(), gripRight=new THREE.Vector3();
-  let solo=null, replanCooldown=0, office=null, lastState, lastPlans;
+  let solo=null, replanCooldown=0, office=null, lastState, lastPlans, player=null;
   const actors=[];
   const errors=[];
   for (const [index,result] of settled.entries()) {
@@ -192,6 +193,11 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   }
 
   function occupied(actor,point,from) {
+    if (player) {
+      const {x,z}=player.position;
+      const next=(x-point[0])**2+(z-point[1])**2;
+      if (next<characterClearance**2 && next<(x-from[0])**2+(z-from[1])**2) return true;
+    }
     return actors.some(other=>{
       if (other===actor) return false;
       const {x,z}=other.root.position;
@@ -222,6 +228,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         replanCooldown=.12;
         const blockers=actors.filter(other=>other!==actor &&
           other.root.position.distanceToSquared(actor.root.position)<5**2).map(location);
+        if (player) blockers.push([player.position.x,player.position.z]);
         const detour=nav.route(here,actor.anchor.approach,blockers);
         if (detour) {
           actor.path=detour;
@@ -364,8 +371,9 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   return {
     errors,actors,turns:conversations.turns,game,living,
     get solo() { return solo; },
-    update(delta,state,focus,wide=false) {
+    update(delta,state,focus,wide=false,controlled=null) {
       if (state?.phase==='paused') return;
+      player=controlled;
       replanCooldown-=delta;
       const people=living.step(delta,state,actors);
       if (state!==lastState || people!==lastPlans) {

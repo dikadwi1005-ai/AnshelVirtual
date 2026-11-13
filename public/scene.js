@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createActors } from './actors.js';
+import { createCharacter } from './character-mode.js';
 import { insideRoom, rooms, roomById, point } from './layout.js';
 import { radialTexture } from './materials.js';
 import { navigation } from './navigation.js';
@@ -66,7 +67,9 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const shadow=radialTexture();
   const temp=new THREE.Vector3(), offset=new THREE.Vector3(), ray=new THREE.Raycaster();
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
-  let world, population, state=null, following=null, selected=null, cameraMove=null;
+  let world, population, character, directorView, state=null, following=null, selected=null, cameraMove=null;
+  const movement={x:0,y:0};
+  const characterActive=()=>character?.root.visible===true;
   let mode='auto', night=0, press=null, loaded=false, auditCursor=null, suspended=false;
   const roomLabels=[];
   const bubble=document.createElement('div');
@@ -129,6 +132,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   function reset() {
     following=null;
+    if (characterActive()) {
+      focus(character.root.position.x,character.root.position.z,host.clientWidth<650?5:6);
+      return;
+    }
     cameraMove={target:center.clone(),position:overview.clone(),zoom:1};
   }
 
@@ -140,21 +147,21 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   function focusRoom(id) {
     const room=roomById[id];
-    if (!room) return;
+    if (!room || characterActive()) return;
     following=null;
     focus(room.x,room.z,host.clientWidth<650?2.97:3.70);
   }
 
   function focusEmployee(id,follow=false) {
     const actor=population?.actors.find(item=>item.person.id===id);
-    if (!actor) return;
+    if (!actor || characterActive()) return;
     following=follow?id:null;
     focus(actor.root.position.x,actor.root.position.z,host.clientWidth<650?3.7:4.7);
   }
 
   function focusDisplay(room,type) {
     const view=world?.displays.focus(room,type);
-    if (!view) return;
+    if (!view || characterActive()) return;
     following=null;
     const target=view.center;
     const direction=view.normal.setY(room==='gaming'?1.2:.66).normalize().multiplyScalar(16);
@@ -164,9 +171,9 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   controls.addEventListener('start',()=>{cameraMove=null;following=null;});
   function updateCamera(delta) {
     const blend=1-Math.exp(-delta*7);
-    const actor=following && population?.actors.find(item=>item.person.id===following);
-    if (actor) {
-      temp.copy(actor.root.position).y=.55;
+    const root=characterActive()?character.root:following && population?.actors.find(item=>item.person.id===following)?.root;
+    if (root) {
+      temp.copy(root.position).y=.55;
       if (cameraMove) {
         offset.copy(temp).sub(cameraMove.target);
         cameraMove.target.add(offset);
@@ -294,7 +301,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     world.displays.sync(state);
     let storage;
     try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
-    population=await createActors(scene,navigation(world.obstacles),shadow,state,requestDialogue,storage);
+    const nav=navigation(world.obstacles);
+    population=await createActors(scene,nav,shadow,state,requestDialogue,storage);
+    try { character=await createCharacter(scene,nav,shadow); }
+    catch (error) { console.error('Avatar Dika gagal dimuat',error); }
     for (const room of rooms) {
       const element=document.createElement('button');
       element.className='room-label';
@@ -349,7 +359,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (population) {
       const steps=Math.max(1,Math.ceil(delta/.05));
       const speechFocus=camera.zoom>2.15 ? controls.target : null;
-      for (let step=0;step<steps;step++) population.update(delta/steps,state,speechFocus,camera.zoom<1.6);
+      for (let step=0;step<steps;step++) {
+        if (characterActive()) character.update(delta/steps,movement,camera,population.actors);
+        population.update(delta/steps,state,speechFocus,camera.zoom<1.6,characterActive()?character.root:null);
+      }
       world?.showDockedControllers(population.game.players);
     }
     updateCamera(delta);
@@ -391,6 +404,28 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     displayTypes(room) { return world?.displays.types(room) ?? []; },
     gamePlayers() { return population?.game.players.size ?? 0; },
     employeeLife(id) { return population?.living.snapshot(id); },
+    hasCharacter() { return Boolean(character); },
+    partner(id) {
+      const actor=population?.actors.find(item=>item.person.id===id);
+      character?.setPartner(actor?.figure.getObjectByName('body-mesh') ?? null);
+    },
+    characterMode(enabled) {
+      if (!character || enabled===characterActive()) return characterActive();
+      if (enabled) {
+        if (!character.enable(true,population.actors)) return false;
+        directorView={target:controls.target.clone(),position:camera.position.clone(),zoom:camera.zoom};
+        following=null;
+        controls.enablePan=false;
+        reset();
+      } else {
+        character.enable(false,population.actors);
+        controls.enablePan=true;
+        movement.x=movement.y=0;
+        cameraMove=directorView;
+      }
+      return enabled;
+    },
+    moveCharacter(x,y) { movement.x=x; movement.y=y; },
     voice(enabled) { voice.enable(enabled); },
     spatialAudio(enabled) {
       sound.enable(enabled);
@@ -426,6 +461,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
         x:actor.root.position.x,z:actor.root.position.z,y:actor.root.position.y};
     },
     follow(id) {
+      if (characterActive()) return false;
       if (following===id) { following=null; return false; }
       focusEmployee(id,true);
       return true;

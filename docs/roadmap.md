@@ -150,3 +150,11 @@ PR berikutnya menambah dua endpoint `office-group/ai/prepare` dan `office-group/
 ## Checkpoint Phase 4 · Living Office
 
 Implementasi, cara menguji, hasil pemeriksaan 12 pegawai, dan batas verifikasi dicatat di [checkpoint Living Office](phase-4-living-office.md).
+
+## Checkpoint Phase 5 · Mode karakter
+
+Mode pengamat dan **Main sebagai Dika** dapat ditukar dari kontrol kamera. Kamera mengikuti Dika saat memakai WASD, tombol panah, atau tombol sentuh. Avatar mulai dari Ruang Dika dan memakai model jas dari aset lokal. Geraknya menghormati penghalang denah dan jarak dari pegawai.
+
+**Pengaturan → Pasangan Dika** menyimpan pilihan di browser. Pilihan awal kosong. Pegawai perempuan yang dipilih memakai jas dan dasi senada sambil mempertahankan wajah, rambut, dan rutinitasnya. Menghapus pilihan mengembalikan pakaian aslinya.
+
+**Tested dan Visually Verified.** Build dan 165 tes lulus. Chrome lokal menguji keyboard, tekan dan tahan pada viewport sentuh 390 × 844, kembali ke pengamat, pilihan pasangan setelah reload, gerak diagonal, geser sepanjang penghalang, serta pemulihan pakaian. Gambar lokal mencakup mode Dika di desktop dan ponsel serta perbandingan jas. Perangkat sentuh fisik belum diuji. Panggilan pegawai, editor denah, dan rapat interaktif masuk checkpoint berikutnya.

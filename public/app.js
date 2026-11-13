@@ -35,6 +35,35 @@ let taskKey = null;
 let lighting = localStorage.getItem('anshel-lighting') ?? 'auto';
 let voiceEnabled = localStorage.getItem('anshel-office-voice')==='on';
 let spatialAudio = localStorage.getItem('anshel-office-spatial-audio')==='on';
+const partnerChoices=divisions.filter(person=>employeeProfile(person.id).presentation==='perempuan');
+let partner=partnerChoices.find(person=>person.id===localStorage.getItem('anshel-partner'))?.id ?? '';
+let characterActive=false;
+const movementKeys=new Map(), movementPointers=new Map();
+const keyDirections={KeyW:'up',ArrowUp:'up',KeyS:'down',ArrowDown:'down',
+  KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right'};
+
+function updateMovement() {
+  const directions=new Set([...movementKeys.values(),...movementPointers.values()]);
+  scene?.moveCharacter(Number(directions.has('right'))-Number(directions.has('left')),
+    Number(directions.has('up'))-Number(directions.has('down')));
+}
+
+function clearMovement() {
+  movementKeys.clear();
+  movementPointers.clear();
+  updateMovement();
+}
+
+function setCharacterMode(enabled) {
+  characterActive=scene?.characterMode(enabled) ?? false;
+  clearMovement();
+  const button=$('character-mode');
+  button.classList.toggle('active',characterActive);
+  button.setAttribute('aria-pressed',String(characterActive));
+  button.title=characterActive?'Kembali ke mode pengamat':'Main sebagai Dika';
+  button.setAttribute('aria-label',button.title);
+  $('character-controls').hidden=!characterActive;
+}
 let latestAudit = null;
 let pendingPanelRefresh = false;
 
@@ -71,6 +100,7 @@ function notice(message) {
 
 function showLogin() {
   clearInterval(poller);
+  setCharacterMode(false);
   scene?.suspend(true);
   $('workspace').hidden = true;
   $('auth').hidden = false;
@@ -99,6 +129,8 @@ async function enter() {
     scene.spatialAudio(spatialAudio);
     setLighting(lighting);
     await scene.load();
+    scene.partner(partner);
+    $('character-mode').disabled=!scene.hasCharacter();
     if (panel==='office') render();
   } catch(error) {
     console.error('Gagal membuka kantor 3D',error);
@@ -228,7 +260,7 @@ function renderOffice() {
     const profile=employeeProfile(person.id);
     title(person.name,person.employee);
     $('panel-content').innerHTML = stats([['Jabatan',person.role],['Keahlian',person.specialty],['Kepribadian',person.personality],
-      ['Tampilan',profile.presentation],['Pakaian',profile.outfit]])+
+      ['Tampilan',profile.presentation],['Pakaian',person.id===partner?'Jas formal senada dengan Dika':profile.outfit]])+
       '<div id="employee-status"></div><div class="context-actions"><button id="focus-employee" type="button">Fokus karyawan</button><button id="follow" type="button">'+
       (scene?.isFollowing(selected)?'Berhenti mengikuti':'Ikuti dengan kamera')+'</button></div><div id="employee-social"></div>'+
       '<p class="section-label">Tugas terbaru</p>'+renderTasks(office.tasks.filter(task=>task.division===person.id).slice(0,3),false);
@@ -327,6 +359,7 @@ function renderSettings() {
     '<label>Mode kantor<select name="mode">'+optionList(Object.entries(modeNames),mode)+'</select></label>'+
     '<label>Pencahayaan<select id="lighting">'+optionList([['auto','Otomatis · WIB'],['day','Siang'],['evening','Malam']],lighting)+'</select></label>'+
     '<label>Kualitas grafis<select id="quality">'+optionList([['auto','Otomatis (HP lebih ringan)'],['normal','Standar'],['low','Ringan']],localStorage.getItem('anshel-quality')??'auto')+'</select></label>'+
+    '<label>Pasangan Dika<select id="character-partner">'+optionList([['','Belum dipilih'],...partnerChoices.map(person=>[person.id,person.employee])],partner)+'</select></label>'+
     '<label>Suara dialog<select id="office-voice">'+optionList([['off','Subtitle'],['on','Suara Indonesia jika tersedia']],voiceEnabled?'on':'off')+'</select></label>'+
     '<label>Suara langkah<select id="office-spatial-audio">'+optionList([['off','Mati'],['on','Aktif saat kamera dekat']],spatialAudio?'on':'off')+'</select></label>'+
     '<dl class="stats"><div><dt>Dialog</dt><dd id="dialogue-status">'+(dialogueNames[office.dialogueStatus] ?? dialogueNames.disabled)+'</dd></div></dl>'+
@@ -449,6 +482,12 @@ $('panel-content').addEventListener('click',async event=>{
 $('panel-content').addEventListener('change',async event=>{
   const field=event.target;
   if (field.id==='lighting') setLighting(field.value);
+  if (field.id==='character-partner') {
+    partner=partnerChoices.find(person=>person.id===field.value)?.id ?? '';
+    if (partner) localStorage.setItem('anshel-partner',partner);
+    else localStorage.removeItem('anshel-partner');
+    scene?.partner(partner);
+  }
   if (field.id==='office-voice') {
     voiceEnabled=field.value==='on';
     localStorage.setItem('anshel-office-voice',field.value);
@@ -502,6 +541,7 @@ const icons = {zoomIn:'<path d="M6 12h12M12 6v12"/>',zoomOut:'<path d="M6 12h12"
   moon:'<path d="M19.5 14.5A7.7 7.7 0 0 1 9.5 4.4 8 8 0 1 0 19.5 14.5Z"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
   settings:'<path d="M5 6h14M5 12h14M5 18h14M9 4v4m6 2v4m-6 2v4"/>',
+  character:'<circle cx="12" cy="7" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/>',
   map:'<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6zm6-2v14m6-12v14"/>',
   project:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   activity:'<path d="M3 12h4l3-6 4 12 3-6h4"/>',
@@ -528,6 +568,37 @@ function syncLightingControl() {
   button.dataset.next=next;
 }
 $('light-toggle').addEventListener('click',()=>setLighting($('light-toggle').dataset.next ?? 'evening'));
+$('character-mode').addEventListener('click',()=>{
+  const enable=!characterActive;
+  setCharacterMode(enable);
+  if (enable && characterActive) setPanel(null);
+  else if (enable) notice('Area masuk Dika sedang terhalang. Coba lagi sebentar.');
+});
+window.addEventListener('keydown',event=>{
+  if (!characterActive || event.altKey || event.ctrlKey || event.metaKey ||
+      event.target.closest?.('input,textarea,select,[contenteditable]') || $('task-dialog').open) return;
+  if (!keyDirections[event.code]) return;
+  event.preventDefault();
+  movementKeys.set(event.code,keyDirections[event.code]);
+  updateMovement();
+});
+window.addEventListener('keyup',event=>{
+  if (movementKeys.delete(event.code)) updateMovement();
+});
+window.addEventListener('blur',clearMovement);
+document.addEventListener('visibilitychange',()=>{ if (document.hidden) clearMovement(); });
+for (const button of buttons('[data-move]')) {
+  button.addEventListener('pointerdown',event=>{
+    if (event.button!==0) return;
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    movementPointers.set(event.pointerId,button.dataset.move);
+    updateMovement();
+  });
+  for (const type of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(type,event=>{
+    if (movementPointers.delete(event.pointerId)) updateMovement();
+  });
+}
 buttons('[data-camera]').forEach(button=>{
   const key=button.dataset.camera;
   button.addEventListener('click',async()=>{
