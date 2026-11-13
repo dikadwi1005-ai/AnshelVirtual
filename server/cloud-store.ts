@@ -388,6 +388,37 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         return publicTask((await find(id, client)));
       });
     },
+    async officeArtifactReview(id) {
+      validateWorkerTaskId(id);
+      const task=await find(id);
+      if(!task)throw new Fault(404,'Tugas tidak ditemukan.');
+      const records=await readSetting('office_artifact_reviews_v1',{});
+      const record=records[id];
+      return {id:task.id,division:task.division,project:task.project,status:task.status,
+        sha256:task.sha256||null,ended:task.ended||null,
+        review:record?.sha256===task.sha256?record.decision:null};
+    },
+    async decideOfficeArtifact(id,decision,reason='',actor=owner) {
+      validateWorkerTaskId(id);
+      if(!['approved','rejected'].includes(decision)||typeof reason!=='string'||reason.length>180)
+        throw new Fault(400,'Keputusan review tidak valid.');
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293116)',[],client);
+        const task=await find(id,client);
+        if(!task)throw new Fault(404,'Tugas tidak ditemukan.');
+        if(task.status!=='completed'||!task.sha256||!task.result)
+          throw new Fault(409,'Hanya hasil draf yang selesai dan tersimpan dapat direview.');
+        const key='office_artifact_reviews_v1';
+        const previous=await readSetting(key,{},client);
+        if(previous[id]?.sha256===task.sha256&&previous[id]?.decision===decision)
+          return {id,decision,sha256:task.sha256,duplicate:true};
+        const records=Object.fromEntries(Object.entries(previous).slice(-149));
+        records[id]={decision,sha256:task.sha256,at:now()};
+        await writeSetting(key,records,client);
+        await log(id,actor,decision==='approved'?'artifact_approved':'artifact_rejected',reason.slice(0,160),client);
+        return {id,decision,sha256:task.sha256,duplicate:false};
+      });
+    },
     async settings(input, actor = owner) {
       if (input.mode !== undefined && !['auto','open','closed','paused','overtime'].includes(input.mode)) {
         throw new Fault(400, 'Mode kantor tidak valid.');
