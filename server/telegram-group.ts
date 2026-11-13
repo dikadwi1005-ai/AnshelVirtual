@@ -11,7 +11,9 @@ const styles={
   operations:'Bima, santai, anak IT yang to the point; tidak mengaku cek server.',
   administration:'Citra, teliti dan kalem; suka menjelaskan catatan secara ringkas.',
   hr:'Dara, empatik dan ringan; fokus kebutuhan tim tanpa mengarang dialog.',
-  marketing:'Jihan, fokus SEO, strategi keyword dan sumber data; jangan pernah mengarang trafik atau ranking.',
+  marketing:'Jihan, fokus SEO BCIFT saja; jangan mengarang trafik, ranking, atau hasil pemeriksaan.',
+  research:'Indra, peneliti lintas proyek; kritis, berbasis sumber, tidak mengarang riset.',
+  social:'Hana, pengelola media sosial lintas proyek; kreatif, tidak mengaku sudah posting.',
 };
 const labels=Object.fromEntries(divisions.map(d=>[d.id,d.employee]));
 
@@ -32,7 +34,7 @@ export function requestedOfficeDiscussion(text,enabled=automaticOfficeDivisions)
   if(typeof text!=='string'||text.length>1500)return null;
   const q=text.split('\n')[0].trim();
   const lookup={alya:'management',bima:'operations',citra:'administration',
-    dara:'hr',jihan:'marketing'};
+    dara:'hr',jihan:'marketing',indra:'research',hana:'social'};
   const names=Object.keys(lookup).filter(n=>enabled.includes(lookup[n])).join('|');
   if(!names)return null;
   const named='(?:'+names+')';
@@ -56,7 +58,8 @@ export function ownerReplyContext(data) {
   const sender=typeof source.sender==='string'?source.sender.trim().slice(0,45):'';
   const text=typeof source.text==='string'?source.text.trim().slice(0,350):'';
   const employee=Object.entries({alya:'management',bima:'operations',
-    citra:'administration',dara:'hr',jihan:'marketing'}).find(([name])=>
+    citra:'administration',dara:'hr',jihan:'marketing',
+    indra:'research',hana:'social'}).find(([name])=>
       new RegExp('(?:^|\\b)'+name+'(?:\\b|$)','i').test(sender))?.[1]||null;
   if(!text)return null;
   return {sender:sender||'anggota grup',text,employee};
@@ -188,21 +191,27 @@ function fallbackFor(id,q,state={}) {
       operations:'Semangat juga! Kalau ada kendala teknis, langsung bahas bareng.',
       administration:'Makasih! Kalau nanti ada catatan yang perlu dirapikan, bilang aja.',
       hr:'Makasih. Semoga semua tetap semangat dan punya waktu istirahat.',
-      marketing:'Makasih! Semoga strategi SEO kita nanti dibahas pakai data yang benar-benar ada.',
+      marketing:'Makasih! Semoga strategi SEO BCIFT kita dibahas pakai data yang valid.',
+      research:'Makasih! Aku bisa membantu verifikasi informasi untuk proyek mana pun.',
+      social:'Makasih! Semoga kontennya nanti sesuai kebutuhan audiens.',
     },
     thanks:{
       management:'Sama-sama, Pak. Kalau ada keputusan penting, kita bahas sesuai prioritas.',
       operations:'Santai, sama-sama. Kalau butuh bantu ngurai masalah teknis, kabarin.',
       administration:'Sama-sama! Nanti kalau butuh catatan tambahan, bilang aja ya.',
       hr:'Sama-sama. Senang kalau urusan tim bisa dibahas dengan baik.',
-      marketing:'Sama-sama. Kalau ada riset keyword, aku bisa bantu merancang pendekatannya.',
+      marketing:'Sama-sama. Kalau ada keyword BCIFT, aku bantu merancang pendekatannya.',
+      research:'Sama-sama! Kalau butuh penelusuran sumber, bisa kita bahas.',
+      social:'Sama-sama! Konsep posting bisa kita susun sesuai proyeknya.',
     },
     updates:{
       management:'Aku bisa bantu rangkum progres tugas yang tercatat kalau diperlukan.',
       operations:'Untuk progres teknis, aku cuma bisa memastikan dari tugas yang tercatat.',
       administration:'Kalau butuh rekap dokumen, aku bisa bantu lihat catatan tugas.',
       hr:'Untuk urusan tim, kita bisa bahas status tugas yang tercatat dulu.',
-      marketing:'Kalau soal SEO, aku belum bisa memastikan ranking tanpa data terverifikasi.',
+      marketing:'Kalau soal SEO BCIFT, aku belum bisa memastikan ranking tanpa data terverifikasi.',
+      research:'Aku bisa membantu menilai bukti, tetapi belum ada riset terverifikasi yang dikerjakan tanpa tugas.',
+      social:'Aku bisa meninjau rencana konten, tapi belum ada posting yang dilakukan.',
     },
     activity:{
       management:'Lagi santai sebentar di simulasi kantor. Ada prioritas yang mau dibahas?',
@@ -210,27 +219,35 @@ function fallbackFor(id,q,state={}) {
       administration:'Aku lagi ikut aktivitas kantor virtual. Ada hal yang perlu dicatat?',
       hr:'Lagi ikut kegiatan di kantor virtual. Ada kabar tentang tim?',
       marketing:'Lagi ikut aktivitas di simulasi kantor, belum berarti audit SEO sudah berjalan.',
+      research:'Avatarku mengikuti aktivitas kantor virtual; belum berarti riset sudah dilaksanakan.',
+      social:'Avatarku sedang beraktivitas di kantor virtual, bukan sedang memposting.',
     },
     help:{
       management:'Bisa, Pak. Ceritakan dulu apa yang mau diselesaikan bersama.',
       operations:'Boleh, jelasin kendala teknisnya biar kita tahu mulai dari mana.',
       administration:'Bisa, ada dokumen atau catatan yang perlu dibereskan?',
       hr:'Boleh, ini soal koordinasi atau kebutuhan tim?',
-      marketing:'Boleh, ini soal SEO, riset kata kunci, atau strategi konten?',
+      marketing:'Boleh, ini soal SEO BCIFT, keyword, atau strategi konten?',
+      research:'Boleh, apa topik atau proyek yang perlu diperiksa sumbernya?',
+      social:'Boleh, ini untuk media sosial proyek yang mana?',
     },
     greeting:{
       management:'Halo, Pak. Ada topik yang ingin kita bahas bareng?',
       operations:'Hai! Aku ada. Lagi mau bahas apa nih?',
       administration:'Halo! Kalau ada catatan penting, boleh disampaikan.',
       hr:'Halo semuanya. Semoga harinya berjalan nyaman.',
-      marketing:'Hai semua, Jihan hadir. Ada topik SEO yang ingin dibahas?',
+      marketing:'Hai semua, Jihan hadir. Ada topik SEO BCIFT yang ingin dibahas?',
+      research:'Hai, Indra ikut hadir. Ada informasi yang perlu diteliti?',
+      social:'Hai, Hana ikut hadir. Mau bahas ide konten?',
     },
     neutral:{
       management:'Aku dengar, Pak. Apa yang perlu kita putuskan bersama?',
       operations:'Bima nyimak. Ada sisi teknis yang mau dibahas?',
       administration:'Aku ikut dengar. Ada catatan atau jadwal yang perlu dibicarakan?',
       hr:'Dara di sini. Kalau menyangkut tim, kita bisa ngobrol.',
-      marketing:'Jihan ikut menyimak. Data SEO apa yang mau jadi fokus diskusi?',
+      marketing:'Jihan ikut menyimak. Data SEO BCIFT apa yang mau jadi fokus diskusi?',
+      research:'Indra menyimak. Fakta dan sumbernya bisa kita cek nanti.',
+      social:'Hana ikut menyimak. Target audiensnya siapa?',
     },
   };
   const category=encouragement?'encouragement':thanks?'thanks':updates?'updates':
@@ -254,7 +271,9 @@ function fallbackFor(id,q,state={}) {
         ?'Tugas administrasi '+fact+' di Anshel, jadi belum ada hasil dari tugas itu.'
         :'Ada pekerjaan yang '+fact+' di antrean. Catatan lanjutannya bisa kita bahas.';
       if(id==='hr')return 'Kalau perlu menyusun prioritas tim, ada tugas yang '+fact+' untuk dibahas.';
-      if(id==='marketing')return 'Ada tugas yang '+fact+' di antrean. Strategi SEO tetap perlu hasil dan data sebelum dinilai.';
+      if(id==='marketing')return 'Ada tugas yang '+fact+' di antrean. Strategi SEO BCIFT tetap perlu hasil dan data sebelum dinilai.';
+      if(id==='research')return 'Ada pekerjaan '+fact+' menurut catatan; riset perlu bukti sebelum menyimpulkan.';
+      if(id==='social')return 'Ada tugas konten '+fact+' di antrean; tidak berarti sudah diposting.';
     }
     const tasks=(state.tasks||[]).filter(t=>t.division===id);
     const current=tasks.find(t=>t.status==='running');
