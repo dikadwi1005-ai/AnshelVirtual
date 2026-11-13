@@ -1,7 +1,7 @@
 /** Owner-controlled group workspace, never a trusted record of completed work. */
 const clean=s=>String(s||'').replace(/[\u0000-\u001f<>]/g,' ').trim();
 export const emptyGroupWorkspace=()=>({
-  mode:'normal',quiet:false,notes:[],meeting:null,minutes:[],events:[],reminders:[],
+  mode:'normal',quiet:false,notifications:'all',notes:[],meeting:null,minutes:[],events:[],reminders:[],
 });
 export function parseGroupWorkspaceCommand(text) {
   if(typeof text!=='string'||text.length>1500)return null;
@@ -12,6 +12,8 @@ export function parseGroupWorkspaceCommand(text) {
   if(['pengaturan','memori','acara','rapat','pengingat'].includes(command)&&!body)return {type:'view',section:command};
   if(command==='hening'&&/^(on|off)$/i.test(body))return {type:'quiet',enabled:body.toLowerCase()==='on'};
   if(command==='mode'&&/^(normal|diskusi)$/i.test(body))return {type:'mode',mode:body.toLowerCase()};
+  if(command==='notifikasi'&&/^(semua|penting)$/i.test(body))
+    return {type:'notifications',mode:body.toLowerCase()==='penting'?'important':'all'};
   if(command==='ingat') {
     const pair=/^(.{2,45})\s*\|\s*(.{3,220})$/.exec(body);
     if(pair)return {type:'remember',key:clean(pair[1]),value:clean(pair[2])};
@@ -51,7 +53,7 @@ export function applyGroupWorkspaceCommand(previous,command,now) {
   let answer='';
   switch(command.type) {
     case 'view':{
-      if(command.section==='pengaturan')answer='Mode grup: '+state.mode+'. Notifikasi hening: '+(state.quiet?'aktif':'nonaktif')+'. Rapat: '+(state.meeting?.topic||'tidak ada')+'.';
+      if(command.section==='pengaturan')answer='Mode grup: '+state.mode+'. Notifikasi hening: '+(state.quiet?'aktif':'nonaktif')+'. Tingkat notifikasi: '+state.notifications+'. Rapat: '+(state.meeting?.topic||'tidak ada')+'.';
       if(command.section==='memori')answer=state.notes.length?'Catatan yang disimpan pemilik:\n'+state.notes.map(n=>n.key+': '+n.value).join('\n'):'Belum ada catatan jangka panjang.';
       if(command.section==='acara')answer=state.events.length?'Acara internal tercatat:\n'+state.events.map(e=>e.date+' · '+e.label).join('\n'):'Belum ada acara internal yang terdaftar.';
       if(command.section==='rapat')answer=state.meeting?'Rapat aktif: '+state.meeting.topic+'. Keputusan '+state.meeting.decisions.length+', catatan '+state.meeting.notes.length+'.':'Belum ada rapat aktif.';
@@ -60,6 +62,7 @@ export function applyGroupWorkspaceCommand(previous,command,now) {
     }
     case 'quiet':state.quiet=command.enabled;answer='Mode hening '+(state.quiet?'aktif: pesan tetap ada tanpa notifikasi suara.':'nonaktif: notifikasi normal.') ;break;
     case 'mode':state.mode=command.mode;answer='Mode grup sekarang '+state.mode+'. Aku tidak akan membuat bot saling membalas tanpa perintah pemilik.';break;
+    case 'notifications':state.notifications=command.mode;answer='Notifikasi '+(state.notifications==='important'?'penting saja':'semua pemberitahuan')+'. Status tugas tetap tercatat di dashboard.';break;
     case 'remember':{
       if(/password|token|api.?key|secret|credential|kata sandi|sandi/i.test(command.key+' '+command.value))
         fail('Jangan menyimpan kredensial atau kata sandi dalam memori grup.');
