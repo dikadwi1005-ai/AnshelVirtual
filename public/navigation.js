@@ -73,15 +73,15 @@ export function navigation(obstacles) {
   const clear=(a,b,ignore=null,radius=agentRadius)=>boundsCheck(a) && boundsCheck(b) &&
     !obstacles.some(({box,id})=>!(ignore && id===ignore) && segmentHits(a,b,box,radius));
 
-  function nearest(point) {
+  function nearest(point,passable,visible) {
     const x0=Math.round((point[0]-minX)/spacing), z0=Math.round((point[1]-minZ)/spacing);
     let closest=-1, distance=Infinity;
     for (let z=z0-2;z<=z0+2;z++) {
       for (let x=x0-2;x<=x0+2;x++) {
-        if (!within(x,z) || blocked[cell(x,z)]) continue;
+        if (!within(x,z) || !passable(cell(x,z))) continue;
         const index=cell(x,z), next=position(index);
         const delta=Math.hypot(next[0]-point[0],next[1]-point[1]);
-        if (delta>=distance || !clear(point,next)) continue;
+        if (delta>=distance || !visible(point,next)) continue;
         closest=index;
         distance=delta;
       }
@@ -89,9 +89,24 @@ export function navigation(obstacles) {
     return closest;
   }
 
-  function route(from,to) {
-    if (clear(from,to)) return [to];
-    const start=nearest(from), end=nearest(to);
+  function route(from,to,people=[]) {
+    const separation=.73;
+    const separated=point=>people.every(([x,z])=>(x-point[0])**2+(z-point[1])**2>=separation**2);
+    const passable=index=>!blocked[index] && separated(position(index));
+    const visible=(a,b)=>{
+      if (!clear(a,b)) return false;
+      const dx=b[0]-a[0], dz=b[1]-a[1], length=dx*dx+dz*dz;
+      return people.every(([x,z])=>{
+        const dot=(x-a[0])*dx+(z-a[1])*dz;
+        // Allow a step out of an already occupied clearance circle.
+        if (dot<=0 && (x-a[0])**2+(z-a[1])**2<separation**2) return separated(b);
+        const t=length?Math.max(0,Math.min(1,dot/length)):0;
+        return (x-a[0]-t*dx)**2+(z-a[1]-t*dz)**2>=separation**2;
+      });
+    };
+    if (!separated(to)) return null;
+    if (visible(from,to)) return [to];
+    const start=nearest(from,passable,visible), end=nearest(to,passable,visible);
     if (start<0 || end<0) return null;
     const [endX,endZ]=position(end);
     const scores=new Float64Array(cellCount).fill(Infinity);
@@ -111,8 +126,8 @@ export function navigation(obstacles) {
         let last=from, next=0;
         while (next<raw.length) {
           let best=next;
-          while (best+1<raw.length && clear(last,raw[best+1])) best++;
-          if (!clear(last,raw[best])) return null;
+          while (best+1<raw.length && visible(last,raw[best+1])) best++;
+          if (!visible(last,raw[best])) return null;
           last=raw[best];
           result.push(last);
           next=best+1;
@@ -125,8 +140,8 @@ export function navigation(obstacles) {
         for (let dx=-1;dx<=1;dx++) {
           if (!(dx||dz) || !within(x+dx,z+dz)) continue;
           const neighbor=cell(x+dx,z+dz);
-          if (blocked[neighbor] || visited[neighbor]) continue;
-          if (dx && dz && (blocked[cell(x+dx,z)] || blocked[cell(x,z+dz)])) continue;
+          if (visited[neighbor] || !passable(neighbor)) continue;
+          if (dx && dz && (!passable(cell(x+dx,z)) || !passable(cell(x,z+dz)))) continue;
           const cost=scores[index]+spacing*(dx&&dz?Math.SQRT2:1);
           if (cost>=scores[neighbor]) continue;
           const [nx,nz]=position(neighbor);

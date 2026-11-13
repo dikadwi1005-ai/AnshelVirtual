@@ -4,6 +4,7 @@ import { createActors } from './actors.js';
 import { insideRoom, rooms, roomById, point } from './layout.js';
 import { radialTexture } from './materials.js';
 import { navigation } from './navigation.js';
+import { createOfficeVoice } from './office-voice.js';
 import { buildWorld } from './world.js';
 
 const overview=new THREE.Vector3(30,57,55);
@@ -64,7 +65,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const temp=new THREE.Vector3(), offset=new THREE.Vector3(), ray=new THREE.Raycaster();
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
   let world, population, state=null, following=null, selected=null, cameraMove=null;
-  let mode='auto', night=0, press=null, loaded=false, auditCursor=null;
+  let mode='auto', night=0, press=null, loaded=false, auditCursor=null, suspended=false;
   const roomLabels=[];
   const bubble=document.createElement('div');
   const speakerName=document.createElement('strong'), dialogue=document.createElement('p');
@@ -75,6 +76,15 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   bubble.append(speakerName,dialogue);
   labels.append(bubble);
   let shownTurn=null;
+  const voice=createOfficeVoice();
+  const save=()=>population?.living.persist();
+  const visibility=()=>{
+    if (!document.hidden) return;
+    save();
+    voice.show(null);
+  };
+  window.addEventListener('pagehide',save);
+  document.addEventListener('visibilitychange',visibility);
 
   function resize() {
     const width=host.clientWidth, height=host.clientHeight;
@@ -173,8 +183,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const backgroundNight=new THREE.Color(evening.backdrop), sunNight=new THREE.Color(evening.key);
   const skyNight=new THREE.Color(evening.sky), groundNight=new THREE.Color(evening.ground);
 
-  function updateLabels() {
-    const width=host.clientWidth, height=host.clientHeight;
+  function updateLabels(width,height) {
     const boxes=[];
     const narrow=width<700;
     for (const {room,element,anchors} of roomLabels) {
@@ -203,8 +212,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     }
   }
 
-  function updateSpeech() {
-    const width=host.clientWidth, height=host.clientHeight;
+  function updateSpeech(width,height) {
     let closest=null, distance=7.5, x, y;
     if (population && camera.zoom>2.15 && state?.phase!=='paused') {
       const candidates=[...population.turns.values()];
@@ -227,6 +235,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       }
     }
     bubble.hidden=!closest;
+    voice.show(closest);
     if (!closest) return;
     if (shownTurn!==closest) {
       shownTurn=closest;
@@ -244,7 +253,9 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     onMessage('Menyiapkan kantor…');
     world=await buildWorld(scene,shadow);
     world.displays.sync(state);
-    population=await createActors(scene,navigation(world.obstacles),shadow,state,requestDialogue);
+    let storage;
+    try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
+    population=await createActors(scene,navigation(world.obstacles),shadow,state,requestDialogue,storage);
     for (const room of rooms) {
       const element=document.createElement('button');
       element.className='room-label';
@@ -289,15 +300,17 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (room) onSelect(null,room.id);
   });
 
-  let lastFrame=performance.now();
+  let lastFrame=performance.now(), lastLabelUpdate=-Infinity;
   renderer.setAnimationLoop(now=>{
     const delta=Math.min((now-lastFrame)/1000,.65);
     lastFrame=now;
-    if (!host.clientWidth || document.hidden) return;
+    if (suspended || document.hidden) return;
+    const width=host.clientWidth, height=host.clientHeight;
+    if (!width || !height) return;
     if (population) {
       const steps=Math.max(1,Math.ceil(delta/.05));
       const speechFocus=camera.zoom>2.15 ? controls.target : null;
-      for (let step=0;step<steps;step++) population.update(delta/steps,state,speechFocus);
+      for (let step=0;step<steps;step++) population.update(delta/steps,state,speechFocus,camera.zoom<1.6);
       world?.showDockedControllers(population.game.players);
     }
     updateCamera(delta);
@@ -306,13 +319,20 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     const gameVisible=camera.zoom>=2 && Math.hypot(controls.target.x-lounge.x,controls.target.z-lounge.z)<10;
     world?.displays.update(now,camera.zoom,population?.game,gameVisible);
     renderer.render(scene,camera);
-    updateLabels();
-    updateSpeech();
+    if (now-lastLabelUpdate>=45) {
+      updateLabels(width,height);
+      lastLabelUpdate=now;
+    }
+    updateSpeech(width,height);
   });
 
   return {
     load,reset,focusRoom,focusEmployee,focusDisplay,
     dispose() {
+      save();
+      voice.stop();
+      window.removeEventListener('pagehide',save);
+      document.removeEventListener('visibilitychange',visibility);
       renderer.setAnimationLoop(null);
       resizeObserver.disconnect();
       controls.dispose();
@@ -324,6 +344,15 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     },
     displayTypes(room) { return world?.displays.types(room) ?? []; },
     gamePlayers() { return population?.game.players.size ?? 0; },
+    employeeLife(id) { return population?.living.snapshot(id); },
+    voice(enabled) { voice.enable(enabled); },
+    suspend(value) {
+      suspended=value;
+      if (value) {
+        save();
+        voice.show(null);
+      }
+    },
     state(value) {
       if (!value) return;
       if (auditCursor!==null) {

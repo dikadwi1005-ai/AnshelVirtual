@@ -276,21 +276,22 @@ export const conversationAnchors=[['hub',0,0],['reception',0,-1],['garden',-.25,
 
 export function activityAnchors(person,activity) {
   if (['desk','work','nap'].includes(activity)) return [{
-    ...station(roomById[person.id]), clip:activity==='nap'?'crouch':'sit',
+    ...station(roomById[person.id]), clip:'sit',
   }];
   const options = {
-    coffee:()=>[-1.45,0,1.45].map((x,i)=>localAnchor(roomById.pantry,x,1.34,0,'interact-right','coffee-'+i)),
+    coffee:()=>[-1.45,0,1.45].map((x,i)=>localAnchor(roomById.pantry,x,1.34,0,'drink','coffee-'+i)),
     game:()=>gamingSeats('game-play'),
     rest:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'sit','rest-'+i,{
       height:.42, approach:point(roomById.relaxation,x,.90), support:'relaxation-sofa',
     })),
-    read:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'sit','rest-'+i,{
+    read:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'read','rest-'+i,{
       height:.42, approach:point(roomById.relaxation,x,.90), support:'relaxation-sofa',
     })),
     tv:()=>gamingSeats('sit'),
     talk:()=>conversationAnchors.flat(),
     meeting:()=>[-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,.22,Math.PI,'sit','meeting-'+i,{
       height:.42, approach:point(roomById.meeting,x,-.58), support:'meeting-seat-'+(i?'right':'left'),
+      conversation:'meeting',center:point(roomById.meeting,0,.22),
     })),
     stroll:()=>[-1.18,0,1.18].map((x,i)=>localAnchor(roomById.garden,x,-.50,0,'idle','garden-'+i)),
     visit:()=>[roomById.hr,roomById.marketing,roomById.creative].filter(room=>room.id!==person.id)

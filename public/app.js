@@ -33,6 +33,7 @@ let scene, office, poller, refreshing, toastTimer, clockOffset = 0;
 let openingScene=false;
 let taskKey = null;
 let lighting = localStorage.getItem('anshel-lighting') ?? 'auto';
+let voiceEnabled = localStorage.getItem('anshel-office-voice')==='on';
 let latestAudit = null;
 let pendingPanelRefresh = false;
 
@@ -69,6 +70,7 @@ function notice(message) {
 
 function showLogin() {
   clearInterval(poller);
+  scene?.suspend(true);
   $('workspace').hidden = true;
   $('auth').hidden = false;
   if ($('task-dialog').open) $('task-dialog').close();
@@ -79,6 +81,7 @@ async function enter() {
   $('workspace').hidden = false;
   $('auth').hidden = true;
   await refresh(true);
+  scene?.suspend(false);
   clearInterval(poller);
   poller = setInterval(()=>refresh().catch(error=>notice(error.message)),1500);
   if (scene || openingScene) return;
@@ -91,6 +94,7 @@ async function enter() {
     },openWorkstation,input=>api('dialogue',input).then(result=>result.lines).catch(()=>[]),
     {low:graphicsPreference()});
     scene.state(office);
+    scene.voice(voiceEnabled);
     setLighting(lighting);
     await scene.load();
     if (panel==='office') render();
@@ -187,6 +191,7 @@ function updateEmployee() {
   const element=$('employee-status');
   if (!element || !plan) return;
   const actor=scene?.actorState(selected);
+  const life=scene?.employeeLife(selected);
   if (actor) {
     element.dataset.stage=actor.stage;
     element.dataset.animation=actor.animation;
@@ -194,13 +199,25 @@ function updateEmployee() {
   const moving=['walking','aligning','sitting','departing'].includes(actor?.stage);
   const workStatus=plan.executing?'Eksekusi berjalan':plan.task?.status==='blocked'?'Tugas terhambat':
     plan.task ? (!office.worker || !office.capabilities.includes(plan.task.kind) ? 'Menunggu worker' : 'Dalam antrean') : 'Tanpa tugas aktif';
-  const activity=moving ? (plan.task?'Menuju meja kerja':'Berjalan') :
-    plan.task && !plan.executing ? 'Siap di meja' : actor?.animation==='speak'?'Sedang berbicara':activities[actor?.activity ?? plan.activity];
+  const activity=moving ? (plan.executing?'Menuju meja kerja':'Berjalan') :
+    actor?.animation?.endsWith('speak')?'Sedang berbicara':activities[actor?.activity ?? plan.activity];
   const markup=stats([
     ['Aktivitas',activity],['Status kerja',workStatus],
-    ['Suasana hati',plan.mood],['Energi',plan.energy+'%'],
+    ['Suasana hati',life?.mood ?? plan.mood],
+    ...(life ? [['Energi',life.needs.energy],['Fokus',life.needs.focus],['Sosial',life.needs.social],
+      ['Istirahat',life.needs.rest],['Hiburan',life.needs.fun]].map(([label,value])=>[label,value+'%']) :
+      [['Energi',plan.energy+'%']]),
   ])+(plan.task?'<p class="status-text">'+escape(plan.task.description)+'</p>':'');
   if (element.innerHTML!==markup) element.innerHTML=markup;
+  const social=$('employee-social');
+  if (!social) return;
+  const details=(life?.relations.length?'<p class="section-label">Rekan yang sering diajak bicara</p>'+
+    stats(life.relations.map(({id,value})=>[team(id).employee,value+'%'])):'')+
+    '<p class="section-label">Obrolan terakhir</p>'+
+    (life?.history.length?'<ul class="task-list">'+life.history.map(item=>'<li class="task-card"><strong>'+
+      escape(team(item.speaker).employee)+' · '+escape(roomById[item.room]?.label ?? activities[item.room] ?? 'Kantor')+
+      '</strong><p>'+escape(item.text)+'</p></li>').join('')+'</ul>':'<p class="status-text">Belum ada obrolan tercatat.</p>');
+  if (social.innerHTML!==details) social.innerHTML=details;
 }
 
 function renderOffice() {
@@ -211,7 +228,7 @@ function renderOffice() {
     $('panel-content').innerHTML = stats([['Jabatan',person.role],['Keahlian',person.specialty],['Kepribadian',person.personality],
       ['Tampilan',profile.presentation],['Pakaian',profile.outfit]])+
       '<div id="employee-status"></div><div class="context-actions"><button id="focus-employee" type="button">Fokus karyawan</button><button id="follow" type="button">'+
-      (scene?.isFollowing(selected)?'Berhenti mengikuti':'Ikuti dengan kamera')+'</button></div>'+
+      (scene?.isFollowing(selected)?'Berhenti mengikuti':'Ikuti dengan kamera')+'</button></div><div id="employee-social"></div>'+
       '<p class="section-label">Tugas terbaru</p>'+renderTasks(office.tasks.filter(task=>task.division===person.id).slice(0,3),false);
     updateEmployee();
     return;
@@ -308,6 +325,7 @@ function renderSettings() {
     '<label>Mode kantor<select name="mode">'+optionList(Object.entries(modeNames),mode)+'</select></label>'+
     '<label>Pencahayaan<select id="lighting">'+optionList([['auto','Otomatis · WIB'],['day','Siang'],['evening','Malam']],lighting)+'</select></label>'+
     '<label>Kualitas grafis<select id="quality">'+optionList([['auto','Otomatis (HP lebih ringan)'],['normal','Standar'],['low','Ringan']],localStorage.getItem('anshel-quality')??'auto')+'</select></label>'+
+    '<label>Suara dialog<select id="office-voice">'+optionList([['off','Subtitle'],['on','Suara Indonesia jika tersedia']],voiceEnabled?'on':'off')+'</select></label>'+
     '<dl class="stats"><div><dt>Dialog</dt><dd id="dialogue-status">'+(dialogueNames[office.dialogueStatus] ?? dialogueNames.disabled)+'</dd></div></dl>'+
     '<p class="section-label">Jadwal · WIB</p><div class="form-grid">'+Object.entries(scheduleFields).map(([key,label])=>
       '<label>'+label+'<input type="time" name="'+key+'" required value="'+escape(schedule[key])+'"></label>').join('')+'</div>'+
@@ -428,6 +446,11 @@ $('panel-content').addEventListener('click',async event=>{
 $('panel-content').addEventListener('change',async event=>{
   const field=event.target;
   if (field.id==='lighting') setLighting(field.value);
+  if (field.id==='office-voice') {
+    voiceEnabled=field.value==='on';
+    localStorage.setItem('anshel-office-voice',field.value);
+    scene?.voice(voiceEnabled);
+  }
   if (field.id==='quality') {
     if (field.value==='auto') localStorage.removeItem('anshel-quality');
     else localStorage.setItem('anshel-quality',field.value);

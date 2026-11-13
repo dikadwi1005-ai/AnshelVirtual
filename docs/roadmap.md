@@ -146,3 +146,7 @@ PR #7 dikembangkan ulang dari notifikasi satu bot menjadi grup Telegram 12 ident
 ## Checkpoint Phase 3B — Natural Telegram AI chat
 
 PR berikutnya menambah dua endpoint `office-group/ai/prepare` dan `office-group/ai/finish`, tiket satu-kali-pakai, memori singkat per divisi di anshel.setting, 12 persona yang berbeda, prompt berbasis status tugas, serta alur n8n baru yang memakai kredensial Gemini lama. Workflow Telegram lama tidak diubah dan tetap sebagai rollback. Perintah kantor tetap deterministik. Batas pesan tetap 20 per hari WIB, jeda 8 detik; percakapan bebas dapat memakai kuota Gemini terpisah. Tidak mengaktifkan bot maupun workflow pada Vercel/n8n secara otomatis; perlu pemeriksaan CI dan uji n8n langsung.
+
+## Checkpoint Phase 4 · Living Office
+
+Implementasi, cara menguji, hasil pemeriksaan 12 pegawai, dan batas verifikasi dicatat di [checkpoint Living Office](phase-4-living-office.md).
