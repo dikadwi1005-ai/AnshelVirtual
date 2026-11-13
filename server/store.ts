@@ -343,6 +343,39 @@ export function createStore(path: string, now = Date.now) {
         return publicTask(find(id));
       });
     },
+    // Explicit artifact approval is independent of pre-execution /setujui.
+    // Do not expose full result text in Telegram, only review metadata.
+    officeArtifactReview(id) {
+      validateWorkerTaskId(id);
+      const task=find(id);
+      if(!task)throw new Fault(404,'Tugas tidak ditemukan.');
+      const records=readSetting('office_artifact_reviews_v1',{});
+      const record=records[id];
+      return {id:task.id,division:task.division,project:task.project,status:task.status,
+        sha256:task.sha256||null,ended:task.ended||null,
+        review:record?.sha256===task.sha256?record.decision:null};
+    },
+    decideOfficeArtifact(id,decision,reason='',actor=owner) {
+      validateWorkerTaskId(id);
+      if(!['approved','rejected'].includes(decision)||typeof reason!=='string'||reason.length>180)
+        throw new Fault(400,'Keputusan review tidak valid.');
+      return transaction(()=>{
+        const task=find(id);
+        if(!task)throw new Fault(404,'Tugas tidak ditemukan.');
+        if(task.status!=='completed'||!task.sha256||!task.result)
+          throw new Fault(409,'Hanya hasil draf yang selesai dan tersimpan dapat direview.');
+        const key='office_artifact_reviews_v1';
+        const previous=readSetting(key,{});
+        if(previous[id]?.sha256===task.sha256&&previous[id]?.decision===decision)
+          return {id,decision,sha256:task.sha256,duplicate:true};
+        const trimmed=Object.entries(previous).slice(-149);
+        const records=Object.fromEntries(trimmed);
+        records[id]={decision,sha256:task.sha256,at:now()};
+        writeSetting(key,records);
+        log(id,actor,decision==='approved'?'artifact_approved':'artifact_rejected',reason.slice(0,160));
+        return {id,decision,sha256:task.sha256,duplicate:false};
+      });
+    },
     settings(input, actor = owner) {
       if (input.mode !== undefined && !['auto','open','closed','paused','overtime'].includes(input.mode)) {
         throw new Fault(400,'Mode kantor tidak valid.');
