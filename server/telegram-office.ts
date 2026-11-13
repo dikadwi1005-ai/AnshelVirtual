@@ -413,9 +413,18 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   if(task) {
     const created=await store.create(task,'Pemilik · grup Telegram','office-group:'+updateId);
     const target=divisions.find(d=>d.id===task.division);
-    const message='Siap, tugas baru untuk '+target.name+' sudah masuk antrean (ID: '+created.id+
-      '). Aku mulai kalau jadwal dan kuota worker mengizinkan, ya.';
-    const sender=configuredOfficeBots(env).configured.includes(target.id)?target.id:'management';
+    const pilotActive=activeAuto.has(target.id);
+    const botConnected=configuredOfficeBots(env).configured.includes(target.id);
+    // Only four pilot bots may speak, even when dormant division tokens are stored.
+    const sender=pilotActive && botConnected?target.id:'management';
+    const message=!pilotActive
+      ?'Tugas untuk '+target.name+' tercatat dalam antrean (ID: '+created.id+
+        '). Divisi ini belum aktif sebagai bot Telegram pilot. Tugas belum dinyatakan dikerjakan; pantau status dan ketersediaan worker di dashboard.'
+      :!botConnected
+      ?'Tugas untuk '+target.name+' tercatat dalam antrean (ID: '+created.id+
+        '). Bot Telegram pegawai ini belum terhubung. Belum ada bukti tugas telah dikerjakan; cek status worker di dashboard.'
+      :'Siap, tugas baru untuk '+target.name+' sudah masuk antrean (ID: '+created.id+
+        '). Belum dikerjakan; pemrosesan tergantung jadwal dan ketersediaan worker.';
     await sendOfficeBotMessage(env,sender,message,{fetchImpl,silent});
     return {sent:true,division:target.id,acknowledgedBy:sender,createdTaskId:created.id};
   }

@@ -131,7 +131,8 @@ test('pemilik dapat bertanya ke Eka, QA, status, dan membuat draf secara eksplis
     assert.equal(s.state().tasks.length,1);
     assert.equal(s.state().tasks[0].division,'creative');
     assert.equal(s.state().tasks[0].status,'queued');
-    assert.ok(sent[0].url.includes(allTokens.creative));
+    assert.ok(sent[0].url.includes(allTokens.management));
+    assert.match(sent[0].body.text,/belum aktif sebagai bot Telegram pilot/i);
     assert.deepEqual(await sendOfficeGroupOwnerMessage(s,env,payload,fake),{duplicate:true});
     assert.equal(s.state().tasks.length,1);
     await assert.rejects(sendOfficeGroupOwnerMessage(s,env,{...payload,userId:'888',updateId:'112'},fake),e=>e.status===403);
@@ -143,6 +144,39 @@ test('pemilik dapat bertanya ke Eka, QA, status, dan membuat draf secara eksplis
       ...payload,updateId:'112',text:'Eka, progres?'},fake);
     assert.equal(reply.division,'development');
   } finally{s.close();}
+});
+
+test('tugas divisi nonaktif tetap tercatat, dibalas Alya tanpa janji kerja dan tanpa bot non-pilot',async()=>{
+  for(const tokens of [
+    Object.fromEntries(automaticOfficeDivisions.map(k=>[k,allTokens[k]])),
+    allTokens,
+  ]) {
+    const s=createStore(':memory:',()=>start);
+    const testEnv={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(tokens)};
+    const messages=[];
+    const fake=async(url,options)=>{
+      messages.push({url,body:JSON.parse(options.body)});
+      return goodResponse(701+messages.length);
+    };
+    try {
+      const payload={chatId:testEnv.TELEGRAM_CHAT_ID,userId:testEnv.TELEGRAM_USER_ID,
+        updateId:'777',text:'/tugas desain | Buat tiga konsep desain yang berbeda',isBot:false};
+      const out=await sendOfficeGroupOwnerMessage(s,testEnv,payload,fake);
+      assert.equal(out.sent,true);
+      assert.equal(out.division,'creative');
+      assert.equal(out.acknowledgedBy,'management');
+      assert.equal(s.state().tasks.length,1);
+      assert.equal(s.state().tasks[0].division,'creative');
+      assert.equal(s.state().tasks[0].status,'queued');
+      assert.equal(messages.length,1);
+      assert.ok(messages[0].url.includes(allTokens.management));
+      assert.ok(!messages[0].url.includes(allTokens.creative));
+      assert.match(messages[0].body.text,/belum aktif|belum dinyatakan dikerjakan/i);
+      assert.doesNotMatch(messages[0].body.text,/aku mulai|sudah selesai|sedang mengerjakan/i);
+      assert.deepEqual(await sendOfficeGroupOwnerMessage(s,testEnv,payload,fake),{duplicate:true});
+      assert.equal(s.state().tasks.length,1);
+    } finally {s.close();}
+  }
 });
 
 test('endpoint grup memerlukan N8N_TOKEN, ID grup, dan tidak membocorkan token bot',async()=>{
