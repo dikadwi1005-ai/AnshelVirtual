@@ -1,11 +1,14 @@
 import * as THREE from 'three';
 import { characterFigure } from './employee-look.js';
-import { point, roomById } from './layout.js';
+import { point, roomById, rooms } from './layout.js';
+import { partitions } from './furnishings.js';
+import { segmentHits } from './navigation.js';
 import { flatMesh, model } from './world.js';
 
 export const formalAsset='male-d';
 const spawnPoints=[[0,-1.9],[0,-2.65],[1,-1.9],[-1,-1.9]].map(([x,z])=>point(roomById.executive,x,z));
 const radius=.38;
+const walls=rooms.flatMap(room=>partitions(room).map(wall=>wall.box));
 export const characterClearance=.75;
 
 export function characterMove(position,direction,distance,clear) {
@@ -65,6 +68,9 @@ export async function createCharacter(scene,nav,shadowMap) {
 
   return {
     root,setPartner,
+    canInteract(to) {
+      return !walls.some(wall=>segmentHits(here(),[to.x,to.z],wall));
+    },
     enable(value,actors) {
       if (value) {
         const positions=lastPosition?[lastPosition,...spawnPoints]:spawnPoints;

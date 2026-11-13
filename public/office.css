@@ -40,10 +40,11 @@ h1,h2,h3,.brand,.clock{font-family:'Space Grotesk',sans-serif}
 .camera{padding:3px;gap:1px}
 #character-controls{position:absolute;z-index:2;left:20px;bottom:114px}
 #character-controls p{padding:7px 10px;color:var(--muted);font-size:11px}
+#interact-employee{position:fixed;right:20px;bottom:82px}
 #character-stick{display:none;width:106px;aspect-ratio:1;border:1px solid #ffffff55;border-radius:50%;background:#152639ad;box-shadow:inset 0 0 0 10px #101d2c38,0 5px 15px #080f2145;place-items:center;touch-action:none;user-select:none;-webkit-user-select:none}
 #character-stick span{width:43px;aspect-ratio:1;border-radius:50%;background:#2c5161;border:1px solid #99d8cf;box-shadow:0 4px 9px #080f2177;pointer-events:none}
 #character-stick[data-active] span{background:#417483}
-@media(max-width:800px){#character-controls{left:14px;bottom:174px}}
+@media(max-width:800px){#character-controls{left:14px;bottom:174px}#interact-employee{right:10px;bottom:174px}}
 @media(max-width:800px),(any-pointer:coarse){#character-stick{display:grid}#character-controls p{display:none}}
 .worker-status{min-height:29px;padding:5px 9px;gap:6px;font-size:11px;color:var(--muted)}
 .worker-status i{flex:none}

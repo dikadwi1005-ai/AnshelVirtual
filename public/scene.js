@@ -263,6 +263,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       const candidates=[...population.turns.values()];
       if (population.solo) candidates.push(population.solo);
       candidates.sort((a,b)=>Number(a!==shownTurn)-Number(b!==shownTurn));
+      if (population.directTurn) candidates.unshift(population.directTurn);
       for (const turn of candidates) {
         const actor=turn.speaker;
         const position=actor.root.position;
@@ -277,7 +278,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
         distance=range;
         x=left;
         y=top;
-        if (turn===shownTurn) break;
+        if (turn===shownTurn || turn===population.directTurn) break;
       }
     }
     bubble.hidden=!closest;
@@ -448,6 +449,28 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     displayTypes(room) { return world?.displays.types(room) ?? []; },
     gamePlayers() { return population?.game.players.size ?? 0; },
     employeeLife(id) { return population?.living.snapshot(id); },
+    nearbyEmployee() {
+      if (!characterActive()) return null;
+      const from=character.root.position;
+      let closest=null, distance=3;
+      for (const actor of population.actors) {
+        const to=actor.root.position;
+        const range=Math.hypot(to.x-from.x,to.z-from.z);
+        if (range>=distance || !character.canInteract(to)) continue;
+        closest=actor.person.id;
+        distance=range;
+      }
+      return closest;
+    },
+    interact(id,action) {
+      if (!characterActive()) return 'Masuk ke mode Dika dulu.';
+      const actor=population.actors.find(item=>item.person.id===id);
+      if (!actor) return 'Pegawai belum tersedia.';
+      if (action==='invite') return population.invite(actor,state);
+      if (actor.root.position.distanceTo(character.root.position)>3.1 || !character.canInteract(actor.root.position))
+        return 'Dekati '+actor.person.employee+' untuk mengobrol.';
+      return population.chat(actor,state);
+    },
     hasCharacter() { return Boolean(character); },
     partner(id) {
       const actor=population?.actors.find(item=>item.person.id===id);
@@ -463,6 +486,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
         reset();
       } else {
         character.enable(false,population.actors);
+        population.clearInteraction();
         controls.enabled=true;
         cancelPointer();
         movement.x=movement.y=0;

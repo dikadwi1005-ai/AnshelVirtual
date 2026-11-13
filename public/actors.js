@@ -4,7 +4,7 @@ import { chooseConversationAnchor, createConversations, createMonologues } from 
 import { employeeFigure } from './employee-look.js';
 import { employeeMouth } from './employee-mouth.js';
 import { employeeProfile } from './employee-profiles.js';
-import { activityAnchors, station } from './furnishings.js';
+import { activityAnchors, conversationAnchors, station } from './furnishings.js';
 import { roomById } from './layout.js';
 import { gamepad } from './lounge.js';
 import { isGameReaction } from './lounge-game.js';
@@ -153,7 +153,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   function request(actor,activity,room) {
     actor.activity=activity;
     actor.requestedRoom=room;
-    const anchor=chooseAnchor(actor,activity,reservations,nav,room);
+    const anchor=activity==='meet-dika'?actor.invitation.anchor:chooseAnchor(actor,activity,reservations,nav,room);
     if (!anchor) { actor.retry=2; return; }
     if (actor.anchor.id===anchor.id && !['waiting','walking','aligning','idle'].includes(actor.stage)) {
       if (actor.pending) reservations.delete(actor.pending.id);
@@ -275,11 +275,14 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
 
   function advance(actor,delta,state,animate) {
     const plan=state?.people?.[actor.person.id];
+    if (actor.invitation && (plan?.taskLock || (actor.invitation.remaining-=delta)<=0)) actor.invitation=null;
+    if (actor.directTurn && (actor.directTurn.remaining-=delta)<=0) actor.directTurn=null;
     const reacting=actor.reaction>0 && !plan?.taskLock;
-    const requested=reacting ? actor.activity : plan?.activity ?? 'desk';
+    const requested=actor.invitation?'meet-dika':reacting && actor.activity!=='meet-dika'?actor.activity:plan?.activity ?? 'desk';
     actor.retry=Math.max(0,actor.retry-delta);
-    if (requested!==actor.activity || plan?.room!==actor.requestedRoom ||
-        (!actor.retry && (requested!==actor.actual || actor.stage==='waiting') && !actor.pending)) request(actor,requested,plan?.room);
+    const chatting=actor.directTurn && ['seated','arrived'].includes(actor.stage);
+    if (!chatting && (requested!==actor.activity || plan?.room!==actor.requestedRoom ||
+        (!actor.retry && (requested!==actor.actual || actor.stage==='waiting') && !actor.pending))) request(actor,requested,plan?.room);
     if (actor.stage==='departing' || actor.stage==='sitting') seat(actor,delta,actor.stage==='departing');
     else if (actor.stage==='walking' && actor.path.length) step(actor,delta);
     else if (actor.stage==='aligning') {
@@ -297,17 +300,18 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       const turn=(actor.stage==='arrived'||seated) && conversations.turns.get(actor.anchor.conversation);
       const speaking=turn?.speaker===actor;
       const speakingAlone=solo?.speaker===actor && actor.stage==='arrived' && actor.anchor.clip==='idle' && !plan?.taskLock;
-      const conversation=actor.stage==='arrived' && actor.anchor.conversation;
+      const conversation=actor.stage==='arrived' && (actor.anchor.conversation || (chatting && player));
       if (conversation) {
-        const facing=turn ? location(speaking?turn.other:turn.speaker) : actor.anchor.center;
+        const facing=chatting && player?[player.position.x,player.position.z]:
+          turn ? location(speaking?turn.other:turn.speaker) : actor.anchor.center;
         const [x,z]=location(actor);
         const angle=Math.atan2(facing[0]-x,facing[1]-z);
         const turnAngle=angleDifference(angle,actor.root.rotation.y);
         actor.root.rotation.y+=THREE.MathUtils.clamp(turnAngle,-delta*3,delta*3);
       }
       const gaming=seated && actor.actual==='game';
-      const clip=gaming ? (isGameReaction(game.elapsed)?'game-react':'game-play') :
-        speaking && seated ? 'seated-speak' : speaking || speakingAlone ? 'speak' :
+      const clip=(speaking || chatting) && seated ? 'seated-speak' : speaking || chatting || speakingAlone ? 'speak' :
+        gaming ? (isGameReaction(game.elapsed)?'game-react':'game-play') :
           reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.stage==='waiting'?'idle':actor.anchor.clip;
       play(actor,clip);
       actor.reaction=Math.max(0,actor.reaction-delta);
@@ -371,6 +375,40 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   return {
     errors,actors,turns:conversations.turns,game,living,
     get solo() { return solo; },
+    get directTurn() { return actors.find(actor=>actor.directTurn)?.directTurn; },
+    invite(actor,state) {
+      if (state?.phase==='paused') return 'Simulasi sedang dijeda.';
+      if (office?.people?.[actor.person.id]?.taskLock) return actor.person.employee+' sedang menangani tugas.';
+      if (actor.invitation) return actor.person.employee+' sudah dipanggil ke Atrium.';
+      if (actors.some(person=>person.invitation)) return 'Masih ada pegawai yang dipanggil ke Atrium.';
+      const anchor=conversationAnchors[0].find(slot=>!reservations.has(slot.id) &&
+        (!player || Math.hypot(player.position.x-slot.point[0],player.position.z-slot.point[1])>characterClearance) &&
+        nav.route(actor.stage==='seated'||actor.stage==='sitting'||actor.stage==='departing'?
+          actor.anchor.approach:location(actor),slot.approach));
+      if (!anchor) return 'Belum ada tempat yang bisa dijangkau di Atrium.';
+      actor.invitation={anchor,remaining:75};
+      actor.directTurn=null;
+      request(actor,'meet-dika',office?.people?.[actor.person.id]?.room);
+      return actor.person.employee+' akan menemuimu di Atrium Kolaborasi.';
+    },
+    chat(actor,state) {
+      if (state?.phase==='paused') return 'Simulasi sedang dijeda.';
+      if (office?.people?.[actor.person.id]?.taskLock) return actor.person.employee+' sedang menangani tugas.';
+      if (!['seated','arrived'].includes(actor.stage)) return 'Tunggu '+actor.person.employee+' berhenti berjalan.';
+      for (const person of actors) person.directTurn=null;
+      const lines={
+        desk:'Hai, Dika. Aku lagi merapikan catatan di meja.',
+        coffee:'Hai, Dika. Aku lagi ambil kopi sebentar.',
+        game:'Hai, Dika! Aku lagi main sebentar di lounge.',
+        read:'Hai, Dika. Aku lagi baca sebentar.',
+        'meet-dika':'Hai, Dika. Aku sudah sampai di titik temu.',
+      };
+      const text=lines[actor.actual] ?? 'Hai, Dika. Ada yang ingin kamu bahas?';
+      actor.directTurn={speaker:actor,text,duration:3.8,remaining:3.8};
+      living.record(actor.directTurn,[actor],'dika');
+      return null;
+    },
+    clearInteraction() { for (const actor of actors) { actor.invitation=null; actor.directTurn=null; } },
     update(delta,state,focus,wide=false,controlled=null) {
       if (state?.phase==='paused') return;
       player=controlled;
@@ -385,7 +423,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       for (const actor of actors) {
         const plan=people[actor.person.id];
         const group=actor.anchor.conversation;
-        if (!group || !['arrived','seated'].includes(actor.stage) || plan?.room!==group || plan.taskLock) continue;
+        if (!group || actor.invitation || actor.directTurn || !['arrived','seated'].includes(actor.stage) ||
+            plan?.room!==group || plan.taskLock) continue;
         if (!groups.has(group)) groups.set(group,[]);
         groups.get(group).push(actor);
       }

@@ -20,6 +20,7 @@ export const divisions = [
 }));
 
 export const activities = {
+  'meet-dika':'Menemui Dika',
   desk:'Di meja kerja', coffee:'Mengambil kopi', game:'Bermain PS5',
   rest:'Bersantai', talk:'Bersosialisasi', work:'Mengerjakan tugas', idle:'Menunggu',
   meeting:'Duduk di ruang rapat', visit:'Mengunjungi divisi lain', read:'Membaca di ruang santai',

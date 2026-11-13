@@ -256,7 +256,7 @@ function updateEmployee() {
     stats(life.relations.map(({id,value})=>[team(id).employee,value+'%'])):'')+
     '<p class="section-label">Obrolan terakhir</p>'+
     (life?.history.length?'<ul class="task-list">'+life.history.map(item=>'<li class="task-card"><strong>'+
-      escape(team(item.speaker).employee)+' · '+escape(roomById[item.room]?.label ?? activities[item.room] ?? 'Kantor')+
+      escape(team(item.speaker).employee)+' · '+escape(item.room==='dika'?'Obrolan dengan Dika':roomById[item.room]?.label ?? activities[item.room] ?? 'Kantor')+
       '</strong><p>'+escape(item.text)+'</p></li>').join('')+'</ul>':'<p class="status-text">Belum ada obrolan tercatat.</p>');
   if (social.innerHTML!==details) social.innerHTML=details;
 }
@@ -268,8 +268,10 @@ function renderOffice() {
     title(person.name,person.employee);
     $('panel-content').innerHTML = stats([['Jabatan',person.role],['Keahlian',person.specialty],['Kepribadian',person.personality],
       ['Tampilan',profile.presentation],['Pakaian',person.id===partner?'Jas formal senada dengan Dika':profile.outfit]])+
-      '<div id="employee-status"></div><div class="context-actions"><button id="focus-employee" type="button">Fokus karyawan</button><button id="follow" type="button">'+
-      (scene?.isFollowing(selected)?'Berhenti mengikuti':'Ikuti dengan kamera')+'</button></div><div id="employee-social"></div>'+
+      '<div id="employee-status"></div><div class="context-actions">'+(characterActive?
+        '<button id="chat-employee" type="button">Ajak ngobrol</button><button id="invite-employee" type="button">Panggil ke Atrium</button>':
+        '<button id="focus-employee" type="button">Fokus karyawan</button><button id="follow" type="button">'+
+        (scene?.isFollowing(selected)?'Berhenti mengikuti':'Ikuti dengan kamera')+'</button>')+'</div><div id="employee-social"></div>'+
       '<p class="section-label">Tugas terbaru</p>'+renderTasks(office.tasks.filter(task=>task.division===person.id).slice(0,3),false);
     updateEmployee();
     return;
@@ -469,6 +471,12 @@ $('panel-content').addEventListener('click',async event=>{
     return;
   }
   if (button.dataset.employee) return select(button.dataset.employee);
+  if (button.id==='chat-employee' || button.id==='invite-employee') {
+    const message=scene?.interact(selected,button.id==='invite-employee'?'invite':'chat');
+    if (message) notice(message);
+    else setPanel(null);
+    return;
+  }
   if (button.dataset.room) return select(null,button.dataset.room);
   if ('directory' in button.dataset) return select(null);
   if (button.id==='focus-employee') return scene?.focusEmployee(selected);
@@ -582,6 +590,12 @@ function toggleCharacterMode() {
   else if (enable) notice('Area masuk Dika sedang terhalang. Coba lagi sebentar.');
 }
 const characterButton=$('character-mode');
+function openNearbyEmployee() {
+  const id=scene?.nearbyEmployee();
+  if (id) select(id);
+  else notice('Dekati pegawai untuk berinteraksi.');
+}
+$('interact-employee').addEventListener('click',openNearbyEmployee);
 let lastTouchToggle=-Infinity;
 characterButton.addEventListener('pointerup',event=>{
   if (event.pointerType!=='touch' || characterButton.disabled ||
@@ -596,6 +610,11 @@ characterButton.addEventListener('click',event=>{
 window.addEventListener('keydown',event=>{
   if (!characterActive || event.altKey || event.ctrlKey || event.metaKey ||
       event.target.closest?.('input,textarea,select,[contenteditable]') || $('task-dialog').open) return;
+  if (event.code==='KeyE') {
+    event.preventDefault();
+    if (!event.repeat) openNearbyEmployee();
+    return;
+  }
   if (!keyDirections[event.code]) return;
   event.preventDefault();
   movementKeys.set(event.code,keyDirections[event.code]);
