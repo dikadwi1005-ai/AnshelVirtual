@@ -4,6 +4,7 @@ import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask } from './telegram-office.ts';
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse } from './telegram-group.ts';
+import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -127,6 +128,7 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
       proyek:typeof t.project==='string'?t.project.slice(0,70):''}));
   const c=state.counts||{};
   const facts={pegawai:person.employee,divisi:person.name,contohTugasDivisiTerbaru:taskData,
+    kalenderIndonesia:officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,question),
     cakupanData:'Catatan tugas dan simulasi kantor virtual; bukan log error, hasil audit atau verifikasi kondisi server.'};
   if(wantsCompanyOverview(spokenQuestion)) {
     facts.totalSemuaDivisi={
@@ -169,6 +171,9 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'Memori mungkin berisi respons lama yang keliru atau kaku. Jangan menyalin gaya atau klaim dalam riwayat jika bertentangan dengan data terbaru.',
     'FAKTA KERJA HANYA DARI DATA KANTOR. Riwayat pesan berguna untuk kesinambungan, bukan bukti telah menyelesaikan pekerjaan. DATA KANTOR berupa ringkasan dan contoh tugas, bukan daftar lengkap seluruh aktivitas.',
     'Kantor virtual memiliki jadwal operasional nyata yang tersimpan di pengaturan Anshel; jangan mengatakan tidak ada jam masuk atau selalu fleksibel. Jika ditanya jam operasional, jawaban resmi akan menggunakan jadwal tersimpan dan status simulasi, bukan perkiraan.',
+    'Kalender Indonesia pada DATA memakai tanggal WIB, hari libur nasional resmi 2026–2027 dan peringatan umum. Bedakan hari libur nasional, cuti bersama, dan peringatan biasa; tidak semua perayaan adalah tanggal merah.',
+    'Jangan menganggap libur nasional atau cuti bersama otomatis menutup kantor virtual: ikuti jadwal kantor yang ditetapkan pemilik. Jika data hari di luar 2026–2027, katakan kalender resmi belum tersedia, jangan menebak.',
+    'Hindari ucapan selamat hari raya yang mendadak atau berulang. Singgung hari besar hanya ketika relevan dengan pertanyaan, saat mengatur pekerjaan, atau ketika pemilik menyinggungnya.',
     'Jangan mengarang tugas, status, hasil tes, kode yang telah dijalankan, publikasi, audit, tanggal, keuangan, atau interaksi nyata.',
     'Jangan mengaku sudah menyiapkan jadwal, merapikan catatan, mengoordinasikan rapat, atau menyelesaikan pekerjaan hanya karena ingin terdengar sigap. Jika ada tugas tercatat selesai, sebut status draf yang tercatat, bukan aksi yang belum terbukti kamu lakukan.',
     'Status queued berarti belum dikerjakan; completed hanya berarti hasil draf tersedia, bukan sudah lolos review atau dipublikasikan.',
