@@ -78,9 +78,15 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
       tasks:(state.tasks||[]).filter(t=>t.division===id).slice(0,2)
         .map(t=>({status:t.status,project:typeof t.project==='string'?t.project.slice(0,55):''}))};
   });
-  const data={people,counts:/\b(?:seluruh|total|kantor|semua tugas)\b/i.test(question)
+  const wantsWorkNews=/\b(?:kabar|update|perkembangan|progres|progress|status|kerjaan|pekerjaan|antrean|hari ini)\b/i.test(question);
+  const data={people,counts:wantsWorkNews||/\b(?:seluruh|total|kantor|semua tugas)\b/i.test(question)
     ?{queued:Number(state.counts?.queued)||0,running:Number(state.counts?.running)||0,
-      completed:Number(state.counts?.completed)||0}:null,
+      completed:Number(state.counts?.completed)||0,
+      blocked:Number(state.counts?.blocked)||0,failed:Number(state.counts?.failed)||0}:null,
+    recentWork:wantsWorkNews?(state.tasks||[])
+      .filter(t=>automaticOfficeDivisions.includes(t.division))
+      .slice(0,5).map(t=>({division:t.division,status:t.status,
+        project:typeof t.project==='string'?t.project.slice(0,55):''})):null,
     recentConversation:summarizeSharedOfficeConversation(history),
     indonesiaCalendar:officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,question)};
   const prompt=[
@@ -96,6 +102,9 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
     'Gunakan bahasa Indonesia sehari-hari yang wajar. Boleh gunakan "Pak" paling banyak SATU kali pada keseluruhan percakapan, jangan menyebut nama pemilik kecuali diminta.',
     'Jangan memulai semua respons dengan "Siap", tidak usah menawarkan format tugas atau perintah bot jika tak ditanya.',
     'Dilarang mengarang hasil kerja, status server, interaksi antarbot, tindakan nyata, atau cerita fisik. Kegiatan avatar hanya simulasi.',
+    'Saat pemilik meminta kabar atau update hari ini, utamakan DATA.recentWork dan counts: sebut tugas yang antre atau sedang dikerjakan sebagai fakta, tanpa menganggap semua tugas selesai atau pekerjaan baru selesai hari ini.',
+    'Jangan mengatakan tidak ada kabar baru jika DATA menunjukkan antrean atau perkembangan tugas. Bila tidak ada data baru yang dapat diverifikasi, jawab bahwa belum ada perkembangan tugas yang dapat dipastikan, bukan semua informasi kantor kosong.',
+    'Khusus Bima: jangan menyimpulkan semua sistem terpantau aman, normal, atau bebas masalah karena tidak ada log monitoring. Khusus Dara: jangan menilai suasana tim kondusif atau saling mendukung tanpa catatan. Khusus Citra: jangan menyimpulkan arsip belum bertambah tanpa data arsip.',
     'PENTING: Jangan bilang "jadwal dan koordinasi sudah saya siapkan", "catatan sudah saya rapikan", "sudah cek", atau mengaku menyelesaikan pekerjaan lain jika DATA tidak membuktikannya. Itu klaim palsu walaupun terdengar natural.',
     'Saat pemilik hanya menyemangati lalu bertanya "Ada yang mau disampaikan?", tanggapi dengan pesan yang tulus atau pendapat untuk besok; jangan mengarang bahwa jadwal, laporan, catatan, atau pekerjaan sudah disiapkan.',
     'Jika DATA menyebut tugas completed, katakan "ada hasil draf yang tercatat" dan masih perlu review, bukan "aku sudah mengerjakannya". Jika DATA tidak menunjukkan tugas, jangan mengarang progres.',
@@ -171,6 +180,24 @@ function fallbackFor(id,q,state={}) {
     activity?'activity':needHelp?'help':greeting?'greeting':'neutral';
   // Ground answers to actual task/avatars when the owner asks about progress or activity.
   if(category==='updates') {
+    const open=(state.tasks||[]).filter(t=>automaticOfficeDivisions.includes(t.division) &&
+      ['queued','running','blocked','failed'].includes(t.status));
+    const queued=open.find(t=>t.status==='queued');
+    const running=open.find(t=>t.status==='running');
+    const issue=open.find(t=>t.status==='blocked'||t.status==='failed');
+    const mostRelevant=queued||running||issue;
+    if(mostRelevant) {
+      const who=labels[mostRelevant.division];
+      const fact=mostRelevant.status==='queued'?'masih antre':
+        mostRelevant.status==='running'?'sedang diproses':
+        mostRelevant.status==='blocked'?'terhambat':'gagal';
+      if(id==='management')return 'Ada tugas '+who+' yang '+fact+' menurut catatan Anshel. Belum bisa disebut selesai.';
+      if(id==='operations')return 'Dari catatan tugas, ada pekerjaan yang '+fact+'. Aku belum punya hasil pemeriksaan server.';
+      if(id==='administration')return mostRelevant.division==='administration'
+        ?'Tugas administrasi masih '+fact+' di Anshel, jadi belum ada hasil dari tugas itu.'
+        :'Ada pekerjaan yang '+fact+' di antrean. Catatan lanjutannya bisa kita bahas.';
+      if(id==='hr')return 'Kalau perlu menyusun prioritas tim, ada tugas yang '+fact+' untuk dibahas.';
+    }
     const tasks=(state.tasks||[]).filter(t=>t.division===id);
     const current=tasks.find(t=>t.status==='running');
     const waiting=tasks.find(t=>t.status==='queued');
@@ -213,6 +240,14 @@ export function resolveOfficeCollectiveResponse(output,recipients,question,clean
     let message=typeof raw==='string'&&raw.length<=180
       ?cleaner(raw,fallback,question):fallback;
     let ai=typeof raw==='string'&&message!==fallback;
+    // A blanket "nothing new" conflicts with an actual outstanding job.
+    const hasOpenWork=(state.tasks||[]).some(t=>automaticOfficeDivisions.includes(t.division) &&
+      ['queued','running','blocked','failed'].includes(t.status));
+    if(hasOpenWork && /\b(?:kabar|update|perkembangan|progres|hari ini)\b/i.test(question) &&
+       /\b(?:belum|tidak|nggak|gak)\s+ada\s+(?:info|kabar|perkembangan|pembaruan)\s+baru\b/i.test(message)) {
+      message=fallback;
+      ai=false;
+    }
     // Only the first speaker may use "Pak"; never name the owner without a request.
     if(/\bPak\b/i.test(message)) {
       if(honorificUsed)message=message.replace(/(?:,\s*|\s+)Pak\b[,.]?/gi,'').replace(/\s{2,}/g,' ').trim();
