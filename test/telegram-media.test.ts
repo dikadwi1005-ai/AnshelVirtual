@@ -32,7 +32,7 @@ const fetchMedia=async(url,options)=>{
     status:200,headers:{'Content-Type':'application/json'}});
 };
 
-test('MIME and byte limits reject unsupported file kinds and unsafe overlarge media',()=>{
+test('MIME and byte limits reject unsupported file kinds and unsafe overlarge media',async()=>{
   assert.equal(telegramMediaMaxBytes,1_500_000);
   assert.equal(telegramMediaMime({mediaType:'photo'}),'image/jpeg');
   assert.equal(telegramMediaMime({mediaType:'voice'}),'audio/ogg');
