@@ -4,6 +4,7 @@ import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask } from './telegram-office.ts';
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse } from './telegram-group.ts';
+import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -19,7 +20,7 @@ const persona={
   qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
   finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
-const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor)(?:\s|$)/i;
+const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur)(?:\s|$)/i;
 const actionClaim=/\b(?:sudah|telah|berhasil)\s+(?:(?:aku|saya|kami|kita)\s+)?(?:mengirim|mempublikasikan|memposting|menghapus|membayar|mentransfer|menginstal|mendeploy)\b/i;
 const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 // Only use company-wide totals when the user actually asks about the office as a whole.
@@ -92,6 +93,15 @@ export function officeScheduleReply(division,question,state) {
       ?'dijadwalkan masuk kantor virtual. '+regular
       :'tidak ada jadwal masuk kantor virtual (libur menurut pengaturan). Hari operasional: '+
         dayList+'. '+regular);
+    const calendar=officeIndonesiaDay(at,asksTomorrow?1:0,schedule);
+    if(calendar?.event) {
+      reply+=' Kalender nasional mencatat '+calendar.event.name+' ('+calendar.event.type+
+        ') pada tanggal ini. Ini tidak otomatis mengubah jadwal operasional Anshel.';
+    } else if(calendar?.calendarVerified && /libur|tanggal merah/i.test(question)) {
+      reply+=' Tidak ada libur nasional atau cuti bersama yang tercatat pada tanggal ini.';
+    } else if(calendar && !calendar.calendarVerified && /libur|tanggal merah/i.test(question)) {
+      reply+=' Data resmi hari libur nasional untuk tahun itu belum tersedia.';
+    }
   } else {
     reply='Jadwal kantor virtual yang tersimpan: '+dayList+'. '+regular;
   }
@@ -127,6 +137,7 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
       proyek:typeof t.project==='string'?t.project.slice(0,70):''}));
   const c=state.counts||{};
   const facts={pegawai:person.employee,divisi:person.name,contohTugasDivisiTerbaru:taskData,
+    kalenderIndonesia:officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,question),
     cakupanData:'Catatan tugas dan simulasi kantor virtual; bukan log error, hasil audit atau verifikasi kondisi server.'};
   if(wantsCompanyOverview(spokenQuestion)) {
     facts.totalSemuaDivisi={
@@ -169,6 +180,9 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'Memori mungkin berisi respons lama yang keliru atau kaku. Jangan menyalin gaya atau klaim dalam riwayat jika bertentangan dengan data terbaru.',
     'FAKTA KERJA HANYA DARI DATA KANTOR. Riwayat pesan berguna untuk kesinambungan, bukan bukti telah menyelesaikan pekerjaan. DATA KANTOR berupa ringkasan dan contoh tugas, bukan daftar lengkap seluruh aktivitas.',
     'Kantor virtual memiliki jadwal operasional nyata yang tersimpan di pengaturan Anshel; jangan mengatakan tidak ada jam masuk atau selalu fleksibel. Jika ditanya jam operasional, jawaban resmi akan menggunakan jadwal tersimpan dan status simulasi, bukan perkiraan.',
+    'Kalender Indonesia pada DATA memakai tanggal WIB, hari libur nasional resmi 2026–2027 dan peringatan umum. Bedakan hari libur nasional, cuti bersama, dan peringatan biasa; tidak semua perayaan adalah tanggal merah.',
+    'Jangan menganggap libur nasional atau cuti bersama otomatis menutup kantor virtual: ikuti jadwal kantor yang ditetapkan pemilik. Jika data hari di luar 2026–2027, katakan kalender resmi belum tersedia, jangan menebak.',
+    'Hindari ucapan selamat hari raya yang mendadak atau berulang. Singgung hari besar hanya ketika relevan dengan pertanyaan, saat mengatur pekerjaan, atau ketika pemilik menyinggungnya.',
     'Jangan mengarang tugas, status, hasil tes, kode yang telah dijalankan, publikasi, audit, tanggal, keuangan, atau interaksi nyata.',
     'Jangan mengaku sudah menyiapkan jadwal, merapikan catatan, mengoordinasikan rapat, atau menyelesaikan pekerjaan hanya karena ingin terdengar sigap. Jika ada tugas tercatat selesai, sebut status draf yang tercatat, bukan aksi yang belum terbukti kamu lakukan.',
     'Status queued berarti belum dikerjakan; completed hanya berarti hasil draf tersedia, bukan sudah lolos review atau dipublikasikan.',
@@ -248,7 +262,9 @@ export function cleanOfficeNaturalResponse(text,fallback,question='') {
     return fallback;
   return safe;
 }
-export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) {
+const defaultGroupPause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+export const groupReplyIntervalMs=2000;
+export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,pause=defaultGroupPause) {
   officeGroupConfig(env);
   const pending=await store.consumeOfficeGroupAI(String(input?.updateId??''),input?.ticket);
   const state=await store.state();
@@ -261,26 +277,26 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
     const result=resolveOfficeCollectiveResponse(input?.output,recipients,pending.question,
       cleanOfficeNaturalResponse,state);
     const answers=result.answers;
-    // Normal all-hands calls stay parallel. A targeted two-person discussion
-    // is sent in order, with second worker replying to the first worker's message.
+    // Group calls arrive gradually, rather than all bot accounts in one second.
+    // Keep a soft 9s pacing budget: existing published n8n HTTP node times out
+    // after 12s, so excessive Telegram latency must not add more deliberate wait.
+    // Targeted discussions continue in a reply thread, all-hands remain unthreaded.
     const pair=!!requestedOfficeDiscussion(pending.question);
-    let attempts;
-    if(pair&&recipients.length===2) {
-      attempts=[];
-      let previous=null;
-      for(const id of recipients) {
-        try {
-          const messageId=await sendOfficeBotMessage(env,id,answers[id].text,
-            {...(previous?{replyTo:previous}:{}),fetchImpl});
-          attempts.push({status:'fulfilled',value:messageId});
-          previous=messageId;
-        }catch(error){
-          attempts.push({status:'rejected',reason:error});
-        }
+    const attempts=[];
+    const started=Date.now();
+    let previous=null;
+    for(let i=0;i<recipients.length;i++) {
+      const id=recipients[i];
+      if(i>0 && Date.now()-started+groupReplyIntervalMs<9000)
+        await pause(groupReplyIntervalMs);
+      try {
+        const messageId=await sendOfficeBotMessage(env,id,answers[id].text,
+          {...(pair&&previous?{replyTo:previous}:{}),fetchImpl});
+        attempts.push({status:'fulfilled',value:messageId});
+        if(pair)previous=messageId;
+      }catch(error){
+        attempts.push({status:'rejected',reason:error});
       }
-    }else{
-      attempts=await Promise.allSettled(recipients.map(id=>
-        sendOfficeBotMessage(env,id,answers[id].text,{fetchImpl})));
     }
     const successful=[];
     for(let i=0;i<recipients.length;i++) {

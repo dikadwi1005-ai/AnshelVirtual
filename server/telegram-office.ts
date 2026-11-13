@@ -1,5 +1,6 @@
 import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
+import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert } from './office-monitoring.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
@@ -175,9 +176,27 @@ function latestTask(state,division) {
 export function officeGroupReply(state,input,env) {
   const msg=input.trim().slice(0,1500);
   if (msg==='/bantuan'||msg==='/help') return {division:'management',
-    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai.'};
+    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai. /kalender untuk tanggal merah dan peringatan Indonesia.'};
   if(/^\/(?:aktivitas|pegawai|monitor)$/i.test(msg))
     return {division:'management',text:officeActivityReply(state,configuredOfficeBots(env).configured)};
+  if(/^\/(?:kalender|libur)$/i.test(msg)) {
+    const calendar=officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,'libur nasional');
+    const today=calendar.today;
+    const event=today?.event;
+    const todayInfo=event ? today.day+', '+today.date+': '+event.name+
+      ' ('+event.type+').' :
+      today?.calendarVerified ? today.day+', '+today.date+': tidak tercatat sebagai libur nasional atau cuti bersama.' :
+      'Daftar resmi untuk tahun ini belum tersedia di sistem.';
+    const scheduleInfo=today?.officeScheduledClosed
+      ? 'Jadwal kantor virtual: tutup hari ini menurut pengaturan.'
+      : 'Jadwal kantor virtual: hari kerja menurut pengaturan, meskipun hari libur nasional tidak otomatis mengubah jadwal.';
+    const upcoming=calendar.upcomingOfficialHolidays.slice(0,3).map(x=>
+      x.date+' '+x.name+' ('+x.type+')').join('; ');
+    return {division:'management',text:'Kalender Indonesia (WIB): '+todayInfo+' '+
+      scheduleInfo+(upcoming?' Tanggal merah/cuti bersama berikutnya: '+upcoming+'.':'')+
+      ' Cuti bersama bagi kantor ini mengikuti keputusan pemilik, bukan otomatis berlaku.'};
+  }
+
   // Mobile-friendly commands use actual task state and never ask Gemini to
   // invent health checks. The bot routing is fixed per command.
   if (/^\/(?:ringkasan|ringkas)$/i.test(msg)) {
