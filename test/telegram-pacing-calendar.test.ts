@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createStore} from '../server/store.ts';
 import {officeIndonesiaDay,officeIndonesiaCalendarContext} from '../server/office-calendar.ts';
 import {buildOfficeNaturalRequest,prepareOfficeNaturalChat,deliverOfficeNaturalChat,
-  groupReplyIntervalMs} from '../server/telegram-natural.ts';
+  groupReplyIntervalMs,officeScheduleReply} from '../server/telegram-natural.ts';
 import {buildOfficeCollectiveRequest} from '../server/telegram-group.ts';
 import {officeGroupReply} from '../server/telegram-office.ts';
 
@@ -146,4 +146,18 @@ test('Two-employee discussions wait two seconds before the threaded second reply
     assert.equal(sent.length,2);
     assert.equal(sent[1].body.reply_parameters.message_id,901);
   }finally{store.close();}
+});
+
+
+test('schedule reply says national holiday is separate from company operating calendar',()=>{
+  const state={now:Date.parse('2026-12-24T09:00:00Z'),schedule,phase:'work',
+    mode:'auto',people:{management:{activity:'desk'}}};
+  const tomorrow=officeScheduleReply('management','Alya, besok kantor libur nggak?',state);
+  assert.match(tomorrow,/dijadwalkan masuk kantor virtual/i);
+  assert.match(tomorrow,/Hari Natal \(libur nasional\)/i);
+  assert.match(tomorrow,/tidak otomatis mengubah jadwal/i);
+  const dayOff=officeScheduleReply('management','Besok kantor libur?',{
+    ...state,schedule:{...schedule,holidays:['2026-12-25']}});
+  assert.match(dayOff,/tidak ada jadwal masuk kantor virtual/);
+  assert.match(dayOff,/Hari Natal/i);
 });
