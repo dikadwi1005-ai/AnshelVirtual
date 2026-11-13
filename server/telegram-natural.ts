@@ -2,7 +2,8 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask,sendOfficeBotTyping,
-  parseOwnerTaskAction,inactiveOfficeAddress,isTechnicalIncident } from './telegram-office.ts';
+  parseOwnerTaskAction,inactiveOfficeAddress,isTechnicalIncident,
+  enabledOfficeDivisions } from './telegram-office.ts';
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse,ownerReplyContext,conversationQuestion,groupDelayMs } from './telegram-group.ts';
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
@@ -231,7 +232,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   const meetingContinue=/^\/rapat\s+lanjut$/i.test(question.trim());
   if(!hasMedia&&!meetingContinue &&
     (command.test(question.trim())||parseGroupWorkspaceCommand(question)||
-      parseOwnerNaturalTask(question)||parseOwnerTaskAction(question))) {
+      parseOwnerNaturalTask(question,env)||parseOwnerTaskAction(question))) {
     const done=await sendOfficeGroupOwnerMessage(store,env,data,fetchImpl);
     return {mode:'handled',...done};
   }
@@ -239,7 +240,8 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   if(typeof store.officeGroupWorkspace==='function')
     state.groupWorkspace=await store.officeGroupWorkspace();
   const configured=configuredOfficeBots(env).configured;
-  const discussion=requestedOfficeDiscussion(question);
+  const enabled=enabledOfficeDivisions(env);
+  const discussion=requestedOfficeDiscussion(question,enabled);
   const inactive=!hasMedia?inactiveOfficeAddress(question,env):null;
   if(inactive && !isCollectiveCall(question) && !discussion) {
     if(!configured.includes('management'))
@@ -258,7 +260,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
       ?'Guys, lanjutkan diskusi rapat "'+state.groupWorkspace.meeting.topic+'". Tanggapi pendapat sebelumnya berdasarkan catatan.'
       :question,data.replyTo);
   if(isCollectiveCall(question)||discussion||followup) {
-    const available=availableOfficeResponders(state,configured);
+    const available=availableOfficeResponders(state,configured,enabled);
     const recipients=discussion?discussion.filter(id=>available.includes(id)):available;
     if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
     // All four currently busy or not connected: no ungrounded "all present" message.
@@ -267,7 +269,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
       division:'management',group:true,recipients,
       request:attachMediaToGeminiRequest(
-        buildOfficeCollectiveRequest(contextQuestion,recipients,state,saved.groupHistory),media)};
+        buildOfficeCollectiveRequest(contextQuestion,recipients,state,saved.groupHistory,enabled),media)};
   }
   const quoted=ownerReplyContext(data);
   const addressed=/^@?(?:Alya|Bima|Citra|Dara)\b\s*[,：:]/i.test(question.trim());
@@ -323,7 +325,8 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,p
   if(Array.isArray(pending.recipients)) {
     // The saved server-side ticket fixes allowed identities. Recheck active
     // execution at delivery: someone who became busy must not answer.
-    const available=new Set(availableOfficeResponders(state,configuredOfficeBots(env).configured));
+    const available=new Set(availableOfficeResponders(
+      state,configuredOfficeBots(env).configured,enabledOfficeDivisions(env)));
     const recipients=pending.recipients.filter(id=>available.has(id));
     if(!recipients.length) return {sent:false,group:true,divisions:[],reason:'everyone-busy'};
     const result=resolveOfficeCollectiveResponse(input?.output,recipients,pending.question,
@@ -333,7 +336,7 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,p
     // Keep a soft 9s pacing budget: existing published n8n HTTP node times out
     // after 12s, so excessive Telegram latency must not add more deliberate wait.
     // Targeted discussions continue in a reply thread, all-hands remain unthreaded.
-    const pair=!!requestedOfficeDiscussion(pending.question);
+    const pair=!!requestedOfficeDiscussion(pending.question,enabledOfficeDivisions(env));
     const attempts=[];
     const started=Date.now();
     const quiet=state.groupWorkspace?.quiet===true;
