@@ -158,7 +158,7 @@ export function createStore(path: string, now = Date.now) {
       });
     },
     claimOfficeGroupSignal(kind) {
-      if(!['daily-summary','queued-worker-silent'].includes(kind)) throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
+      if(!['daily-summary','queued-worker-silent','internal-event'].includes(kind)) throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
       return transaction(()=>{
         const key='office_group_signals_v1';
         const today=scheduledDraftDay(new Date(now()));
