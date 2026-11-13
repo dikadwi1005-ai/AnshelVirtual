@@ -23,7 +23,7 @@ const persona={
   qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
   finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
-const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur|rapat|ingat|lupakan|memori|acara|ingatkan|pengingat|mode|hening|pengaturan|notifikasi|serahkan|revisi|tinjau|setujui|tolak|ulang|jeda|batalkan)(?:\s|$)/i;
+const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur|rapat|ingat|lupakan|memori|acara|ingatkan|pengingat|mode|hening|pengaturan|notifikasi|serahkan|revisi|tinjau|setujui|tolak|ulang|jeda|batalkan|kesehatan|health)(?:\s|$)/i;
 const actionClaim=/\b(?:sudah|telah|berhasil)\s+(?:(?:aku|saya|kami|kita)\s+)?(?:mengirim|mempublikasikan|memposting|menghapus|membayar|mentransfer|menginstal|mendeploy)\b/i;
 const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 // Only use company-wide totals when the user actually asks about the office as a whole.
