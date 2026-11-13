@@ -184,7 +184,8 @@ test('tugas divisi nonaktif tetap tercatat, dibalas Alya tanpa janji kerja dan t
 
 test('endpoint grup memerlukan N8N_TOKEN, ID grup, dan tidak membocorkan token bot',async()=>{
   const s=createStore(':memory:',()=>start);
-  const api=createCloudApi({...s,sessionActive:async()=>false},env);
+  const allConfigured={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(allTokens)};
+  const api=createCloudApi({...s,sessionActive:async()=>false},allConfigured);
   const call=(path,data={},bearer=true)=>api.fetch(new Request('https://anshel.test/api/integrations/office-group/'+path,{
     method:'POST',headers:{'Content-Type':'application/json',...(bearer?{Authorization:'Bearer '+env.N8N_TOKEN}:{})},
     body:JSON.stringify(data),
