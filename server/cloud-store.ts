@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { officeNewsResult } from './bcift-news.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
@@ -86,7 +87,7 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         if (used>=3 || now()-(checkpoint.lastSent||0)<60*60_000) return null;
         const sql='SELECT a.id AS "eventId",a.at,a.task AS "taskId",a.action, '+
           't.division,t.project FROM anshel.audit AS a JOIN anshel.tasks AS t ON t.id=a.task '+
-          "WHERE a.id>$1 AND a.at>=$2 AND a.action IN ('completed','blocked','failed') "+
+          "WHERE a.id>$1 AND a.at>=$2 AND a.actor<>'telegram-news' AND a.action IN ('completed','blocked','failed') "+
           'ORDER BY a.id LIMIT 1';
         const event=await one(sql,[checkpoint.cursor,now()-24*60*60_000],client);
         if (!event) return null;
@@ -367,6 +368,8 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
       return transaction(async client => {
         const task = await one(`SELECT ${fields} FROM anshel.tasks WHERE id=$1 FOR UPDATE`, [id], client);
         if (!task) throw new Fault(404, 'Tugas tidak ditemukan.');
+        if (action==='retry' && task.request_id?.startsWith('office-news:'))
+          throw new Fault(409,'Kirim permintaan riset baru ke Jihan untuk memverifikasi sumber kembali.');
         const allowed = {
           cancel: ['queued', 'running', 'paused', 'blocked', 'awaiting_approval'],
           pause: ['queued', 'running'], resume: ['paused'], retry: ['failed', 'blocked'],
@@ -506,6 +509,21 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         await query(`UPDATE anshel.tasks SET status='completed',result=$1,sha256=$2,ended=$3,
           lease=NULL,lease_until=NULL WHERE id=$4`, [output,hash,now(),id], client);
         await log(id, 'worker', 'completed', hash, client);
+      });
+    },
+    async saveOfficeNewsReport(updateId,items) {
+      return transaction(async client=>{
+        const requestId='office-news:'+updateId;
+        const id=randomUUID(), at=now();
+        const {status,output,error}=officeNewsResult(items);
+        const hash=output?createHash('sha256').update(output).digest('hex'):null;
+        const inserted=await one(`INSERT INTO anshel.tasks
+          (id,request_id,creator,division,project,description,kind,priority,status,urgent,created,started,ended,result,sha256,error)
+          VALUES($1,$2,'Pemilik · Telegram','marketing','BCIFT','Riset sumber berita BCIFT','draft',0,$3,0,$4,$4,$4,$5,$6,$7)
+          ON CONFLICT (request_id) DO NOTHING RETURNING id`,[id,requestId,status,at,output,hash,error],client);
+        if(!inserted)return one('SELECT id FROM anshel.tasks WHERE request_id=$1',[requestId],client);
+        await log(id,'telegram-news',status,hash??error,client);
+        return inserted;
       });
     },
     async artifact(id) {

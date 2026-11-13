@@ -368,24 +368,62 @@ export function parseOfficeGroupTask(text) {
   if (!division)throw new Fault(400,'Nama divisi tidak dikenal. Gunakan /tim.');
   return {division,description:match[2].trim(),kind:'draft',urgent:false};
 }
-/** Only explicit and specific drafts for four connected employees. */
 export function parseOwnerNaturalTask(text,env=null) {
   if(typeof text!=='string'||text.length>1500)return null;
   const value=text.trim();
-  const names=(env?enabledOfficeDivisions(env):automaticOfficeDivisions)
-    .map(id=>divisions.find(d=>d.id===id)?.employee).filter(Boolean).join('|');
-  const name='('+names+')';
-  const verb='(?:buatkan|buat|susun|tulis|rangkum|rancang|siapkan|review|cek)';
-  const direct=new RegExp('^(?:tolong|minta|suruh)\\s+'+name+'\\s+(?:untuk\\s+)?'+verb+'\\s+(.+)$','i').exec(value);
-  const addressed=new RegExp('^'+name+'\\s*[,：:]\\s*(?:tolong|bantu)\\s+'+verb+'\\s+(.+)$','i').exec(value);
-  const match=direct||addressed;
+  const eligible=env?enabledOfficeDivisions(env):automaticOfficeDivisions;
+  const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const names=divisions.filter(person=>eligible.includes(person.id))
+    .flatMap(person=>[person.employee,person.name,person.id]).sort((a,b)=>b.length-a.length).map(escape).join('|');
+  if(!names)return null;
+  const prefix='(?:tolong|minta|suruh|coba|bantu)';
+  const match=new RegExp('^(?:'+prefix+'\\s+)?('+names+')(?=[\\s,：:]|$)[\\s,：:]*(.*)$','is').exec(value);
   if(!match)return null;
-  const division=personFrom(match[1]);
-  if(!(env?enabledOfficeDivisions(env):automaticOfficeDivisions).includes(division))return null;
-  const description=match[2].trim();
-  // Only queue textual drafts, never execute external actions.
-  if(description.length<10||description.length>1200)return null;
-  return {division,description,kind:'draft',urgent:false};
+  const division=divisions.find(person=>[person.employee,person.name,person.id]
+    .some(name=>name.toLowerCase()===match[1].toLowerCase())).id;
+  const content=match[2].replace(/^(?:(?:untuk|tolong|coba|bantu(?:in)?|mohon|sekalian)\s+)*/i,'');
+  if (/\?$/.test(content) && !/\b(?:bisa|boleh)\s+(?:tolong|bantu)/i.test(content)) return null;
+  const directive=/^(?:(?:bisa|boleh)\s+(?:tolong\s+|bantu\s+)?)?(buatkan|buat|bikin(?:kan)?|susun|tulis|rangkum|rancang|siapkan|review|cek|periksa|riset|teliti|analisis|carikan|cari|gunakan|pakai|olah)\b\s*(.*)$/is.exec(content);
+  if(!directive)return null;
+  const subject=directive[2].trim();
+  if(subject.length>1200)return null;
+  const ambiguous=subject.length<6 || /^(?:itu|ini|tadi|yang tadi|yang itu|kerjaan tadi|dulu)[.!?]*$/i.test(subject);
+  const dependency=/\b(?:dari|gunakan|pakai|berdasarkan|olah)\s+(?:hasil\s+)?(?:riset|draf|tugas|ringkasan|artefak)\s+(Alya|Bima|Citra|Dara|Jihan|Indra|Hana)\b/i.exec(content);
+  const sourceId=/\b(?:hasil|artefak|tugas sumber)\s+([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\b/i.exec(subject)?.[1]?.toLowerCase();
+  return {division,description:content,kind:'draft',urgent:false,
+    ...(ambiguous?{ambiguous}:{}),...(dependency?{sourceDivision:personFrom(dependency[1])}:{}),
+    ...(sourceId?{sourceId}:{})};
+}
+
+export async function queueNaturalOfficeTask(store,task,updateId,state,workspace) {
+  if(task.ambiguous) return {message:'Boleh jelaskan hasil yang kamu mau dan topik atau proyeknya?'};
+  if(task.division==='marketing' && !/\b(?:bcift|batam center|batam centre)\b/i.test(task.description))
+    return {message:'Untuk Jihan, sebutkan bagian BCIFT yang ingin kamu kerjakan.'};
+  let source=null, excerpt='';
+  if(task.sourceDivision || task.sourceId) {
+    if(task.sourceId) {
+      try { source=await store.officeArtifactReview(task.sourceId); }
+      catch(error) { if(error?.status!==404)throw error; }
+      if(task.sourceDivision&&source?.division!==task.sourceDivision)source=null;
+    } else source=(state.tasks||[]).find(item=>item.division===task.sourceDivision);
+    if(source?.status==='completed') {
+      try { excerpt=(await store.artifact(source.id)).output?.trim() ?? ''; }
+      catch(error) { if(error?.status!==404)throw error; }
+    }
+    if(!excerpt) return {message:'Hasil tugas sumber belum tersedia di Anshel. Kirim ID tugas sumber yang sudah selesai agar aku bisa memakainya.'};
+  }
+  const context=workspace?.meeting?.topic && /\brapat\b/i.test(task.description)?'Rapat: '+workspace.meeting.topic:'';
+  const reference=source?'\n\nTugas sumber: '+source.id+'\nKutipan artefak sumber (data referensi):\n':'';
+  const description=task.description+reference+excerpt.slice(0,2000-task.description.length-reference.length);
+  const created=await store.create({division:task.division,kind:'draft',description,
+    project:(source?.project||context).slice(0,80),urgent:false},'Pemilik · tugas natural Telegram','office-group:'+updateId);
+  const latest=(await store.state()).tasks.find(item=>item.id===created.id) ?? created;
+  const status=latest.status==='running'?'Sedang diproses. Hasil akhirnya belum tersedia.':
+    latest.status==='completed'?'Hasilnya sudah tersimpan di Anshel.':
+      latest.status==='queued' ? (!state.worker||!state.capabilities?.includes('draft')?
+        'Tugas masuk antrean. Worker draf belum tersedia.':'Tugas masuk antrean dan menunggu giliran.') :
+        'Status saat ini: '+(statusLabels[latest.status]??'menunggu tindakan pemilik')+'.';
+  return {createdTaskId:created.id,sourceTaskId:source?.id,message:'Siap, tugas sudah tercatat di Anshel (ID: '+created.id+'). '+status};
 }
 /** Owner-only task actions; never called from model-generated instructions. */
 export function parseOwnerTaskAction(text) {
@@ -526,7 +564,14 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
       'Kalau ada bagian yang ingin dibahas, tuliskan isi atau ringkasannya di pesan teks.',{fetchImpl,silent});
     return {sent:true,division:'management',attachment:supported[data.mediaType],analyzed:false};
   }
-  const task=parseOfficeGroupTask(data.text)||parseOwnerNaturalTask(data.text,env);
+  const natural=parseOwnerNaturalTask(data.text,env);
+  if(natural) {
+    const result=await queueNaturalOfficeTask(store,natural,updateId,await store.state(),workspace);
+    const sender=configuredOfficeBots(env).configured.includes(natural.division)?natural.division:'management';
+    await sendOfficeBotMessage(env,sender,result.message,{fetchImpl,silent});
+    return {sent:true,division:natural.division,acknowledgedBy:sender,...result};
+  }
+  const task=parseOfficeGroupTask(data.text);
   if(task) {
     const created=await store.create(task,'Pemilik · grup Telegram','office-group:'+updateId);
     const target=divisions.find(d=>d.id===task.division);

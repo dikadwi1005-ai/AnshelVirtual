@@ -10,7 +10,7 @@ import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-cale
 import {parseGroupWorkspaceCommand,workspacePromptContext} from './telegram-workspace.ts';
 import {loadTelegramMedia,questionForMedia,attachMediaToGeminiRequest} from './telegram-media.ts';
 import {isJihanNewsQuery,readBciftBlogTitles,addJihanNewsGrounding,
-  validateJihanNewsReply,jihanNoVerifiedNews} from './bcift-news.ts';
+  verifyJihanNews,formatJihanNews} from './bcift-news.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -238,9 +238,11 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   }
   const question=hasMedia?questionForMedia(data):data.text;
   const meetingContinue=/^\/rapat\s+lanjut$/i.test(question.trim());
+  const naturalTask=!hasMedia?parseOwnerNaturalTask(question,env):null;
+  const jihanResearch=naturalTask?.division==='marketing' && isJihanNewsQuery(question);
   if(!hasMedia&&!meetingContinue &&
     (command.test(question.trim())||parseGroupWorkspaceCommand(question)||
-      parseOwnerNaturalTask(question,env)||parseOwnerTaskAction(question))) {
+      (naturalTask&&!jihanResearch)||parseOwnerTaskAction(question))) {
     const done=await sendOfficeGroupOwnerMessage(store,env,data,fetchImpl);
     return {mode:'handled',...done};
   }
@@ -288,7 +290,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   // A reported API/server incident belongs to IT even when it replies to an
   // unrelated bot's earlier message. A direct employee address still wins.
   const technical=!addressed&&isTechnicalIncident(question);
-  const target=technical?{division:'operations'}:
+  const target=jihanResearch?{division:'marketing'}:technical?{division:'operations'}:
     !addressed&&quoted?.employee&&configured.includes(quoted.employee)
       ?{division:quoted.employee}:officeGroupReply(state,question,env);
   if(!configuredOfficeBots(env).configured.includes(target.division))
@@ -405,12 +407,14 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,p
       ? 'Belum ada tugas IT yang tercatat buatku di Anshel. Soal ada masalah teknis atau nggak, aku belum punya hasil pemeriksaan. Kalau ada error, kirim gejalanya ya.'
       : officeGroupReply(state,pending.question,env).text;
   const news=pending.division==='marketing'&&isJihanNewsQuery(pending.question);
-  const newsAnswer=news&&!validateJihanNewsReply(input?.output,state.now??Date.now())
-    ?jihanNoVerifiedNews:null;
-  const text=newsAnswer||cleanOfficeNaturalResponse(input?.output,
-    news?jihanNoVerifiedNews:fallback,pending.question);
+  const verified=news?await verifyJihanNews(input?.output,state.now??Date.now(),fetchImpl):[];
+  const explicitNews=news&&parseOwnerNaturalTask(pending.question,env)?.division==='marketing';
+  const report=news&&(verified.length||explicitNews)?await store.saveOfficeNewsReport(String(input.updateId),verified):null;
+  const reference=report?'\n'+(verified.length?'Laporan privat Anshel: ':'Tugas terhambat di Anshel: ')+report.id:'';
+  const text=news?formatJihanNews(verified,700-reference.length)+reference:
+    cleanOfficeNaturalResponse(input?.output,fallback,pending.question);
   await sendOfficeBotMessage(env,pending.division,text,{fetchImpl,silent:state.groupWorkspace?.quiet===true});
   await store.rememberOfficeGroupAI(pending.division,pending.question,text);
-  return {sent:true,division:pending.division,ai:!newsAnswer&&typeof input.output==='string'&&
-    text!==(news?jihanNoVerifiedNews:fallback)};
+  return {sent:true,division:pending.division,ai:news?Boolean(verified.length):typeof input.output==='string'&&text!==fallback,
+    ...(report?{reportId:report.id}:{})};
 }
