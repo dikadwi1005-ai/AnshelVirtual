@@ -2,7 +2,7 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask,sendOfficeBotTyping,
-  parseOwnerTaskAction } from './telegram-office.ts';
+  parseOwnerTaskAction,inactiveOfficeAddress } from './telegram-office.ts';
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse,ownerReplyContext,conversationQuestion,groupDelayMs } from './telegram-group.ts';
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
@@ -239,6 +239,16 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     state.groupWorkspace=await store.officeGroupWorkspace();
   const configured=configuredOfficeBots(env).configured;
   const discussion=requestedOfficeDiscussion(question);
+  const inactive=!hasMedia?inactiveOfficeAddress(question,env):null;
+  if(inactive && !isCollectiveCall(question) && !discussion) {
+    if(!configured.includes('management'))
+      throw new Fault(503,'Bot Alya perlu diaktifkan untuk pemberitahuan divisi lain.');
+    if(!await store.reserveOfficeGroupUpdate(String(data.updateId)))
+      return {mode:'skip',duplicate:true};
+    await sendOfficeBotMessage(env,'management',inactive.text,
+      {fetchImpl,silent:state.groupWorkspace?.quiet===true});
+    return {mode:'handled',sent:true,division:'management',inactiveDivision:inactive.division};
+  }
   const followup=meetingContinue ||
     (state.groupWorkspace?.mode==='diskusi' &&
       /^(?:lanjut(?:kan)?|tanggapi|menurut kalian|apa pendapat kalian|setuju nggak)\b/i.test(question.trim()));
