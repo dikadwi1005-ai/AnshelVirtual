@@ -16,7 +16,8 @@ const allTokens=Object.fromEntries(divisions.map((d,i)=>[d.id,String(100000+i)+'
 const env={
   OWNER_PASSWORD:'local-test-pass123',N8N_TOKEN:'office-n8n-token-more-than-24',
   TELEGRAM_CHAT_ID:'-1001234567890',TELEGRAM_USER_ID:'778899',
-  TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(allTokens),
+  TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(
+    Object.fromEntries(['management','operations','administration','hr'].map(id=>[id,allTokens[id]]))),
   TELEGRAM_BOT_USERNAMES_JSON:JSON.stringify({development:'AnshelEkaBot',qa:'AnshelKiranaBot'}),
 };
 const goodResponse=messageId=>new Response(JSON.stringify({ok:true,result:{message_id:messageId}}),{
@@ -57,7 +58,8 @@ test('dua workflow grup n8n terpisah, nonaktif, dan tanpa token rahasia',async()
 });
 
 test('12 bot memiliki token terpisah; server tidak menyelipkan token dalam balasan',async()=>{
-  const config=configuredOfficeBots(env);
+  const fullEnv={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(allTokens)};
+  const config=configuredOfficeBots(fullEnv);
   assert.equal(config.configured.length,12);
   assert.deepEqual(config.missing,[]);
   assert.equal(officeGroupConfig(env).chatId,'-1001234567890');
@@ -67,15 +69,15 @@ test('12 bot memiliki token terpisah; server tidak menyelipkan token dalam balas
     requests.push({url,payload:JSON.parse(options.body)});
     return goodResponse(910+requests.length);
   };
-  const id=await sendOfficeBotMessage(env,'development','Draf sudah selesai',{fetchImpl:transport});
+  const id=await sendOfficeBotMessage(fullEnv,'development','Draf sudah selesai',{fetchImpl:transport});
   assert.equal(id,911);
   assert.ok(requests[0].url.includes(allTokens.development));
   assert.equal(requests[0].payload.chat_id,env.TELEGRAM_CHAT_ID);
   assert.equal(requests[0].payload.text,'Draf sudah selesai');
-  assert.equal((await sendOfficeBotMessage(env,'qa','Cek ya',{fetchImpl:transport,replyTo:911})),912);
+  assert.equal((await sendOfficeBotMessage(fullEnv,'qa','Cek ya',{fetchImpl:transport,replyTo:911})),912);
   assert.equal(requests[1].payload.reply_parameters.message_id,911);
   assert.ok(!requests[1].url.includes(allTokens.development));
-  await assert.rejects(sendOfficeBotMessage(env,'finance','Uji',{
+  await assert.rejects(sendOfficeBotMessage(fullEnv,'finance','Uji',{
     fetchImpl:async()=>new Response(JSON.stringify({ok:false,description:'Sensitive details'}),{status:401}),
   }),e=>e.status===502&&!e.message.includes('Sensitive details'));
 });
@@ -449,15 +451,20 @@ test('perintah cek diarahkan ke empat pegawai aktif dan tidak menyalakan delapan
   assert.match(unknown.text,/\/cek Bima/);
 });
 
-test('Jihan only joins the pilot after explicit flag plus valid marketing token',async()=>{
+test('Jihan automatically joins when the marketing token is configured; no extra flag',async()=>{
   const {enabledOfficeDivisions,inactiveOfficeAddress,parseOwnerNaturalTask}=await import('../server/telegram-office.ts');
-  const ready={...env,ANSHEL_JIHAN_ENABLED:'true'};
+  const ready={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify({
+    ...JSON.parse(env.TELEGRAM_BOT_TOKENS_JSON),marketing:allTokens.marketing
+  })};
   const noToken={...ready,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify({
     management:allTokens.management,operations:allTokens.operations,
     administration:allTokens.administration,hr:allTokens.hr,
   })};
   assert.deepEqual(enabledOfficeDivisions(env),automaticOfficeDivisions);
-  assert.deepEqual(enabledOfficeDivisions({...env,ANSHEL_JIHAN_ENABLED:'false'}),automaticOfficeDivisions);
+  assert.deepEqual(enabledOfficeDivisions({...ready,ANSHEL_JIHAN_ENABLED:'false'}),
+    [...automaticOfficeDivisions,'marketing']);
+  assert.deepEqual(enabledOfficeDivisions({...ready,ANSHEL_JIHAN_ENABLED:'true'}),
+    [...automaticOfficeDivisions,'marketing']);
   assert.deepEqual(enabledOfficeDivisions(noToken),automaticOfficeDivisions);
   assert.deepEqual(enabledOfficeDivisions(ready),[...automaticOfficeDivisions,'marketing']);
   assert.equal(enabledOfficeDivisions(ready).includes('development'),false);
