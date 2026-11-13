@@ -370,6 +370,23 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const updateId=String(data.updateId);
   const novel=await store.reserveOfficeGroupUpdate(updateId);
   if (!novel)return {duplicate:true};
+  if(/^\/(?:kesehatan|health)$/i.test(data.text.trim())) {
+    const state=await store.state(); // An actual successful database round trip.
+    const last=typeof store.officeDispatchPulse==='function'
+      ?await store.officeDispatchPulse():null;
+    const elapsed=typeof last==='number'&&last>0&&last<=state.now
+      ?Math.floor((state.now-last)/60_000):null;
+    const dispatcher=elapsed===null?'belum ada pemanggilan terverifikasi'
+      :elapsed+' menit sejak panggilan /dispatch terakhir';
+    const text='Alya · Pemeriksaan faktual Anshel:\n'+
+      'API dan database: permintaan ini berhasil dibaca.\n'+
+      'Worker: '+(state.worker?'heartbeat teramati dalam 40 detik':'tidak ada heartbeat terbaru')+'.\n'+
+      'Integrasi Auto Office: '+dispatcher+'.\n'+
+      'Gemini, n8n Published, Vercel deployment, dan layanan eksternal: belum diuji langsung oleh pemeriksaan ini. ' +
+      'Tidak ada klaim semua sistem sehat.';
+    await sendOfficeBotMessage(env,'management',text,{fetchImpl});
+    return {sent:true,division:'management',kind:'health-evidence'};
+  }
   const taskAction=parseOwnerTaskAction(data.text);
   if(taskAction) {
     const workspace=await store.officeGroupWorkspace();
@@ -463,6 +480,8 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
 }
 export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   officeGroupConfig(env);
+  if(typeof store.recordOfficeDispatchPulse==='function')
+    await store.recordOfficeDispatchPulse();
   const preferences=typeof store.officeGroupWorkspace==='function'
     ?await store.officeGroupWorkspace():null;
   const silent=preferences?.quiet===true;
