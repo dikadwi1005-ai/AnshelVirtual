@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
+import { officeNewsResult } from './bcift-news.ts';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
@@ -99,7 +100,7 @@ export function createStore(path: string, now = Date.now) {
         if (used>=3 || now()-(checkpoint.lastSent||0)<60*60_000) return null;
         const sql="SELECT a.id AS eventId,a.at,a.task AS taskId,a.action, "+
           "t.division,t.project FROM audit AS a JOIN tasks AS t ON t.id=a.task "+
-          "WHERE a.id>? AND a.at>=? AND a.action IN ('completed','blocked','failed') "+
+          "WHERE a.id>? AND a.at>=? AND a.actor<>'telegram-news' AND a.action IN ('completed','blocked','failed') "+
           "ORDER BY a.id LIMIT 1";
         const event=get(sql,checkpoint.cursor,now()-24*60*60_000);
         if (!event) return null;
@@ -322,6 +323,8 @@ export function createStore(path: string, now = Date.now) {
       return transaction(() => {
         const task = find(id);
         if (!task) throw new Fault(404,'Tugas tidak ditemukan.');
+        if (action==='retry' && task.request_id?.startsWith('office-news:'))
+          throw new Fault(409,'Kirim permintaan riset baru ke Jihan untuk memverifikasi sumber kembali.');
         const allowed = {
           cancel:['queued','running','paused','blocked','awaiting_approval'],
           pause:['queued','running'], resume:['paused'], retry:['failed','blocked'],
@@ -457,6 +460,20 @@ export function createStore(path: string, now = Date.now) {
         run("UPDATE tasks SET status='completed',result=?,sha256=?,ended=?,lease=NULL,lease_until=NULL WHERE id=?",
           output,hash,now(),id);
         log(id,'worker','completed',hash);
+      });
+    },
+    saveOfficeNewsReport(updateId,items) {
+      return transaction(()=>{
+        const requestId='office-news:'+updateId;
+        const existing=get('SELECT id FROM tasks WHERE request_id=?',requestId);
+        if(existing)return existing;
+        const id=randomUUID(), at=now();
+        const {status,output,error}=officeNewsResult(items);
+        const hash=output?createHash('sha256').update(output).digest('hex'):null;
+        run("INSERT INTO tasks(id,request_id,creator,division,project,description,kind,priority,status,urgent,created,started,ended,result,sha256,error) VALUES(?,?,'Pemilik · Telegram','marketing','BCIFT','Riset sumber berita BCIFT','draft',0,?,0,?,?,?,?,?,?)",
+          id,requestId,status,at,at,at,output,hash,error);
+        log(id,'telegram-news',status,hash??error);
+        return {id};
       });
     },
     artifact(id) {

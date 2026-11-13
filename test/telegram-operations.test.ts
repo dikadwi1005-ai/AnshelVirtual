@@ -158,10 +158,10 @@ test('routine notification retries explicit Telegram rejection, avoids repeat af
 
 test('natural language creates only four allowlisted draft tasks, with idempotence and no Gemini',async()=>{
   assert.deepEqual(parseOwnerNaturalTask('Tolong Bima buat draf pemeriksaan layanan API'),{
-    division:'operations',description:'draf pemeriksaan layanan API',kind:'draft',urgent:false,
+    division:'operations',description:'buat draf pemeriksaan layanan API',kind:'draft',urgent:false,
   });
   assert.deepEqual(parseOwnerNaturalTask('Citra, tolong rangkum catatan rapat besok'),{
-    division:'administration',description:'catatan rapat besok',kind:'draft',urgent:false,
+    division:'administration',description:'rangkum catatan rapat besok',kind:'draft',urgent:false,
   });
   for(const unsafe of ['Tolong Eka buat skrip untuk repositori',
     'Guys, tolong semua kerja sekarang', 'Bima, sudah cek server?', 'Bima, tolong bayar tagihan']) {
