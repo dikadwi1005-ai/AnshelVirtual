@@ -10,7 +10,8 @@ import {
 
 const tokens=Object.fromEntries(divisions.map((d,i)=>[d.id,String(100000+i)+':'+('z'.repeat(35))]));
 const env={TELEGRAM_CHAT_ID:'-1001234567890',TELEGRAM_USER_ID:'778899',
-  TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(tokens),N8N_TOKEN:'n8n-test-credential-length-over-24'};
+  TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(
+    Object.fromEntries(['management','operations','administration','hr'].map(id=>[id,tokens[id]]))),N8N_TOKEN:'n8n-test-credential-length-over-24'};
 const clock={value:Date.parse('2026-11-12T03:00:00Z')};
 const transport=messages=>async(url,options)=>{
   messages.push({url,body:JSON.parse(options.body)});
@@ -441,10 +442,12 @@ test('API/server incidents route to Bima IT rather than arbitrary reply recipien
   } finally {store.close();}
 });
 
-test('Jihan conversations and pair discussions are opt-in and never awaken other dormant bots',async()=>{
+test('Jihan talks as soon as a valid marketing token is present while other bots stay dormant',async()=>{
   const {enabledOfficeDivisions}=await import('../server/telegram-office.ts');
   const {requestedOfficeDiscussion}=await import('../server/telegram-group.ts');
-  const ready={...env,ANSHEL_JIHAN_ENABLED:'true'};
+  const ready={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify({
+    ...JSON.parse(env.TELEGRAM_BOT_TOKENS_JSON),marketing:tokens.marketing
+  })};
   assert.equal(requestedOfficeDiscussion('Alya dan Jihan, bahas strategi konten SEO'),null);
   assert.deepEqual(requestedOfficeDiscussion('Alya dan Jihan, bahas strategi konten SEO',
     enabledOfficeDivisions(ready)),['management','marketing']);
