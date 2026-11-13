@@ -82,14 +82,14 @@ export function configuredOfficeBots(env) {
   return {parsed,configured,missing:divisions.filter(item=>!configured.includes(item.id)).map(item=>item.id)};
 }
 /**
- * Jihan is an opt-in fifth Telegram speaker. A configured marketing token
- * without an explicit flag must never activate any dormant employee.
- * This grants communication only, not website publishing or SEO API access.
+ * Like the four original employees, Jihan becomes a Telegram speaker when
+ * the marketing bot token is valid. No separate enable switch is required.
+ * Only these five divisions may speak; seven other tokens remain dormant.
+ * Communication does not authorize SEO integrations or website changes.
  */
 export function enabledOfficeDivisions(env) {
   const enabled=[...automaticOfficeDivisions];
-  if(env?.ANSHEL_JIHAN_ENABLED==='true' &&
-     configuredOfficeBots(env).configured.includes('marketing'))enabled.push('marketing');
+  if(configuredOfficeBots(env).configured.includes('marketing'))enabled.push('marketing');
   return enabled;
 }
 /** Optional Telegram typing hint, never a second message and never a proof of work. */
