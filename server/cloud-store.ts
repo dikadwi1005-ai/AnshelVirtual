@@ -149,7 +149,7 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
       });
     },
     async claimOfficeGroupSignal(kind) {
-      if(!['daily-summary','queued-worker-silent'].includes(kind)) throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
+      if(!['daily-summary','queued-worker-silent','internal-event'].includes(kind)) throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
       return transaction(async client=>{
         await query('SELECT pg_advisory_xact_lock(17293112)',[],client);
         const key='office_group_signals_v1';
