@@ -15,7 +15,7 @@ const safeProject=s=>String(s||'tanpa nama proyek').replace(/[\r\n\t@<>]/g,' ').
 
 export function officeEmployeeOverview(state,configured=pilotDivisions) {
   const enabled=new Set(configured);
-  return [...pilotDivisions,'marketing'].filter(id=>enabled.has(id)).map(id=>{
+  return [...pilotDivisions,'marketing','research','social'].filter(id=>enabled.has(id)).map(id=>{
     const person=state.people?.[id]||{};
     const jobs=(state.tasks||[]).filter(t=>t.division===id);
     const task=jobs.find(t=>t.status==='running')||jobs.find(t=>t.status==='queued')||jobs[0];
@@ -34,7 +34,7 @@ export function officeActivityReply(state,configured=pilotDivisions) {
     'tidak sedang mengeksekusi tugas')+
     '; avatar virtual '+p.avatar.toLowerCase()+
     (p.task?' ('+p.task.project+', '+(status[p.task.status]||'status belum diketahui')+')':''));
-  return 'Aktivitas empat pegawai Anshel (berdasarkan catatan kantor, bukan pengamatan nyata):\n'+
+  return 'Aktivitas pegawai Telegram aktif Anshel (berdasarkan catatan kantor, bukan pengamatan nyata):\n'+
     lines.join('\n')+'\nWorker: '+(state.worker?'terlihat aktif baru-baru ini':'belum terlihat aktif dalam 40 detik terakhir')+
     '. Hasil tugas tersedia di panel Tugas setelah benar-benar tersimpan.';
 }
@@ -70,7 +70,7 @@ export function officeDailySummary(state,allowed=pilotDivisions) {
     count('blocked')+' terhambat, '+count('failed')+' gagal.\n'+
     'Status seluruh antrean saat ini: '+(Number(c.queued)||0)+' antre, '+
     (Number(c.running)||0)+' diproses, '+(Number(c.awaiting_approval)||0)+' menunggu persetujuan.\n'+
-    (detail?'Contoh hasil draf hari ini: '+detail+'.\n':'Belum ada hasil draf baru dari empat bot aktif yang terlihat di daftar terbaru.\n')+
+    (detail?'Contoh hasil draf hari ini: '+detail+'.\n':'Belum ada hasil draf baru dari bot Telegram aktif yang terlihat di daftar terbaru.\n')+
     'Ini ringkasan catatan sistem, bukan bukti hasil sudah ditinjau atau dipublikasikan.';
 }
 
