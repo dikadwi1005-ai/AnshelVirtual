@@ -499,6 +499,17 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
       }
     }
   }
+  const today=new Date(Number(state.now)+7*3600_000).toISOString().slice(0,10);
+  const events=Array.isArray(settings?.events)?settings.events.filter(e=>e.date===today):[];
+  if(events.length&&settings?.notifications!=='important'&&configured.has('management')&&
+     await store.claimOfficeGroupSignal('internal-event')) {
+    const names=events.slice(0,3).map(e=>e.label).join('; ');
+    await sendOfficeBotMessage(env,'management',
+      'Agenda internal Anshel hari ini ('+today+'): '+names+
+      '. Ini pengingat acara terdaftar, bukan bukti acaranya sudah berlangsung.',
+      {fetchImpl,silent});
+    return {sent:true,kind:'internal-event',division:'management'};
+  }
   const warning=officeQueueDelayAlert(state);
   if(warning&&configured.has('operations') &&
      await store.claimOfficeGroupSignal('queued-worker-silent')) {
@@ -565,15 +576,21 @@ export function officeVirtualCheckin(state,configured) {
 export async function dispatchOfficeGroupCheckin(store,env,fetchImpl=fetch) {
   officeGroupConfig(env);
   const state=await store.state();
+  const settings=typeof store.officeGroupWorkspace==='function'
+    ?await store.officeGroupWorkspace():null;
+  if(settings?.notifications==='important')
+    return {sent:false,reason:'non-essential-messages-disabled'};
   if(!officeCheckinWindow(state.now))return {sent:false,reason:'outside-checkin-window'};
   const configured=configuredOfficeBots(env).configured;
   const conversation=officeVirtualCheckin(state,configured);
   if(!conversation)return {sent:false,reason:'not-enough-active-bots'};
   if(!await store.claimOfficeGroupCheckin())return {sent:false,reason:'already-sent-today'};
-  const replyId=await sendOfficeBotMessage(env,conversation.first,conversation.text,{fetchImpl});
+  const replyId=await sendOfficeBotMessage(env,conversation.first,conversation.text,
+    {fetchImpl,silent:settings?.quiet===true});
   let followedUp=false;
   try {
-    await sendOfficeBotMessage(env,conversation.second,conversation.reply,{fetchImpl,replyTo:replyId});
+    await sendOfficeBotMessage(env,conversation.second,conversation.reply,
+      {fetchImpl,replyTo:replyId,silent:settings?.quiet===true});
     followedUp=true;
   } catch {
     // The daily lock prevents repeat attempts and spam on partial failure.
