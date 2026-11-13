@@ -7,6 +7,7 @@ import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,bu
   resolveOfficeCollectiveResponse,ownerReplyContext,conversationQuestion,groupDelayMs } from './telegram-group.ts';
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
 import {parseGroupWorkspaceCommand,workspacePromptContext} from './telegram-workspace.ts';
+import {loadTelegramMedia,questionForMedia,attachMediaToGeminiRequest} from './telegram-media.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -218,15 +219,18 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   if(!validId(data.updateId) || typeof data.text!=='string' || data.text.length>1500 ||
     (!data.text.trim()&&!['photo','voice','audio','document','video'].includes(data.mediaType)))
     throw new Fault(400,'Pesan Telegram tidak valid.');
-  if(!data.text.trim()&&data.mediaType) {
+  const hasMedia=['photo','voice','audio','document','video'].includes(data.mediaType);
+  const media=hasMedia?await loadTelegramMedia(env,data,fetchImpl):null;
+  if(hasMedia&&!media?.ok) {
     const done=await sendOfficeGroupOwnerMessage(store,env,
       {...data,text:'/lampiran'},fetchImpl);
-    return {mode:'handled',...done};
+    return {mode:'handled',...done,mediaReason:media?.reason||'not-supported'};
   }
-  const meetingContinue=/^\/rapat\s+lanjut$/i.test(data.text.trim());
-  if(!meetingContinue &&
-    (command.test(data.text.trim())||parseGroupWorkspaceCommand(data.text)||
-      parseOwnerNaturalTask(data.text)||parseOwnerTaskAction(data.text))) {
+  const question=hasMedia?questionForMedia(data):data.text;
+  const meetingContinue=/^\/rapat\s+lanjut$/i.test(question.trim());
+  if(!hasMedia&&!meetingContinue &&
+    (command.test(question.trim())||parseGroupWorkspaceCommand(question)||
+      parseOwnerNaturalTask(question)||parseOwnerTaskAction(question))) {
     const done=await sendOfficeGroupOwnerMessage(store,env,data,fetchImpl);
     return {mode:'handled',...done};
   }
@@ -234,15 +238,15 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   if(typeof store.officeGroupWorkspace==='function')
     state.groupWorkspace=await store.officeGroupWorkspace();
   const configured=configuredOfficeBots(env).configured;
-  const discussion=requestedOfficeDiscussion(data.text);
+  const discussion=requestedOfficeDiscussion(question);
   const followup=meetingContinue ||
     (state.groupWorkspace?.mode==='diskusi' &&
-      /^(?:lanjut(?:kan)?|tanggapi|menurut kalian|apa pendapat kalian|setuju nggak)\b/i.test(data.text.trim()));
+      /^(?:lanjut(?:kan)?|tanggapi|menurut kalian|apa pendapat kalian|setuju nggak)\b/i.test(question.trim()));
   const contextQuestion=conversationQuestion(
     meetingContinue&&state.groupWorkspace?.meeting
       ?'Guys, lanjutkan diskusi rapat "'+state.groupWorkspace.meeting.topic+'". Tanggapi pendapat sebelumnya berdasarkan catatan.'
-      :data.text,data.replyTo);
-  if(isCollectiveCall(data.text)||discussion||followup) {
+      :question,data.replyTo);
+  if(isCollectiveCall(question)||discussion||followup) {
     const available=availableOfficeResponders(state,configured);
     const recipients=discussion?discussion.filter(id=>available.includes(id)):available;
     if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
@@ -251,17 +255,18 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     const saved=await store.prepareOfficeGroupAI(String(data.updateId),'management',contextQuestion,recipients);
     return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
       division:'management',group:true,recipients,
-      request:buildOfficeCollectiveRequest(contextQuestion,recipients,state,saved.groupHistory)};
+      request:attachMediaToGeminiRequest(
+        buildOfficeCollectiveRequest(contextQuestion,recipients,state,saved.groupHistory),media)};
   }
   const quoted=ownerReplyContext(data);
-  const addressed=/^@?(?:Alya|Bima|Citra|Dara)\b\s*[,：:]/i.test(data.text.trim());
+  const addressed=/^@?(?:Alya|Bima|Citra|Dara)\b\s*[,：:]/i.test(question.trim());
   const target=!addressed&&quoted?.employee&&configured.includes(quoted.employee)
-    ?{division:quoted.employee}:officeGroupReply(state,data.text,env);
+    ?{division:quoted.employee}:officeGroupReply(state,question,env);
   if(!configuredOfficeBots(env).configured.includes(target.division))
     throw new Fault(503,'Token pegawai '+target.division+' belum dikonfigurasi.');
   // Precise office hours are system settings, not a Gemini improvisation.
   // Keep the same owner/chat verification, rate limit, and actual sender bot.
-  const scheduleText=officeScheduleReply(target.division,data.text,state);
+  const scheduleText=hasMedia?null:officeScheduleReply(target.division,question,state);
   if(scheduleText) {
     if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
     await sendOfficeBotMessage(env,target.division,scheduleText,{fetchImpl});
@@ -270,7 +275,8 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
   const saved=await store.prepareOfficeGroupAI(String(data.updateId),target.division,contextQuestion);
   return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
-    division:target.division,request:buildOfficeNaturalRequest(target.division,contextQuestion,state,saved.history)};
+    division:target.division,request:attachMediaToGeminiRequest(
+      buildOfficeNaturalRequest(target.division,contextQuestion,state,saved.history),media)};
 }
 export function cleanOfficeNaturalResponse(text,fallback,question='') {
   let safe=(typeof text==='string'?text.trim():'')
