@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { divisions } from './catalog.js';
 import { chooseConversationAnchor, createConversations, createMonologues } from './conversations.js';
 import { employeeFigure } from './employee-look.js';
+import { employeeMouth } from './employee-mouth.js';
 import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, station } from './furnishings.js';
 import { roomById } from './layout.js';
@@ -126,7 +127,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     const plan=initial?.people?.[person.id];
     const actor={person,root,figure,shadowMesh,mixer,clips,stature:profile.stature,action:null,animation:'idle',path:[],
       hands:[figure.getObjectByName('arm-left'),figure.getObjectByName('arm-right')],
-      head:figure.getObjectByName('head'),headYaw:0,
+      head:figure.getObjectByName('head'),headYaw:0,mouth:employeeMouth(figure),
       stage:'idle',seatProgress:0,activity:plan?.executing?'work':'desk',reaction:0,wait:0,retry:0,animationDelta:0};
     actor.cup=new THREE.Mesh(cupGeometry,cupMaterial);
     actor.book=new THREE.Group();

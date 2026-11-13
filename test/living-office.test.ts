@@ -4,6 +4,7 @@ import { divisions } from '../public/catalog.js';
 import { createLivingOffice } from '../public/living-office.js';
 import { navigation, segmentHits } from '../public/navigation.js';
 import { createOfficeVoice } from '../public/office-voice.js';
+import { createLipTimeline } from '../public/office-lips.js';
 
 test('12 pegawai berganti aktivitas saat offline, berhenti saat jeda, dan mendahulukan tugas aktif',()=>{
   const living=createLivingOffice({random:()=>.5});
@@ -62,10 +63,11 @@ test('audio opsional memilih suara Indonesia lokal dan tidak mengulang bubble ya
   let cancelled=0;
   const engine={getVoices:()=>[{lang:'id-ID',localService:false},{lang:'id-ID',localService:true}],
     speak:utterance=>spoken.push(utterance),cancel:()=>{cancelled++;}};
+  const cues=[];
   const voice=createOfficeVoice({speechSynthesis:engine,SpeechSynthesisUtterance:class {
     text;
     constructor(text) { this.text=text; }
-  }});
+  }},{start:turn=>cues.push(turn.text),boundary:(_,index)=>cues.push(index),end:()=>cues.push('end')});
   const turn={text:'Sampai nanti',speaker:{person:divisions[0]}};
   voice.show(turn);
   assert.equal(spoken.length,0);
@@ -75,6 +77,25 @@ test('audio opsional memilih suara Indonesia lokal dan tidak mengulang bubble ya
   voice.show(turn);
   voice.show(turn);
   assert.equal(spoken.length,2);
+  spoken[0].onboundary({name:'word',charIndex:6});
+  spoken[1].onstart();
+  spoken[1].onboundary({name:'sentence',charIndex:0});
+  spoken[1].onboundary({name:'word',charIndex:7});
+  assert.deepEqual(cues,['Sampai nanti',7]);
   voice.show(null);
+  spoken[1].onend();
+  assert.deepEqual(cues,['Sampai nanti',7]);
   assert.equal(cancelled,2);
+});
+
+test('gerak bibir membedakan vokal, menutup pada bunyi bibir, dan mengikuti batas kata',()=>{
+  const timeline=createLipTimeline('Ma. Oi!',2);
+  assert.equal(timeline.pose(.08).open,0);
+  assert.ok(timeline.pose(.28).open>.9);
+  timeline.align(4,.6);
+  assert.ok(timeline.pose(.68).round>.8);
+  timeline.align(5,.8);
+  assert.ok(timeline.pose(.88).wide>.8);
+  assert.equal(timeline.pose(4).open,0);
+  assert.equal(createLipTimeline('…',2).pose(.5).open,0);
 });

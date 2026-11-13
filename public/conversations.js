@@ -116,12 +116,13 @@ export function createConversations(onTurn=()=>{}) {
             const script=session.script;
             const generated=script?.lines && script.order[session.index%members.length]===speaker && script.lines[session.index];
             const text=generated || line(room,session.round,session.index,other.person,office);
-            session.turn={speaker,other,text};
+            const duration=Math.max(2.65,text.length/17);
+            session.turn={speaker,other,text,duration};
             if (session.index===0) rounds.set(room,session.round+1);
             onTurn(session.turn,members,room);
             session.last=speaker;
             session.index++;
-            session.remaining=Math.max(2.65,text.length/17);
+            session.remaining=duration;
           }
         }
         if (session.turn) turns.set(room,session.turn);
@@ -167,7 +168,7 @@ export function createMonologues() {
         if (pool.length) {
           const speaker=pool[sequence%pool.length];
           const lines=reflections[speaker.actual];
-          const remark={speaker,text:lines[sequence%lines.length],solo:true};
+          const remark={speaker,text:lines[sequence%lines.length],solo:true,duration:2.9};
           if (request) {
             pending=remark;
             remaining=1.8;

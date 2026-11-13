@@ -4,6 +4,8 @@ import { createActors } from './actors.js';
 import { insideRoom, rooms, roomById, point } from './layout.js';
 import { radialTexture } from './materials.js';
 import { navigation } from './navigation.js';
+import { createLipTimeline } from './office-lips.js';
+import { createOfficeSpatialAudio } from './office-spatial-audio.js';
 import { createOfficeVoice } from './office-voice.js';
 import { buildWorld } from './world.js';
 
@@ -75,13 +77,35 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   bubble.hidden=true;
   bubble.append(speakerName,dialogue);
   labels.append(bubble);
-  let shownTurn=null;
-  const voice=createOfficeVoice();
+  let shownTurn=null, lips=null;
+  const sound=createOfficeSpatialAudio();
+  const voice=createOfficeVoice(window,{
+    start(turn) {
+      if (lips?.turn!==turn) return;
+      lips.started=performance.now();
+      lips.timeline.align(0,0);
+    },
+    boundary(turn,index) {
+      if (lips?.turn===turn) lips.timeline.align(index,(performance.now()-lips.started)/1000);
+    },
+    end(turn) {
+      if (lips?.turn===turn) lips.finished=true;
+    },
+  });
+  const unlockAudio=()=>{ void sound.unlock(); };
+  window.addEventListener('pointerdown',unlockAudio);
+  window.addEventListener('keydown',unlockAudio);
   const save=()=>population?.living.persist();
+  function clearMouth() {
+    lips?.turn.speaker.mouth?.fill(0);
+    lips=null;
+  }
   const visibility=()=>{
     if (!document.hidden) return;
     save();
     voice.show(null);
+    sound.clear();
+    clearMouth();
   };
   window.addEventListener('pagehide',save);
   document.addEventListener('visibilitychange',visibility);
@@ -235,8 +259,23 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       }
     }
     bubble.hidden=!closest;
-    voice.show(closest);
+    if (lips?.turn!==closest) {
+      clearMouth();
+      if (closest) lips={turn:closest,timeline:createLipTimeline(closest.text,closest.duration),
+        started:performance.now(),finished:false};
+    }
+    voice.show(closest,THREE.MathUtils.clamp(1-distance/10,.30,.92));
     if (!closest) return;
+    const mouth=closest.speaker.mouth;
+    if (mouth) {
+      if (lips.finished) mouth.fill(0);
+      else {
+        const pose=lips.timeline.pose((performance.now()-lips.started)/1000);
+        mouth[0]=pose.open;
+        mouth[1]=pose.round;
+        mouth[2]=pose.wide;
+      }
+    }
     if (shownTurn!==closest) {
       shownTurn=closest;
       speakerName.textContent=closest.speaker.person.employee;
@@ -314,16 +353,19 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       world?.showDockedControllers(population.game.players);
     }
     updateCamera(delta);
+    camera.updateMatrixWorld();
     refreshLighting(delta);
     const lounge=roomById.gaming;
     const gameVisible=camera.zoom>=2 && Math.hypot(controls.target.x-lounge.x,controls.target.z-lounge.z)<10;
     world?.displays.update(now,camera.zoom,population?.game,gameVisible);
+    updateSpeech(width,height);
+    if (population && camera.zoom>2.15 && state?.phase!=='paused') sound.update(population.actors,controls.target,camera.position);
+    else sound.clear();
     renderer.render(scene,camera);
     if (now-lastLabelUpdate>=45) {
       updateLabels(width,height);
       lastLabelUpdate=now;
     }
-    updateSpeech(width,height);
   });
 
   return {
@@ -331,7 +373,11 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     dispose() {
       save();
       voice.stop();
+      sound.dispose();
+      clearMouth();
       window.removeEventListener('pagehide',save);
+      window.removeEventListener('pointerdown',unlockAudio);
+      window.removeEventListener('keydown',unlockAudio);
       document.removeEventListener('visibilitychange',visibility);
       renderer.setAnimationLoop(null);
       resizeObserver.disconnect();
@@ -346,11 +392,17 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     gamePlayers() { return population?.game.players.size ?? 0; },
     employeeLife(id) { return population?.living.snapshot(id); },
     voice(enabled) { voice.enable(enabled); },
+    spatialAudio(enabled) {
+      sound.enable(enabled);
+      if (enabled) unlockAudio();
+    },
     suspend(value) {
       suspended=value;
       if (value) {
         save();
         voice.show(null);
+        sound.clear();
+        clearMouth();
       }
     },
     state(value) {

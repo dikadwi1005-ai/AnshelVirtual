@@ -34,6 +34,7 @@ let openingScene=false;
 let taskKey = null;
 let lighting = localStorage.getItem('anshel-lighting') ?? 'auto';
 let voiceEnabled = localStorage.getItem('anshel-office-voice')==='on';
+let spatialAudio = localStorage.getItem('anshel-office-spatial-audio')==='on';
 let latestAudit = null;
 let pendingPanelRefresh = false;
 
@@ -95,6 +96,7 @@ async function enter() {
     {low:graphicsPreference()});
     scene.state(office);
     scene.voice(voiceEnabled);
+    scene.spatialAudio(spatialAudio);
     setLighting(lighting);
     await scene.load();
     if (panel==='office') render();
@@ -326,6 +328,7 @@ function renderSettings() {
     '<label>Pencahayaan<select id="lighting">'+optionList([['auto','Otomatis · WIB'],['day','Siang'],['evening','Malam']],lighting)+'</select></label>'+
     '<label>Kualitas grafis<select id="quality">'+optionList([['auto','Otomatis (HP lebih ringan)'],['normal','Standar'],['low','Ringan']],localStorage.getItem('anshel-quality')??'auto')+'</select></label>'+
     '<label>Suara dialog<select id="office-voice">'+optionList([['off','Subtitle'],['on','Suara Indonesia jika tersedia']],voiceEnabled?'on':'off')+'</select></label>'+
+    '<label>Suara langkah<select id="office-spatial-audio">'+optionList([['off','Mati'],['on','Aktif saat kamera dekat']],spatialAudio?'on':'off')+'</select></label>'+
     '<dl class="stats"><div><dt>Dialog</dt><dd id="dialogue-status">'+(dialogueNames[office.dialogueStatus] ?? dialogueNames.disabled)+'</dd></div></dl>'+
     '<p class="section-label">Jadwal · WIB</p><div class="form-grid">'+Object.entries(scheduleFields).map(([key,label])=>
       '<label>'+label+'<input type="time" name="'+key+'" required value="'+escape(schedule[key])+'"></label>').join('')+'</div>'+
@@ -450,6 +453,11 @@ $('panel-content').addEventListener('change',async event=>{
     voiceEnabled=field.value==='on';
     localStorage.setItem('anshel-office-voice',field.value);
     scene?.voice(voiceEnabled);
+  }
+  if (field.id==='office-spatial-audio') {
+    spatialAudio=field.value==='on';
+    localStorage.setItem('anshel-office-spatial-audio',field.value);
+    scene?.spatialAudio(spatialAudio);
   }
   if (field.id==='quality') {
     if (field.value==='auto') localStorage.removeItem('anshel-quality');
