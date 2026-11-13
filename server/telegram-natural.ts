@@ -9,6 +9,8 @@ import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,bu
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
 import {parseGroupWorkspaceCommand,workspacePromptContext} from './telegram-workspace.ts';
 import {loadTelegramMedia,questionForMedia,attachMediaToGeminiRequest} from './telegram-media.ts';
+import {isJihanNewsQuery,readBciftBlogTitles,addJihanNewsGrounding,
+  validateJihanNewsReply,jihanNoVerifiedNews} from './bcift-news.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -18,9 +20,9 @@ const persona={
   development:'Eka: programmer yang penasaran dan ringan berbahasa, suka contoh teknis konkret, tidak mengaku deploy atau menguji kode.',
   creative:'Fara: spontan dan imajinatif, suka menanyakan preferensi warna, bentuk, gaya dan ide visual yang spesifik.',
   video:'Galih: energik dalam bahasan adegan, ritme, suara dan editing; tidak mengaku sudah menghasilkan video.',
-  social:'Hana: komunikatif dan ringkas, antusias bahas caption, audiens dan ide konten; tidak mengaku sudah memposting.',
-  research:'Indra: kritis dan analitis, suka membedakan dugaan dari bukti; tidak mengarang penelusuran atau sumber.',
-  marketing:'Jihan: strategis dan penuh pertimbangan, fokus ke tujuan pencarian serta target audiens; tidak mengarang angka SEO.',
+  social:'Hana: komunikatif dan ringkas, antusias bahas caption, audiens dan ide konten untuk proyek APA SAJA yang ditugaskan; tidak mengaku sudah memposting.',
+  research:'Indra: kritis dan analitis, boleh meneliti SEMUA proyek dan topik yang ditugaskan, membedakan dugaan dari bukti; tidak mengarang penelusuran atau sumber.',
+  marketing:'Jihan: SEO & Pemasaran KHUSUS BCIFT (Batam Center International Ferry Terminal). Fokus situs bcift.co.id, kebutuhan penumpang ke Singapura dan Malaysia, konten terminal Batam Center. Jangan menerima pekerjaan SEO untuk merek/proyek lain. Jangan mengarang angka SEO, ranking, atau hasil penelusuran.',
   qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
   finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
@@ -211,8 +213,14 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     }
   }
   contents.push({role:'user',parts:[{text:spokenQuestion}]});
-  return {systemInstruction:{parts:[{text:instructions}]},contents,
+  const request={systemInstruction:{parts:[{text:instructions}]},contents,
     generationConfig:{temperature:0.8,maxOutputTokens:320}};
+  if(division==='marketing')request.systemInstruction.parts[0].text+='\n'+
+    'BATAS PEKERJAAN: Jihan hanya menangani BCIFT / bcift.co.id. Tidak menerima SEO, audit, iklan atau pemasaran untuk perusahaan dan situs lain. '+
+    'Boleh membuat ide keyword, metadata dan draf strategi untuk BCIFT, tetapi tanpa data live jangan menyebut metrik, ranking, trafik atau audit seolah sudah terverifikasi. '+
+    'Jangan mengaku telah menerbitkan artikel, mengubah website atau menggunakan OpenSEO/Google Analytics tanpa integrasi terverifikasi. '+
+    'Indra dan Hana adalah pegawai divisi berbeda yang tidak dibatasi proyek BCIFT.';
+  return request;
 }
 export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   const {chatId,userId}=officeGroupConfig(env);
@@ -261,9 +269,13 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
       :question,data.replyTo);
   if(isCollectiveCall(question)||discussion||followup) {
     const available=availableOfficeResponders(state,configured,enabled);
-    const recipients=discussion?discussion.filter(id=>available.includes(id)):available;
+    // Keep the existing 12s n8n delivery budget: never send seven bot
+    // messages in one request. Rotate the five responders across calls.
+    const offset=available.length>5?Number(String(data.updateId).slice(-3))%available.length:0;
+    const rotated=available.slice(offset).concat(available.slice(0,offset));
+    const recipients=discussion?discussion.filter(id=>available.includes(id)):rotated.slice(0,5);
     if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
-    // All four currently busy or not connected: no ungrounded "all present" message.
+    // No available workers: do not claim anyone attended a discussion.
     if(!recipients.length) return {mode:'handled',sent:false,reason:'all-workers-busy-or-offline'};
     const saved=await store.prepareOfficeGroupAI(String(data.updateId),'management',contextQuestion,recipients);
     return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
@@ -272,7 +284,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
         buildOfficeCollectiveRequest(contextQuestion,recipients,state,saved.groupHistory,enabled),media)};
   }
   const quoted=ownerReplyContext(data);
-  const addressed=/^@?(?:Alya|Bima|Citra|Dara)\b\s*[,：:]/i.test(question.trim());
+  const addressed=/^@?(?:Alya|Bima|Citra|Dara|Jihan|Indra|Hana)\b\s*[,：:]/i.test(question.trim());
   // A reported API/server incident belongs to IT even when it replies to an
   // unrelated bot's earlier message. A direct employee address still wins.
   const technical=!addressed&&isTechnicalIncident(question);
@@ -291,9 +303,12 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   }
   if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
   const saved=await store.prepareOfficeGroupAI(String(data.updateId),target.division,contextQuestion);
+  const news=target.division==='marketing' && !hasMedia && isJihanNewsQuery(question);
+  const blogTitles=news?await readBciftBlogTitles(fetchImpl):null;
+  const natural=buildOfficeNaturalRequest(target.division,contextQuestion,state,saved.history);
+  if(news)addJihanNewsGrounding(natural,question,state.now??Date.now(),blogTitles);
   return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
-    division:target.division,request:attachMediaToGeminiRequest(
-      buildOfficeNaturalRequest(target.division,contextQuestion,state,saved.history),media)};
+    division:target.division,request:attachMediaToGeminiRequest(natural,media)};
 }
 export function cleanOfficeNaturalResponse(text,fallback,question='') {
   let safe=(typeof text==='string'?text.trim():'')
@@ -389,8 +404,13 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,p
     : pending.division==='operations' && asksTechnical && divisionTasks.length===0
       ? 'Belum ada tugas IT yang tercatat buatku di Anshel. Soal ada masalah teknis atau nggak, aku belum punya hasil pemeriksaan. Kalau ada error, kirim gejalanya ya.'
       : officeGroupReply(state,pending.question,env).text;
-  const text=cleanOfficeNaturalResponse(input?.output,fallback,pending.question);
+  const news=pending.division==='marketing'&&isJihanNewsQuery(pending.question);
+  const newsAnswer=news&&!validateJihanNewsReply(input?.output,state.now??Date.now())
+    ?jihanNoVerifiedNews:null;
+  const text=newsAnswer||cleanOfficeNaturalResponse(input?.output,
+    news?jihanNoVerifiedNews:fallback,pending.question);
   await sendOfficeBotMessage(env,pending.division,text,{fetchImpl,silent:state.groupWorkspace?.quiet===true});
   await store.rememberOfficeGroupAI(pending.division,pending.question,text);
-  return {sent:true,division:pending.division,ai:typeof input.output==='string'&&text!==fallback};
+  return {sent:true,division:pending.division,ai:!newsAnswer&&typeof input.output==='string'&&
+    text!==(news?jihanNoVerifiedNews:fallback)};
 }

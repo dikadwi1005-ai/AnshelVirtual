@@ -14,6 +14,8 @@ const reactions={
   administration:{division:'hr',text:'Makasih, Citra. Catatan drafnya sudah ada; kalau ada kebutuhan koordinasi tim nanti dibahas.'},
   hr:{division:'management',text:'Sip, Dara. Drafnya sudah tersedia. Kita lihat hasilnya dulu sebelum ada keputusan.'},
   marketing:{division:'management',text:'Terima kasih, Jihan. Draf SEO dicatat untuk ditinjau; perubahan website belum dijalankan.'},
+  research:{division:'management',text:'Terima kasih, Indra. Risetnya masih perlu ditinjau sebelum dijadikan acuan.'},
+  social:{division:'management',text:'Terima kasih, Hana. Draf kontennya akan ditinjau dulu sebelum publikasi.'},
 };
 const workerReport={
   management:{
@@ -46,6 +48,18 @@ const workerReport={
       'Rencana SEO {subject} tersedia sebagai draf dan belum diterapkan ke situs mana pun.'],
     blocked:['Draf SEO {subject} terhambat. Belum ada hasil audit atau pembaruan peringkat yang terverifikasi.'],
     failed:['Pemrosesan draf SEO {subject} gagal. Belum ada hasil final.'],
+  },
+  research:{
+    completed:['Draf riset {subject} sudah tercatat. Verifikasi sumber masih perlu ditinjau.',
+      'Hasil draf penelitian {subject} tersedia untuk diperiksa sebelum digunakan.'],
+    blocked:['Riset {subject} masih terhambat dan belum ada kesimpulan terverifikasi.'],
+    failed:['Pembuatan draf riset {subject} gagal. Belum ada hasil siap pakai.'],
+  },
+  social:{
+    completed:['Draf konten {subject} sudah tercatat. Belum dipublikasikan.',
+      'Konsep konten {subject} tersedia untuk ditinjau sebelum posting.'],
+    blocked:['Draf konten {subject} masih tertahan; belum ada materi final.'],
+    failed:['Pembuatan draf konten {subject} gagal. Belum ada posting yang dilakukan.'],
   },
 };
 const clean=value=>String(value||'').replace(/[\r\n\t@]/g,' ').replace(/[<>]/g,'').trim().slice(0,75);
@@ -82,15 +96,15 @@ export function configuredOfficeBots(env) {
   return {parsed,configured,missing:divisions.filter(item=>!configured.includes(item.id)).map(item=>item.id)};
 }
 /**
- * Like the four original employees, Jihan becomes a Telegram speaker when
- * the marketing bot token is valid. No separate enable switch is required.
- * Only these five divisions may speak; seven other tokens remain dormant.
- * Communication does not authorize SEO integrations or website changes.
+ * Additional employees opt in exactly like the four original bots:
+ * a valid token activates their own Telegram identity, without flags.
+ * All other divisions remain inactive even if their tokens are stored.
+ * Chat permission does not imply external publishing or worker execution.
  */
 export function enabledOfficeDivisions(env) {
-  const enabled=[...automaticOfficeDivisions];
-  if(configuredOfficeBots(env).configured.includes('marketing'))enabled.push('marketing');
-  return enabled;
+  const connected=new Set(configuredOfficeBots(env).configured);
+  return [...automaticOfficeDivisions,
+    ...['marketing','research','social'].filter(id=>connected.has(id))];
 }
 /** Optional Telegram typing hint, never a second message and never a proof of work. */
 export async function sendOfficeBotTyping(env,division,fetchImpl=fetch) {
