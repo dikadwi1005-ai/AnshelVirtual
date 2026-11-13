@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createActors } from './actors.js';
+import { createCharacter } from './character-mode.js';
+import { createCharacterCamera } from './character-camera.js';
 import { insideRoom, rooms, roomById, point } from './layout.js';
 import { radialTexture } from './materials.js';
 import { navigation } from './navigation.js';
+import { createLipTimeline } from './office-lips.js';
+import { createOfficeSpatialAudio } from './office-spatial-audio.js';
+import { createOfficeVoice } from './office-voice.js';
 import { buildWorld } from './world.js';
 
 const overview=new THREE.Vector3(30,57,55);
@@ -32,6 +37,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   renderer.domElement.setAttribute('aria-label','Kantor 3D interaktif');
 
   const camera=new THREE.OrthographicCamera(-32,32,24,-24,.1,190);
+  const chase=createCharacterCamera();
   const controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true;
   controls.dampingFactor=.10;
@@ -63,8 +69,13 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const shadow=radialTexture();
   const temp=new THREE.Vector3(), offset=new THREE.Vector3(), ray=new THREE.Raycaster();
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
-  let world, population, state=null, following=null, selected=null, cameraMove=null;
-  let mode='auto', night=0, press=null, loaded=false, auditCursor=null;
+  let world, population, character, state=null, following=null, selected=null, cameraMove=null, drag=null;
+  const movement={x:0,y:0};
+  const characterActive=()=>character?.root.visible===true;
+  const viewCamera=()=>characterActive()?chase.camera:camera;
+  const viewTarget=()=>characterActive()?chase.focus:controls.target;
+  const viewZoom=()=>characterActive()?6:camera.zoom;
+  let mode='auto', night=0, press=null, loaded=false, auditCursor=null, suspended=false;
   const roomLabels=[];
   const bubble=document.createElement('div');
   const speakerName=document.createElement('strong'), dialogue=document.createElement('p');
@@ -74,7 +85,38 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   bubble.hidden=true;
   bubble.append(speakerName,dialogue);
   labels.append(bubble);
-  let shownTurn=null;
+  let shownTurn=null, lips=null;
+  const sound=createOfficeSpatialAudio();
+  const voice=createOfficeVoice(window,{
+    start(turn) {
+      if (lips?.turn!==turn) return;
+      lips.started=performance.now();
+      lips.timeline.align(0,0);
+    },
+    boundary(turn,index) {
+      if (lips?.turn===turn) lips.timeline.align(index,(performance.now()-lips.started)/1000);
+    },
+    end(turn) {
+      if (lips?.turn===turn) lips.finished=true;
+    },
+  });
+  const unlockAudio=()=>{ void sound.unlock(); };
+  window.addEventListener('pointerdown',unlockAudio);
+  window.addEventListener('keydown',unlockAudio);
+  const save=()=>population?.living.persist();
+  function clearMouth() {
+    lips?.turn.speaker.mouth?.fill(0);
+    lips=null;
+  }
+  const visibility=()=>{
+    if (!document.hidden) return;
+    save();
+    voice.show(null);
+    sound.clear();
+    clearMouth();
+  };
+  window.addEventListener('pagehide',save);
+  document.addEventListener('visibilitychange',visibility);
 
   function resize() {
     const width=host.clientWidth, height=host.clientHeight;
@@ -83,6 +125,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     const vertical=Math.max(26.4,34.5/aspect);
     Object.assign(camera,{left:-vertical*aspect,right:vertical*aspect,top:vertical,bottom:-vertical});
     camera.updateProjectionMatrix();
+    chase.resize(aspect);
     renderer.setSize(width,height,false);
   }
   const resizeObserver=new ResizeObserver(resize);
@@ -95,6 +138,11 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   function reset() {
     following=null;
+    if (characterActive()) {
+      chase.reset(character.root.rotation.y);
+      chase.update(character.root,0,host.clientWidth<650);
+      return;
+    }
     cameraMove={target:center.clone(),position:overview.clone(),zoom:1};
   }
 
@@ -106,21 +154,21 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   function focusRoom(id) {
     const room=roomById[id];
-    if (!room) return;
+    if (!room || characterActive()) return;
     following=null;
     focus(room.x,room.z,host.clientWidth<650?2.97:3.70);
   }
 
   function focusEmployee(id,follow=false) {
     const actor=population?.actors.find(item=>item.person.id===id);
-    if (!actor) return;
+    if (!actor || characterActive()) return;
     following=follow?id:null;
     focus(actor.root.position.x,actor.root.position.z,host.clientWidth<650?3.7:4.7);
   }
 
   function focusDisplay(room,type) {
     const view=world?.displays.focus(room,type);
-    if (!view) return;
+    if (!view || characterActive()) return;
     following=null;
     const target=view.center;
     const direction=view.normal.setY(room==='gaming'?1.2:.66).normalize().multiplyScalar(16);
@@ -130,9 +178,9 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   controls.addEventListener('start',()=>{cameraMove=null;following=null;});
   function updateCamera(delta) {
     const blend=1-Math.exp(-delta*7);
-    const actor=following && population?.actors.find(item=>item.person.id===following);
-    if (actor) {
-      temp.copy(actor.root.position).y=.55;
+    const root=following && population?.actors.find(item=>item.person.id===following)?.root;
+    if (root) {
+      temp.copy(root.position).y=.55;
       if (cameraMove) {
         offset.copy(temp).sub(cameraMove.target);
         cameraMove.target.add(offset);
@@ -173,21 +221,26 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const backgroundNight=new THREE.Color(evening.backdrop), sunNight=new THREE.Color(evening.key);
   const skyNight=new THREE.Color(evening.sky), groundNight=new THREE.Color(evening.ground);
 
-  function updateLabels() {
-    const width=host.clientWidth, height=host.clientHeight;
+  function updateLabels(width,height) {
+    const view=viewCamera(), zoom=viewZoom(), target=viewTarget();
+    const avatar=characterActive()?temp.copy(target).project(view):null;
+    const avatarX=avatar && (.5+avatar.x*.5)*width;
+    const avatarY=avatar && (.5-avatar.y*.5)*height;
     const boxes=[];
     const narrow=width<700;
     for (const {room,element,anchors} of roomLabels) {
       const focused=selected===room.id;
-      const relevant=camera.zoom<18 && (focused || (!narrow && camera.zoom<1.55) ||
-        (camera.zoom>1.48 && Math.hypot(controls.target.x-room.x,controls.target.z-room.z)<7.8));
+      const relevant=zoom<18 && (focused || (!narrow && zoom<1.55) ||
+        (zoom>1.48 && Math.hypot(target.x-room.x,target.z-room.z)<(characterActive()?5.5:7.8)));
       const labelWidth=Math.min(135,42+room.label.length*4);
       let position=null;
       if (relevant) {
         for (const anchor of anchors) {
-          temp.copy(anchor).project(camera);
+          temp.copy(anchor).project(view);
+          if (temp.z<=-1 || temp.z>=1) continue;
           const left=(temp.x*.5+.5)*width, top=(.5-temp.y*.5)*height;
           if (left<labelWidth/2+9 || left>width-labelWidth/2-9 || top<75 || top>height-74) continue;
+          if (avatar && Math.abs(left-avatarX)<labelWidth/2+width*.07 && Math.abs(top-avatarY)<height*.16) continue;
           const overlaps=boxes.some(item=>Math.abs(item.left-left)<(labelWidth+item.width)/2 && Math.abs(item.top-top)<24);
           if (overlaps && !focused) continue;
           position={left,top,width:labelWidth};
@@ -203,31 +256,49 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     }
   }
 
-  function updateSpeech() {
-    const width=host.clientWidth, height=host.clientHeight;
+  function updateSpeech(width,height) {
     let closest=null, distance=7.5, x, y;
-    if (population && camera.zoom>2.15 && state?.phase!=='paused') {
+    if (population && viewZoom()>2.15 && state?.phase!=='paused') {
+      const view=viewCamera(), target=viewTarget();
       const candidates=[...population.turns.values()];
       if (population.solo) candidates.push(population.solo);
       candidates.sort((a,b)=>Number(a!==shownTurn)-Number(b!==shownTurn));
+      if (population.directTurn) candidates.unshift(population.directTurn);
       for (const turn of candidates) {
         const actor=turn.speaker;
         const position=actor.root.position;
-        const range=Math.hypot(position.x-controls.target.x,position.z-controls.target.z);
+        const range=Math.hypot(position.x-target.x,position.z-target.z);
         if (range>=distance || (turn.solo && closest)) continue;
         temp.copy(position).y+=actor.stature+(actor.stage==='seated'?-.19:.15);
-        temp.project(camera);
+        temp.project(view);
+        if (temp.z<=-1 || temp.z>=1) continue;
         const left=(.5+temp.x*.5)*width, top=(.5-temp.y*.5)*height;
         if (left<42 || left>width-42 || top<146 || top>height-84) continue;
         closest=turn;
         distance=range;
         x=left;
         y=top;
-        if (turn===shownTurn) break;
+        if (turn===shownTurn || turn===population.directTurn) break;
       }
     }
     bubble.hidden=!closest;
+    if (lips?.turn!==closest) {
+      clearMouth();
+      if (closest) lips={turn:closest,timeline:createLipTimeline(closest.text,closest.duration),
+        started:performance.now(),finished:false};
+    }
+    voice.show(closest,THREE.MathUtils.clamp(1-distance/10,.30,.92));
     if (!closest) return;
+    const mouth=closest.speaker.mouth;
+    if (mouth) {
+      if (lips.finished) mouth.fill(0);
+      else {
+        const pose=lips.timeline.pose((performance.now()-lips.started)/1000);
+        mouth[0]=pose.open;
+        mouth[1]=pose.round;
+        mouth[2]=pose.wide;
+      }
+    }
     if (shownTurn!==closest) {
       shownTurn=closest;
       speakerName.textContent=closest.speaker.person.employee;
@@ -244,7 +315,12 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     onMessage('Menyiapkan kantor…');
     world=await buildWorld(scene,shadow);
     world.displays.sync(state);
-    population=await createActors(scene,navigation(world.obstacles),shadow,state,requestDialogue);
+    let storage;
+    try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
+    const nav=navigation(world.obstacles);
+    population=await createActors(scene,nav,shadow,state,requestDialogue,storage);
+    try { character=await createCharacter(scene,nav,shadow); }
+    catch (error) { console.error('Avatar Dika gagal dimuat',error); }
     for (const room of rooms) {
       const element=document.createElement('button');
       element.className='room-label';
@@ -268,15 +344,40 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   }
 
   renderer.domElement.addEventListener('pointerdown',event=>{
-    if (event.isPrimary && event.button===0) press=[event.clientX,event.clientY];
+    if (event.button!==0 || (characterActive()?drag:!event.isPrimary)) return;
+    press=[event.clientX,event.clientY];
+    if (characterActive()) {
+      drag={id:event.pointerId,x:event.clientX,y:event.clientY,moved:false};
+      renderer.domElement.setPointerCapture(event.pointerId);
+    }
   });
-  renderer.domElement.addEventListener('pointercancel',()=>{press=null;});
+  renderer.domElement.addEventListener('pointermove',event=>{
+    if (drag?.id!==event.pointerId || !press) return;
+    if (!drag.moved && Math.hypot(event.clientX-press[0],event.clientY-press[1])<5) return;
+    drag.moved=true;
+    chase.rotate(event.clientX-drag.x,event.clientY-drag.y);
+    drag.x=event.clientX;
+    drag.y=event.clientY;
+  });
+  const cancelPointer=()=>{press=null;drag=null;};
+  const cancelCapturedPointer=event=>{
+    if (characterActive()?event.pointerId===drag?.id:event.isPrimary) cancelPointer();
+  };
+  renderer.domElement.addEventListener('pointercancel',cancelCapturedPointer);
+  renderer.domElement.addEventListener('lostpointercapture',cancelCapturedPointer);
+  renderer.domElement.addEventListener('wheel',event=>{
+    if (!characterActive()) return;
+    event.preventDefault();
+    chase.zoom(event.deltaY<0?1.12:1/1.12);
+  },{passive:false});
   renderer.domElement.addEventListener('pointerup',event=>{
-    if (!event.isPrimary || !press || Math.hypot(press[0]-event.clientX,press[1]-event.clientY)>7) return;
-    press=null;
+    if (!press || (characterActive()?event.pointerId!==drag?.id:!event.isPrimary)) return;
+    const moved=drag?.moved || Math.hypot(press[0]-event.clientX,press[1]-event.clientY)>7;
+    cancelPointer();
+    if (moved) return;
     const bounds=host.getBoundingClientRect();
     pointer.set((event.clientX-bounds.left)/bounds.width*2-1,1-(event.clientY-bounds.top)/bounds.height*2);
-    ray.setFromCamera(pointer,camera);
+    ray.setFromCamera(pointer,viewCamera());
     const device=world?.displays.pick(ray,scene.children);
     if (device) { onDisplay(device); return; }
     const candidate=population?.actors.map(actor=>{
@@ -289,30 +390,53 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (room) onSelect(null,room.id);
   });
 
-  let lastFrame=performance.now();
+  let lastFrame=performance.now(), lastLabelUpdate=-Infinity;
   renderer.setAnimationLoop(now=>{
     const delta=Math.min((now-lastFrame)/1000,.65);
     lastFrame=now;
-    if (!host.clientWidth || document.hidden) return;
+    if (suspended || document.hidden) return;
+    const width=host.clientWidth, height=host.clientHeight;
+    if (!width || !height) return;
     if (population) {
       const steps=Math.max(1,Math.ceil(delta/.05));
-      const speechFocus=camera.zoom>2.15 ? controls.target : null;
-      for (let step=0;step<steps;step++) population.update(delta/steps,state,speechFocus);
+      const speechFocus=viewZoom()>2.15 ? viewTarget() : null;
+      for (let step=0;step<steps;step++) {
+        if (characterActive()) character.update(delta/steps,movement,chase.forward,population.actors);
+        population.update(delta/steps,state,speechFocus,viewZoom()<1.6,characterActive()?character.root:null);
+      }
       world?.showDockedControllers(population.game.players);
     }
-    updateCamera(delta);
+    if (characterActive()) chase.update(character.root,delta,width<650);
+    else {
+      updateCamera(delta);
+      camera.updateMatrixWorld();
+    }
+    const view=viewCamera(), target=viewTarget(), zoom=viewZoom();
     refreshLighting(delta);
     const lounge=roomById.gaming;
-    const gameVisible=camera.zoom>=2 && Math.hypot(controls.target.x-lounge.x,controls.target.z-lounge.z)<10;
-    world?.displays.update(now,camera.zoom,population?.game,gameVisible);
-    renderer.render(scene,camera);
-    updateLabels();
-    updateSpeech();
+    const gameVisible=zoom>=2 && Math.hypot(target.x-lounge.x,target.z-lounge.z)<10;
+    world?.displays.update(now,zoom,population?.game,gameVisible);
+    updateSpeech(width,height);
+    if (population && zoom>2.15 && state?.phase!=='paused') sound.update(population.actors,target,view.position);
+    else sound.clear();
+    renderer.render(scene,view);
+    if (now-lastLabelUpdate>=45) {
+      updateLabels(width,height);
+      lastLabelUpdate=now;
+    }
   });
 
   return {
     load,reset,focusRoom,focusEmployee,focusDisplay,
     dispose() {
+      save();
+      voice.stop();
+      sound.dispose();
+      clearMouth();
+      window.removeEventListener('pagehide',save);
+      window.removeEventListener('pointerdown',unlockAudio);
+      window.removeEventListener('keydown',unlockAudio);
+      document.removeEventListener('visibilitychange',visibility);
       renderer.setAnimationLoop(null);
       resizeObserver.disconnect();
       controls.dispose();
@@ -324,6 +448,66 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     },
     displayTypes(room) { return world?.displays.types(room) ?? []; },
     gamePlayers() { return population?.game.players.size ?? 0; },
+    employeeLife(id) { return population?.living.snapshot(id); },
+    nearbyEmployee() {
+      if (!characterActive()) return null;
+      const from=character.root.position;
+      let closest=null, distance=3;
+      for (const actor of population.actors) {
+        const to=actor.root.position;
+        const range=Math.hypot(to.x-from.x,to.z-from.z);
+        if (range>=distance || !character.canInteract(to)) continue;
+        closest=actor.person.id;
+        distance=range;
+      }
+      return closest;
+    },
+    interact(id,action) {
+      if (!characterActive()) return 'Masuk ke mode Dika dulu.';
+      const actor=population.actors.find(item=>item.person.id===id);
+      if (!actor) return 'Pegawai belum tersedia.';
+      if (action==='invite') return population.invite(actor,state);
+      if (actor.root.position.distanceTo(character.root.position)>3.1 || !character.canInteract(actor.root.position))
+        return 'Dekati '+actor.person.employee+' untuk mengobrol.';
+      return population.chat(actor,state);
+    },
+    hasCharacter() { return Boolean(character); },
+    partner(id) {
+      const actor=population?.actors.find(item=>item.person.id===id);
+      character?.setPartner(actor?.figure.getObjectByName('body-mesh') ?? null);
+    },
+    characterMode(enabled) {
+      if (!character || enabled===characterActive()) return characterActive();
+      if (enabled) {
+        if (!character.enable(true,population.actors)) return false;
+        following=null;
+        cameraMove=null;
+        controls.enabled=false;
+        reset();
+      } else {
+        character.enable(false,population.actors);
+        population.clearInteraction();
+        controls.enabled=true;
+        cancelPointer();
+        movement.x=movement.y=0;
+      }
+      return enabled;
+    },
+    moveCharacter(x,y) { movement.x=x; movement.y=y; },
+    voice(enabled) { voice.enable(enabled); },
+    spatialAudio(enabled) {
+      sound.enable(enabled);
+      if (enabled) unlockAudio();
+    },
+    suspend(value) {
+      suspended=value;
+      if (value) {
+        save();
+        voice.show(null);
+        sound.clear();
+        clearMouth();
+      }
+    },
     state(value) {
       if (!value) return;
       if (auditCursor!==null) {
@@ -345,12 +529,14 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
         x:actor.root.position.x,z:actor.root.position.z,y:actor.root.position.y};
     },
     follow(id) {
+      if (characterActive()) return false;
       if (following===id) { following=null; return false; }
       focusEmployee(id,true);
       return true;
     },
     isFollowing(id) { return following===id; },
     zoom(factor) {
+      if (characterActive()) { chase.zoom(factor); return; }
       cameraMove=null;
       camera.zoom=THREE.MathUtils.clamp(camera.zoom*factor,controls.minZoom,controls.maxZoom);
       camera.updateProjectionMatrix();

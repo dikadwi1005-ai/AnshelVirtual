@@ -146,3 +146,21 @@ PR #7 dikembangkan ulang dari notifikasi satu bot menjadi grup Telegram 12 ident
 ## Checkpoint Phase 3B — Natural Telegram AI chat
 
 PR berikutnya menambah dua endpoint `office-group/ai/prepare` dan `office-group/ai/finish`, tiket satu-kali-pakai, memori singkat per divisi di anshel.setting, 12 persona yang berbeda, prompt berbasis status tugas, serta alur n8n baru yang memakai kredensial Gemini lama. Workflow Telegram lama tidak diubah dan tetap sebagai rollback. Perintah kantor tetap deterministik. Batas pesan tetap 20 per hari WIB, jeda 8 detik; percakapan bebas dapat memakai kuota Gemini terpisah. Tidak mengaktifkan bot maupun workflow pada Vercel/n8n secara otomatis; perlu pemeriksaan CI dan uji n8n langsung.
+
+## Checkpoint Phase 4 · Living Office
+
+Implementasi, cara menguji, hasil pemeriksaan 12 pegawai, dan batas verifikasi dicatat di [checkpoint Living Office](phase-4-living-office.md).
+
+## Checkpoint Phase 5 · Mode karakter
+
+Mode pengamat dan **Main sebagai Dika** dapat ditukar dari kontrol kamera. Kamera mengikuti Dika saat memakai WASD, tombol panah, atau tombol sentuh. Avatar mulai dari Ruang Dika dan memakai model jas dari aset lokal. Geraknya menghormati penghalang denah dan jarak dari pegawai.
+
+**Pengaturan → Pasangan Dika** menyimpan pilihan di browser. Pilihan awal kosong. Pegawai perempuan yang dipilih memakai jas dan dasi senada sambil mempertahankan wajah, rambut, dan rutinitasnya. Menghapus pilihan mengembalikan pakaian aslinya.
+
+**Tested dan Visually Verified.** Build dan 165 tes lulus. Chrome lokal menguji keyboard, tekan dan tahan pada viewport sentuh 390 × 844, kembali ke pengamat, pilihan pasangan setelah reload, gerak diagonal, geser sepanjang penghalang, serta pemulihan pakaian. Gambar lokal mencakup mode Dika di desktop dan ponsel serta perbandingan jas. Perangkat sentuh fisik belum diuji. Panggilan pegawai, editor denah, dan rapat interaktif masuk checkpoint berikutnya.
+
+**Kamera third-person.** Mode Dika memakai kamera perspektif di belakang bahu. Seret area 3D untuk memutar pandangan dan gunakan kontrol zoom untuk mengubah jarak. Tombol reset mengembalikan kamera ke belakang Dika. Arah berjalan mengikuti pandangan, sementara kamera mendekat saat dinding menghalangi jalurnya. Mode pengamat tetap memakai kamera denah.
+
+**Kontrol ponsel.** Joystick kiri mengatur arah dan kecepatan. Jari kedua bisa memutar kamera sambil berjalan. Build, 165 tes, dan uji multisentuh Chrome 390 × 844 lulus. Untuk rilis akhir, jalur iPhone adalah web app dari Safari melalui **Bagikan → Tambahkan ke Layar Utama → Buka sebagai App Web**. Manifest sudah memakai mode standalone dan ikon layar utama tersedia. Uji pemasangan dan performa di perangkat iPhone fisik masih menjadi bagian verifikasi rilis. [Panduan Apple](https://support.apple.com/en-lamr/guide/iphone/iphea86e5236/ios).
+
+**Interaksi pegawai.** Di mode Dika, tekan **E** atau **Interaksi** di dekat pegawai untuk membuka panel aktivitas. Pilih **Ajak ngobrol** untuk bubble dan riwayat lokal. **Panggil ke Atrium** memesan titik temu yang bisa dijangkau untuk satu pegawai. Pegawai dengan tugas aktif tetap menangani tugasnya. Chrome menguji pemanggilan, kedatangan, pembukaan bubble pada simulasi, pencatatan riwayat, dan respons saat simulasi dijeda.

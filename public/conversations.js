@@ -13,6 +13,10 @@ const prompts={
     'enak juga ngobrol sebentar di teras.',
     'mau rehat di sini sebentar lagi?',
   ],
+  meeting:[
+    'kita cocokkan agenda dulu sebelum mulai?',
+    'ada catatan yang perlu dibawa ke pertemuan berikutnya?',
+  ],
 };
 const casual=[
   ['katanya biskuit pantri tinggal satu. Kamu tahu ceritanya?', 'Tadi masih ada tiga. Mungkin yang dua lagi ikut rapat.', 'Besok kita bawa stok cadangan, deh.', 'Setuju. Tapi kali ini kasih nama di toplesnya.'],
@@ -20,10 +24,11 @@ const casual=[
   ['ada rekomendasi lagu buat perjalanan pulang?', 'Aku lagi suka musik yang bisa diputar tanpa ikut nyanyi.', 'Nah, itu baru cocok buat naik kendaraan umum.', 'Nanti kita tukeran playlist.'],
 ];
 
-export function chooseConversationAnchor(actor,reservations,isAvailable) {
-  const existing=[actor.pending,actor.anchor].find(anchor=>anchor?.conversation);
+export function chooseConversationAnchor(actor,reservations,isAvailable,room) {
+  const existing=[actor.pending,actor.anchor].find(anchor=>anchor?.conversation && (!room || anchor.conversation===room));
   if (existing) return existing;
-  const groups=conversationAnchors.map(slots=>({slots,occupied:slots.filter(slot=>reservations.has(slot.id)).length}));
+  const groups=conversationAnchors.filter(slots=>!room || slots[0].conversation===room)
+    .map(slots=>({slots,occupied:slots.filter(slot=>reservations.has(slot.id)).length}));
   groups.sort((a,b)=>b.occupied-a.occupied);
   for (const {slots} of groups) {
     const filled=slots.filter(slot=>reservations.has(slot.id));
@@ -37,6 +42,11 @@ export function chooseConversationAnchor(actor,reservations,isAvailable) {
 }
 
 function line(room,round,index,other,office) {
+  if (room==='meeting') return [
+    other.employee+', '+prompts.meeting[round%2],
+    'Boleh. Aku urutkan dulu hal yang perlu kita bahas.',
+    'Oke, sisanya kita cek lagi setelah kembali ke meja.',
+  ][index];
   if (round%4!==0) {
     const text=casual[round%4-1][index];
     return index===0 ? other.employee+', '+text : text;
@@ -54,9 +64,10 @@ function line(room,round,index,other,office) {
   return 'Oke, sampai ketemu lagi di kantor.';
 }
 
-export function createConversations() {
+export function createConversations(onTurn=()=>{}) {
   const sessions=new Map();
   const turns=new Map();
+  const rounds=new Map();
   return {
     turns,
     update(delta,groups,office,focus,request) {
@@ -65,12 +76,12 @@ export function createConversations() {
         if (members.length<2) continue;
         let session=sessions.get(room);
         if (!session) {
-          session={remaining:.45,round:0,index:0,last:null,turn:null};
+          session={remaining:.45,round:rounds.get(room) ?? 0,index:0,last:null,turn:null};
           sessions.set(room,session);
         }
         const count=Math.max(3,members.length);
         const [x,z]=members[0].anchor?.center ?? [];
-        if (request && focus && session.index===0 && !session.script && Math.hypot(focus.x-x,focus.z-z)<7) {
+        if (request && room!=='meeting' && focus && session.index===0 && !session.script && Math.hypot(focus.x-x,focus.z-z)<7) {
           const first=(members.indexOf(session.last)+1)%members.length;
           const order=[...members.slice(first),...members.slice(0,first)];
           const script={order,lines:null};
@@ -80,7 +91,7 @@ export function createConversations() {
             if (session.script!==script || session.index!==0 || lines.length!==count) return;
             script.lines=lines;
             session.remaining=Math.min(session.remaining,.12);
-          });
+          }).catch(()=>{});
         }
         if (session.script?.lines && (session.script.order.length!==members.length ||
             !members.every(member=>session.script.order.includes(member)))) session.script.lines=null;
@@ -95,7 +106,7 @@ export function createConversations() {
             session.remaining=.35;
           } else if (session.index>=count) {
             session.index=0;
-            session.round++;
+            session.round=(rounds.get(room) ?? session.round+1);
             session.remaining=4;
             session.script=null;
           } else {
@@ -105,10 +116,13 @@ export function createConversations() {
             const script=session.script;
             const generated=script?.lines && script.order[session.index%members.length]===speaker && script.lines[session.index];
             const text=generated || line(room,session.round,session.index,other.person,office);
-            session.turn={speaker,other,text};
+            const duration=Math.max(2.65,text.length/17);
+            session.turn={speaker,other,text,duration};
+            if (session.index===0) rounds.set(room,session.round+1);
+            onTurn(session.turn,members,room);
             session.last=speaker;
             session.index++;
-            session.remaining=Math.max(2.65,text.length/17);
+            session.remaining=duration;
           }
         }
         if (session.turn) turns.set(room,session.turn);
@@ -134,7 +148,7 @@ export function createMonologues() {
       const eligible=actor=>{
         const plan=office?.people?.[actor.person.id];
         const group=groups.get(actor.anchor.conversation);
-        return focus && !plan?.task && plan?.activity===actor.actual && reflections[actor.actual] &&
+        return focus && !(plan?.taskLock ?? plan?.task) && plan?.activity===actor.actual && reflections[actor.actual] &&
           (actor.stage==='arrived' || actor.stage==='seated') && (group?.length ?? 0)<2 &&
           Math.hypot(actor.root.position.x-focus.x,actor.root.position.z-focus.z)<5;
       };
@@ -154,7 +168,7 @@ export function createMonologues() {
         if (pool.length) {
           const speaker=pool[sequence%pool.length];
           const lines=reflections[speaker.actual];
-          const remark={speaker,text:lines[sequence%lines.length],solo:true};
+          const remark={speaker,text:lines[sequence%lines.length],solo:true,duration:2.9};
           if (request) {
             pending=remark;
             remaining=1.8;
@@ -162,7 +176,7 @@ export function createMonologues() {
               if (pending!==remark) return;
               if (lines.length===1) remark.text=lines[0];
               remaining=0;
-            });
+            }).catch(()=>{});
           } else { turn=remark; remaining=2.9; }
           previous=speaker;
           sequence++;

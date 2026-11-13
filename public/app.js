@@ -1,4 +1,5 @@
 import { activities, divisions, timezone } from './catalog.js';
+import { createCharacterStick } from './character-input.js';
 import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
 import { rooms, roomById, wings } from './layout.js';
@@ -33,6 +34,43 @@ let scene, office, poller, refreshing, toastTimer, clockOffset = 0;
 let openingScene=false;
 let taskKey = null;
 let lighting = localStorage.getItem('anshel-lighting') ?? 'auto';
+let voiceEnabled = localStorage.getItem('anshel-office-voice')==='on';
+let spatialAudio = localStorage.getItem('anshel-office-spatial-audio')==='on';
+const partnerChoices=divisions.filter(person=>employeeProfile(person.id).presentation==='perempuan');
+let partner=partnerChoices.find(person=>person.id===localStorage.getItem('anshel-partner'))?.id ?? '';
+let characterActive=false;
+const movementKeys=new Map();
+const analog={x:0,y:0};
+const keyDirections={KeyW:'up',ArrowUp:'up',KeyS:'down',ArrowDown:'down',
+  KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right'};
+
+function updateMovement() {
+  const directions=new Set(movementKeys.values());
+  scene?.moveCharacter(Number(directions.has('right'))-Number(directions.has('left'))+analog.x,
+    Number(directions.has('up'))-Number(directions.has('down'))+analog.y);
+}
+
+const stick=createCharacterStick($('character-stick'),(x,y)=>{
+  analog.x=x;
+  analog.y=y;
+  updateMovement();
+});
+
+function clearMovement() {
+  movementKeys.clear();
+  stick.reset();
+}
+
+function setCharacterMode(enabled) {
+  characterActive=scene?.characterMode(enabled) ?? false;
+  clearMovement();
+  const button=$('character-mode');
+  button.classList.toggle('active',characterActive);
+  button.setAttribute('aria-pressed',String(characterActive));
+  button.title=characterActive?'Kembali ke mode pengamat':'Main sebagai Dika';
+  button.setAttribute('aria-label',button.title);
+  $('character-controls').hidden=!characterActive;
+}
 let latestAudit = null;
 let pendingPanelRefresh = false;
 
@@ -69,6 +107,8 @@ function notice(message) {
 
 function showLogin() {
   clearInterval(poller);
+  setCharacterMode(false);
+  scene?.suspend(true);
   $('workspace').hidden = true;
   $('auth').hidden = false;
   if ($('task-dialog').open) $('task-dialog').close();
@@ -79,6 +119,7 @@ async function enter() {
   $('workspace').hidden = false;
   $('auth').hidden = true;
   await refresh(true);
+  scene?.suspend(false);
   clearInterval(poller);
   poller = setInterval(()=>refresh().catch(error=>notice(error.message)),1500);
   if (scene || openingScene) return;
@@ -91,8 +132,12 @@ async function enter() {
     },openWorkstation,input=>api('dialogue',input).then(result=>result.lines).catch(()=>[]),
     {low:graphicsPreference()});
     scene.state(office);
+    scene.voice(voiceEnabled);
+    scene.spatialAudio(spatialAudio);
     setLighting(lighting);
     await scene.load();
+    scene.partner(partner);
+    $('character-mode').disabled=!scene.hasCharacter();
     if (panel==='office') render();
   } catch(error) {
     console.error('Gagal membuka kantor 3D',error);
@@ -187,6 +232,7 @@ function updateEmployee() {
   const element=$('employee-status');
   if (!element || !plan) return;
   const actor=scene?.actorState(selected);
+  const life=scene?.employeeLife(selected);
   if (actor) {
     element.dataset.stage=actor.stage;
     element.dataset.animation=actor.animation;
@@ -194,13 +240,25 @@ function updateEmployee() {
   const moving=['walking','aligning','sitting','departing'].includes(actor?.stage);
   const workStatus=plan.executing?'Eksekusi berjalan':plan.task?.status==='blocked'?'Tugas terhambat':
     plan.task ? (!office.worker || !office.capabilities.includes(plan.task.kind) ? 'Menunggu worker' : 'Dalam antrean') : 'Tanpa tugas aktif';
-  const activity=moving ? (plan.task?'Menuju meja kerja':'Berjalan') :
-    plan.task && !plan.executing ? 'Siap di meja' : actor?.animation==='speak'?'Sedang berbicara':activities[actor?.activity ?? plan.activity];
+  const activity=moving ? (plan.executing?'Menuju meja kerja':'Berjalan') :
+    actor?.animation?.endsWith('speak')?'Sedang berbicara':activities[actor?.activity ?? plan.activity];
   const markup=stats([
     ['Aktivitas',activity],['Status kerja',workStatus],
-    ['Suasana hati',plan.mood],['Energi',plan.energy+'%'],
+    ['Suasana hati',life?.mood ?? plan.mood],
+    ...(life ? [['Energi',life.needs.energy],['Fokus',life.needs.focus],['Sosial',life.needs.social],
+      ['Istirahat',life.needs.rest],['Hiburan',life.needs.fun]].map(([label,value])=>[label,value+'%']) :
+      [['Energi',plan.energy+'%']]),
   ])+(plan.task?'<p class="status-text">'+escape(plan.task.description)+'</p>':'');
   if (element.innerHTML!==markup) element.innerHTML=markup;
+  const social=$('employee-social');
+  if (!social) return;
+  const details=(life?.relations.length?'<p class="section-label">Rekan yang sering diajak bicara</p>'+
+    stats(life.relations.map(({id,value})=>[team(id).employee,value+'%'])):'')+
+    '<p class="section-label">Obrolan terakhir</p>'+
+    (life?.history.length?'<ul class="task-list">'+life.history.map(item=>'<li class="task-card"><strong>'+
+      escape(team(item.speaker).employee)+' · '+escape(item.room==='dika'?'Obrolan dengan Dika':roomById[item.room]?.label ?? activities[item.room] ?? 'Kantor')+
+      '</strong><p>'+escape(item.text)+'</p></li>').join('')+'</ul>':'<p class="status-text">Belum ada obrolan tercatat.</p>');
+  if (social.innerHTML!==details) social.innerHTML=details;
 }
 
 function renderOffice() {
@@ -209,9 +267,11 @@ function renderOffice() {
     const profile=employeeProfile(person.id);
     title(person.name,person.employee);
     $('panel-content').innerHTML = stats([['Jabatan',person.role],['Keahlian',person.specialty],['Kepribadian',person.personality],
-      ['Tampilan',profile.presentation],['Pakaian',profile.outfit]])+
-      '<div id="employee-status"></div><div class="context-actions"><button id="focus-employee" type="button">Fokus karyawan</button><button id="follow" type="button">'+
-      (scene?.isFollowing(selected)?'Berhenti mengikuti':'Ikuti dengan kamera')+'</button></div>'+
+      ['Tampilan',profile.presentation],['Pakaian',person.id===partner?'Jas formal senada dengan Dika':profile.outfit]])+
+      '<div id="employee-status"></div><div class="context-actions">'+(characterActive?
+        '<button id="chat-employee" type="button">Ajak ngobrol</button><button id="invite-employee" type="button">Panggil ke Atrium</button>':
+        '<button id="focus-employee" type="button">Fokus karyawan</button><button id="follow" type="button">'+
+        (scene?.isFollowing(selected)?'Berhenti mengikuti':'Ikuti dengan kamera')+'</button>')+'</div><div id="employee-social"></div>'+
       '<p class="section-label">Tugas terbaru</p>'+renderTasks(office.tasks.filter(task=>task.division===person.id).slice(0,3),false);
     updateEmployee();
     return;
@@ -308,6 +368,9 @@ function renderSettings() {
     '<label>Mode kantor<select name="mode">'+optionList(Object.entries(modeNames),mode)+'</select></label>'+
     '<label>Pencahayaan<select id="lighting">'+optionList([['auto','Otomatis · WIB'],['day','Siang'],['evening','Malam']],lighting)+'</select></label>'+
     '<label>Kualitas grafis<select id="quality">'+optionList([['auto','Otomatis (HP lebih ringan)'],['normal','Standar'],['low','Ringan']],localStorage.getItem('anshel-quality')??'auto')+'</select></label>'+
+    '<label>Pasangan Dika<select id="character-partner">'+optionList([['','Belum dipilih'],...partnerChoices.map(person=>[person.id,person.employee])],partner)+'</select></label>'+
+    '<label>Suara dialog<select id="office-voice">'+optionList([['off','Subtitle'],['on','Suara Indonesia jika tersedia']],voiceEnabled?'on':'off')+'</select></label>'+
+    '<label>Suara langkah<select id="office-spatial-audio">'+optionList([['off','Mati'],['on','Aktif saat kamera dekat']],spatialAudio?'on':'off')+'</select></label>'+
     '<dl class="stats"><div><dt>Dialog</dt><dd id="dialogue-status">'+(dialogueNames[office.dialogueStatus] ?? dialogueNames.disabled)+'</dd></div></dl>'+
     '<p class="section-label">Jadwal · WIB</p><div class="form-grid">'+Object.entries(scheduleFields).map(([key,label])=>
       '<label>'+label+'<input type="time" name="'+key+'" required value="'+escape(schedule[key])+'"></label>').join('')+'</div>'+
@@ -408,6 +471,12 @@ $('panel-content').addEventListener('click',async event=>{
     return;
   }
   if (button.dataset.employee) return select(button.dataset.employee);
+  if (button.id==='chat-employee' || button.id==='invite-employee') {
+    const message=scene?.interact(selected,button.id==='invite-employee'?'invite':'chat');
+    if (message) notice(message);
+    else setPanel(null);
+    return;
+  }
   if (button.dataset.room) return select(null,button.dataset.room);
   if ('directory' in button.dataset) return select(null);
   if (button.id==='focus-employee') return scene?.focusEmployee(selected);
@@ -428,6 +497,22 @@ $('panel-content').addEventListener('click',async event=>{
 $('panel-content').addEventListener('change',async event=>{
   const field=event.target;
   if (field.id==='lighting') setLighting(field.value);
+  if (field.id==='character-partner') {
+    partner=partnerChoices.find(person=>person.id===field.value)?.id ?? '';
+    if (partner) localStorage.setItem('anshel-partner',partner);
+    else localStorage.removeItem('anshel-partner');
+    scene?.partner(partner);
+  }
+  if (field.id==='office-voice') {
+    voiceEnabled=field.value==='on';
+    localStorage.setItem('anshel-office-voice',field.value);
+    scene?.voice(voiceEnabled);
+  }
+  if (field.id==='office-spatial-audio') {
+    spatialAudio=field.value==='on';
+    localStorage.setItem('anshel-office-spatial-audio',field.value);
+    scene?.spatialAudio(spatialAudio);
+  }
   if (field.id==='quality') {
     if (field.value==='auto') localStorage.removeItem('anshel-quality');
     else localStorage.setItem('anshel-quality',field.value);
@@ -471,6 +556,7 @@ const icons = {zoomIn:'<path d="M6 12h12M12 6v12"/>',zoomOut:'<path d="M6 12h12"
   moon:'<path d="M19.5 14.5A7.7 7.7 0 0 1 9.5 4.4 8 8 0 1 0 19.5 14.5Z"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
   settings:'<path d="M5 6h14M5 12h14M5 18h14M9 4v4m6 2v4m-6 2v4"/>',
+  character:'<circle cx="12" cy="7" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/>',
   map:'<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6zm6-2v14m6-12v14"/>',
   project:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   activity:'<path d="M3 12h4l3-6 4 12 3-6h4"/>',
@@ -497,6 +583,48 @@ function syncLightingControl() {
   button.dataset.next=next;
 }
 $('light-toggle').addEventListener('click',()=>setLighting($('light-toggle').dataset.next ?? 'evening'));
+function toggleCharacterMode() {
+  const enable=!characterActive;
+  setCharacterMode(enable);
+  if (enable && characterActive) setPanel(null);
+  else if (enable) notice('Area masuk Dika sedang terhalang. Coba lagi sebentar.');
+}
+const characterButton=$('character-mode');
+function openNearbyEmployee() {
+  const id=scene?.nearbyEmployee();
+  if (id) select(id);
+  else notice('Dekati pegawai untuk berinteraksi.');
+}
+$('interact-employee').addEventListener('click',openNearbyEmployee);
+let lastTouchToggle=-Infinity;
+characterButton.addEventListener('pointerup',event=>{
+  if (event.pointerType!=='touch' || characterButton.disabled ||
+      !characterButton.contains(document.elementFromPoint(event.clientX,event.clientY))) return;
+  lastTouchToggle=performance.now();
+  toggleCharacterMode();
+});
+characterButton.addEventListener('click',event=>{
+  if (event.detail && performance.now()-lastTouchToggle<500) return;
+  toggleCharacterMode();
+});
+window.addEventListener('keydown',event=>{
+  if (!characterActive || event.altKey || event.ctrlKey || event.metaKey ||
+      event.target.closest?.('input,textarea,select,[contenteditable]') || $('task-dialog').open) return;
+  if (event.code==='KeyE') {
+    event.preventDefault();
+    if (!event.repeat) openNearbyEmployee();
+    return;
+  }
+  if (!keyDirections[event.code]) return;
+  event.preventDefault();
+  movementKeys.set(event.code,keyDirections[event.code]);
+  updateMovement();
+});
+window.addEventListener('keyup',event=>{
+  if (movementKeys.delete(event.code)) updateMovement();
+});
+window.addEventListener('blur',clearMovement);
+document.addEventListener('visibilitychange',()=>{ if (document.hidden) clearMovement(); });
 buttons('[data-camera]').forEach(button=>{
   const key=button.dataset.camera;
   button.addEventListener('click',async()=>{
