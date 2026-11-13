@@ -164,7 +164,7 @@ const personFrom=input=>divisionByName.get(input.toLowerCase()) ?? null;
 // Only match complete employee names, never substrings inside unrelated words.
 // Match names anywhere in a message so the owner can speak naturally.
 const employeeNamePattern=new RegExp('(^|[^A-Za-z0-9_])('+divisions.map(d=>d.employee).join('|')+')(?=$|[^A-Za-z0-9_])','ig');
-function getAddressedDivision(input,env) {
+export function getAddressedDivision(input,env) {
   const fromCommand=/^\/(?:tanya|ask)\s+([a-zA-Z0-9_]+)\s*\|\s*(.*)$/is.exec(input);
   if (fromCommand) return {division:personFrom(fromCommand[1]),text:fromCommand[2],explicit:true};
   const usernames=getUsernames(env);
@@ -191,6 +191,16 @@ function getAddressedDivision(input,env) {
   const found=employeeNamePattern.exec(prose);
   if(found) return {division:personFrom(found[2]),text:input,explicit:true};
   return {division:'management',text:input,explicit:false};
+}
+/** An inactive division cannot impersonate a connected Telegram bot. */
+export function inactiveOfficeAddress(input,env) {
+  const target=getAddressedDivision(input,env);
+  if(!target.explicit || !target.division || activeAuto.has(target.division))return null;
+  const person=divisions.find(d=>d.id===target.division);
+  return {division:target.division,text:person.employee+' ('+person.name+
+    ') belum aktif untuk percakapan Telegram saat ini. Aku Alya bisa mencatat tugas draf dengan /tugas '+
+    person.employee+' | instruksi, tetapi belum ada jaminan worker akan memprosesnya. '+
+    'Status tugas bisa diperiksa melalui dashboard Anshel.'};
 }
 function latestTask(state,division) {
   const tasks=(state.tasks||[]).filter(t=>t.division===division);
@@ -442,8 +452,14 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
     return {sent:true,division:target.id,acknowledgedBy:sender,createdTaskId:created.id};
   }
   const reply=officeGroupReply(await store.state(),data.text,env);
-  await sendOfficeBotMessage(env,reply.division,reply.text,{fetchImpl,silent});
-  return {sent:true,division:reply.division};
+  const inactive=inactiveOfficeAddress(data.text,env);
+  const configured=configuredOfficeBots(env).configured;
+  const sender=inactive || !activeAuto.has(reply.division)||!configured.includes(reply.division)
+    ?'management':reply.division;
+  const response=inactive?.text || (sender==='management'&&reply.division!=='management'
+    ?'Pegawai tersebut belum terhubung di Telegram. Tanyakan status melalui /monitor.':reply.text);
+  await sendOfficeBotMessage(env,sender,response,{fetchImpl,silent});
+  return {sent:true,division:sender,inactiveDivision:inactive?.division||null};
 }
 export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   officeGroupConfig(env);
