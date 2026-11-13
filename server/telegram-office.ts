@@ -13,6 +13,7 @@ const reactions={
   operations:{division:'management',text:'Oke, Bima. Makasih updatenya. Drafnya kita tinjau dulu sebelum digunakan, ya.'},
   administration:{division:'hr',text:'Makasih, Citra. Catatan drafnya sudah ada; kalau ada kebutuhan koordinasi tim nanti dibahas.'},
   hr:{division:'management',text:'Sip, Dara. Drafnya sudah tersedia. Kita lihat hasilnya dulu sebelum ada keputusan.'},
+  marketing:{division:'management',text:'Terima kasih, Jihan. Draf SEO dicatat untuk ditinjau; perubahan website belum dijalankan.'},
 };
 const workerReport={
   management:{
@@ -39,6 +40,12 @@ const workerReport={
       'Hasil draf terkait {subject} sudah ada. Masih perlu ditinjau sebelum dipakai untuk tim.'],
     blocked:['Draf SDM {subject} sedang terhambat. Aku belum punya hasil final yang bisa dipastikan.'],
     failed:['Draf SDM {subject} gagal dibuat. Belum ada hasil final untuk dibahas bersama.'],
+  },
+  marketing:{
+    completed:['Draf SEO {subject} sudah tersimpan. Angka traffic atau peringkat tetap perlu data terverifikasi.',
+      'Rencana SEO {subject} tersedia sebagai draf dan belum diterapkan ke situs mana pun.'],
+    blocked:['Draf SEO {subject} terhambat. Belum ada hasil audit atau pembaruan peringkat yang terverifikasi.'],
+    failed:['Pemrosesan draf SEO {subject} gagal. Belum ada hasil final.'],
   },
 };
 const clean=value=>String(value||'').replace(/[\r\n\t@]/g,' ').replace(/[<>]/g,'').trim().slice(0,75);
@@ -73,6 +80,17 @@ export function configuredOfficeBots(env) {
   const configured=divisions.filter(item=>typeof parsed[item.id]==='string'
     && /^[0-9]{5,15}:[A-Za-z0-9_-]{20,}$/.test(parsed[item.id])).map(item=>item.id);
   return {parsed,configured,missing:divisions.filter(item=>!configured.includes(item.id)).map(item=>item.id)};
+}
+/**
+ * Jihan is an opt-in fifth Telegram speaker. A configured marketing token
+ * without an explicit flag must never activate any dormant employee.
+ * This grants communication only, not website publishing or SEO API access.
+ */
+export function enabledOfficeDivisions(env) {
+  const enabled=[...automaticOfficeDivisions];
+  if(env?.ANSHEL_JIHAN_ENABLED==='true' &&
+     configuredOfficeBots(env).configured.includes('marketing'))enabled.push('marketing');
+  return enabled;
 }
 /** Optional Telegram typing hint, never a second message and never a proof of work. */
 export async function sendOfficeBotTyping(env,division,fetchImpl=fetch) {
@@ -131,11 +149,12 @@ export async function sendOfficeBotMessage(env,division,text,options={}) {
 function context(event) {
   return clean(event.project) ? 'proyek '+clean(event.project) : 'tugas terbaru';
 }
-export function officeTaskConversation(event) {
+export function officeTaskConversation(event,env=null) {
   const worker=divisions.find(d=>d.id===event.division);
   if (!worker || !Object.hasOwn(statusLabels,event.action)) return null;
   const subject=context(event);
-  if (activeAuto.has(worker.id)) {
+  const enabled=env?new Set(enabledOfficeDivisions(env)):activeAuto;
+  if (enabled.has(worker.id)) {
     const variants=workerReport[worker.id][event.action];
     const text=variants[event.eventId%variants.length].replace('{subject}',subject);
     let followUp=null;
@@ -201,7 +220,8 @@ export function getAddressedDivision(input,env) {
 /** An inactive division cannot impersonate a connected Telegram bot. */
 export function inactiveOfficeAddress(input,env) {
   const target=getAddressedDivision(input,env);
-  if(!target.explicit || !target.division || activeAuto.has(target.division))return null;
+  if(!target.explicit || !target.division ||
+    enabledOfficeDivisions(env).includes(target.division))return null;
   const person=divisions.find(d=>d.id===target.division);
   return {division:target.division,text:person.employee+' ('+person.name+
     ') belum aktif untuk percakapan Telegram saat ini. Aku Alya bisa mencatat tugas draf dengan /tugas '+
@@ -222,7 +242,7 @@ export function officeGroupReply(state,input,env) {
   if (msg==='/bantuan'||msg==='/help') return {division:'management',
     text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /kesehatan untuk status teknis dari Bima (IT), /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai. /kalender untuk tanggal merah. /rapat mulai TOPIK, /rapat catat CATATAN, /rapat putuskan KEPUTUSAN, /rapat selesai; /ingat TOPIK | CATATAN; /memori; /acara; /ingatkan YYYY-MM-DD HH:MM | PESAN; /mode normal atau diskusi; /hening on atau off. /serahkan ID | Nama; /revisi ID | instruksi; /tinjau ID; /setujui ID; /rapat tugas Nama | instruksi.'};
   if(/^\/(?:aktivitas|pegawai|monitor)$/i.test(msg))
-    return {division:'management',text:officeActivityReply(state,configuredOfficeBots(env).configured)};
+    return {division:'management',text:officeActivityReply(state,enabledOfficeDivisions(env))};
   if(/^\/(?:kalender|libur)$/i.test(msg)) {
     const calendar=officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,'libur nasional');
     const today=calendar.today;
@@ -276,8 +296,8 @@ export function officeGroupReply(state,input,env) {
     const division=check[1]&&personFrom(check[1]);
     if (!division) return {division:'management',
       text:'Untuk cek pegawai, pakai /cek Alya, /cek Bima, /cek Citra, atau /cek Dara.'};
-    if (!activeAuto.has(division)) return {division:'management',
-      text:'Saat ini /cek pegawai dipakai untuk Alya, Bima, Citra, dan Dara. '+
+    if (!enabledOfficeDivisions(env).includes(division)) return {division:'management',
+      text:'Saat ini /cek hanya tersedia untuk bot Telegram yang sudah diaktifkan. '+
       'Delapan pegawai lainnya belum diaktifkan untuk chat Telegram.'};
     const person=divisions.find(d=>d.id===division);
     const task=latestTask(state,division);
@@ -335,17 +355,19 @@ export function parseOfficeGroupTask(text) {
   return {division,description:match[2].trim(),kind:'draft',urgent:false};
 }
 /** Only explicit and specific drafts for four connected employees. */
-export function parseOwnerNaturalTask(text) {
+export function parseOwnerNaturalTask(text,env=null) {
   if(typeof text!=='string'||text.length>1500)return null;
   const value=text.trim();
-  const name='(Alya|Bima|Citra|Dara)';
+  const names=(env?enabledOfficeDivisions(env):automaticOfficeDivisions)
+    .map(id=>divisions.find(d=>d.id===id)?.employee).filter(Boolean).join('|');
+  const name='('+names+')';
   const verb='(?:buatkan|buat|susun|tulis|rangkum|rancang|siapkan|review|cek)';
   const direct=new RegExp('^(?:tolong|minta|suruh)\\s+'+name+'\\s+(?:untuk\\s+)?'+verb+'\\s+(.+)$','i').exec(value);
   const addressed=new RegExp('^'+name+'\\s*[,：:]\\s*(?:tolong|bantu)\\s+'+verb+'\\s+(.+)$','i').exec(value);
   const match=direct||addressed;
   if(!match)return null;
   const division=personFrom(match[1]);
-  if(!activeAuto.has(division))return null;
+  if(!(env?enabledOfficeDivisions(env):automaticOfficeDivisions).includes(division))return null;
   const description=match[2].trim();
   // Only queue textual drafts, never execute external actions.
   if(description.length<10||description.length>1200)return null;
@@ -446,7 +468,8 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
     if(taskAction.type==='revise') {
       const original=(await store.state()).tasks.find(t=>t.id===taskAction.id);
       if(!original)throw new Fault(404,'Tugas asal tidak terlihat di daftar tugas terbaru. Buka panel Tugas untuk detail.');
-      if(!activeAuto.has(original.division))throw new Fault(400,'Revisi Telegram hanya untuk empat divisi aktif.');
+      if(!enabledOfficeDivisions(env).includes(original.division))
+        throw new Fault(400,'Revisi Telegram hanya untuk divisi Telegram yang aktif.');
       const created=await store.create({division:original.division,kind:'draft',
         project:original.project||'Revisi Telegram',
         description:'Revisi atas tugas '+original.id+': '+taskAction.description},
@@ -464,7 +487,7 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
         ' (status '+acted.status+'). Ini serah-terima antrean, bukan hasil selesai.'
       :'Tindakan '+taskAction.type+' dicatat untuk tugas '+acted.id+
         ' (status '+acted.status+'). Ini perubahan status, bukan verifikasi hasil draf.';
-    await sendOfficeBotMessage(env,activeAuto.has(target)?target:'management',reply,{fetchImpl,silent});
+    await sendOfficeBotMessage(env,enabledOfficeDivisions(env).includes(target)?target:'management',reply,{fetchImpl,silent});
     return {sent:true,division:target,taskId:acted.id,action:taskAction.type};
   }
   const groupCommand=parseGroupWorkspaceCommand(data.text);
@@ -489,13 +512,13 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
       'Kalau ada bagian yang ingin dibahas, tuliskan isi atau ringkasannya di pesan teks.',{fetchImpl,silent});
     return {sent:true,division:'management',attachment:supported[data.mediaType],analyzed:false};
   }
-  const task=parseOfficeGroupTask(data.text)||parseOwnerNaturalTask(data.text);
+  const task=parseOfficeGroupTask(data.text)||parseOwnerNaturalTask(data.text,env);
   if(task) {
     const created=await store.create(task,'Pemilik · grup Telegram','office-group:'+updateId);
     const target=divisions.find(d=>d.id===task.division);
-    const pilotActive=activeAuto.has(target.id);
+    const pilotActive=enabledOfficeDivisions(env).includes(target.id);
     const botConnected=configuredOfficeBots(env).configured.includes(target.id);
-    // Only four pilot bots may speak, even when dormant division tokens are stored.
+    // Only the four pilot bots plus explicitly enabled Jihan may speak.
     const sender=pilotActive && botConnected?target.id:'management';
     const message=!pilotActive
       ?'Tugas untuk '+target.name+' tercatat dalam antrean (ID: '+created.id+
@@ -511,7 +534,8 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const reply=officeGroupReply(await store.state(),data.text,env);
   const inactive=inactiveOfficeAddress(data.text,env);
   const configured=configuredOfficeBots(env).configured;
-  const sender=inactive || !activeAuto.has(reply.division)||!configured.includes(reply.division)
+  const sender=inactive || !enabledOfficeDivisions(env).includes(reply.division)||
+    !configured.includes(reply.division)
     ?'management':reply.division;
   const response=inactive?.text || (sender==='management'&&reply.division!=='management'
     ?'Pegawai tersebut belum terhubung di Telegram. Tanyakan status melalui /monitor.':reply.text);
@@ -531,16 +555,15 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
     return routine||{sent:false};
   }
   const configured=new Set(configuredOfficeBots(env).configured);
-  // Ignore event types/identities outside this four-bot pilot. Mark them
-  // consumed without using daily quota or attempting an unconfigured bot.
-  if (!activeAuto.has(event.division)||!configured.has(event.division)) {
+  // Other seven dormant employee tokens remain excluded.
+  if (!enabledOfficeDivisions(env).includes(event.division)||!configured.has(event.division)) {
     await store.ackTelegramNotification(event.eventId,event.token,false);
     // Skipping an inactive division must not starve the end-of-day summary.
     const routine=await dispatchOfficeGroupRoutine(store,env,fetchImpl);
     return routine ? {...routine,skipped:'not-in-four-bot-pilot',eventId:event.eventId} :
       {sent:false,skipped:'not-in-four-bot-pilot',eventId:event.eventId};
   }
-  const message=officeTaskConversation(event);
+  const message=officeTaskConversation(event,env);
   if (!message) throw new Fault(500,'Audit tugas tidak bisa dipetakan ke pegawai kantor.');
   let replyId;
   try {
@@ -554,7 +577,7 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   }
   await store.ackTelegramNotification(event.eventId,event.token,true);
   let followedUp=false;
-  if (message.followUp && activeAuto.has(message.followUp.division) &&
+  if (message.followUp && enabledOfficeDivisions(env).includes(message.followUp.division) &&
       configured.has(message.followUp.division)) {
     try {
       await sendOfficeBotMessage(env,message.followUp.division,message.followUp.text,{fetchImpl,replyTo:replyId,silent});
@@ -597,7 +620,7 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
   const silent=settings?.quiet===true;
   if(officeSummaryDue(state)&&configured.has('management') &&
      await sendRoutineSignal(store,env,'daily-summary','management',
-       officeDailySummary(state),fetchImpl,silent)) {
+       officeDailySummary(state,enabledOfficeDivisions(env)),fetchImpl,silent)) {
     return {sent:true,kind:'daily-summary',division:'management'};
   }
   const workspace=typeof store.officeGroupWorkspace==='function'
@@ -630,7 +653,7 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
       '. Ini pengingat acara terdaftar, bukan bukti acaranya sudah berlangsung.',
       fetchImpl,silent))return {sent:true,kind:'internal-event',division:'management'};
   }
-  const warning=officeQueueDelayAlert(state);
+  const warning=officeQueueDelayAlert(state,enabledOfficeDivisions(env));
   if(warning&&configured.has('operations') &&
      await sendRoutineSignal(store,env,'queued-worker-silent','operations',warning,fetchImpl,silent)) {
     return {sent:true,kind:'queue-delay-alert',division:'operations'};
