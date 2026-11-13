@@ -232,7 +232,8 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         // For team calls, recall multiple colleagues' prior Telegram replies,
         // never just Alya's history. Never expose unrelated divisions.
         const groupHistory=recipients?recent
-          .filter(h=>recipients.includes(h.division))
+          .filter(h=>['management','operations','administration','hr',
+            ...['marketing','research','social'].filter(id=>recipients.includes(id))].includes(h.division))
           .slice(-12).map(h=>({division:h.division,question:h.question,reply:h.reply})) : null;
         const ticket=randomUUID();
         cleanPending[updateId]={ticket,division,question:question.trim(),until:now()+5*60_000,
