@@ -35,6 +35,18 @@ let openingScene=false;
 const presenceClient=crypto.randomUUID();
 let presenceTimer, presenceBusy=false, claimPresence=false;
 
+function releasePresence() {
+  const snapshot=scene?.sharedSnapshot();
+  if(!snapshot || $('workspace').hidden)return;
+  const body=JSON.stringify({client:presenceClient,snapshot,release:true});
+  void fetch('/api/office-presence',{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:true}).catch(()=>{});
+}
+window.addEventListener('pagehide',releasePresence);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)releasePresence();
+  else void syncPresence();
+});
+
 async function syncPresence() {
   if (!scene || presenceBusy || document.hidden || $('workspace').hidden) return;
   presenceBusy=true;
@@ -157,6 +169,7 @@ async function enter() {
     scene.spatialAudio(spatialAudio);
     setLighting(lighting);
     await scene.load();
+    void syncPresence();
     scene.partner(partner);
     $('character-mode').disabled=!scene.hasCharacter();
     if (panel==='office') render();

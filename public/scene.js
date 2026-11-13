@@ -71,6 +71,14 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
   let world, population, character, state=null, following=null, selected=null, cameraMove=null, drag=null;
   let shared=null, leading=false;
+  function restoreOffice(value) {
+    if (!population) return;
+    population.visible(value.leader || Boolean(value.snapshot));
+    population.apply(value.snapshot,value.leader);
+    if (!value.leader || state?.phase==='paused') return;
+    const seconds=value.snapshot?Math.min(75,(value.age??0)/1000):36+(Math.floor((state?.now??Date.now())/1000)%24);
+    population.catchUp(seconds,{...state,dialogueEnabled:false});
+  }
   const movement={x:0,y:0};
   const characterActive=()=>character?.root.visible===true;
   const viewCamera=()=>characterActive()?chase.camera:camera;
@@ -320,7 +328,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
     const nav=navigation(world.obstacles);
     population=await createActors(scene,nav,shadow,state,requestDialogue,storage);
-    if(shared) population.apply(shared.snapshot,leading);
+    if(shared) restoreOffice(shared);
+    else if(state?.phase!=='paused') population.catchUp(42,{...state,dialogueEnabled:false});
     try { character=await createCharacter(scene,nav,shadow); }
     catch (error) { console.error('Avatar Dika gagal dimuat',error); }
     for (const room of rooms) {
@@ -458,7 +467,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     sharedSnapshot() { return leading && population?.actors.length===12?population.capture():undefined; },
     sharedOffice(value) {
       if(!value)return;
-      if(!value.leader || !leading || value.resume) population?.apply(value.snapshot,value.leader);
+      if(!value.leader || !leading || value.resume) restoreOffice(value);
       leading=value.leader;
       shared=value;
     },

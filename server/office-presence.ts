@@ -17,7 +17,8 @@ const life=value=>value && typeof value.mood==='string' && value.mood.length<=32
 
 export function validPresence(input) {
   if(typeof input?.client!=='string'||!uuid.test(input.client)||
-     (input.takeOver!==undefined && typeof input.takeOver!=='boolean'))return false;
+     (input.takeOver!==undefined && typeof input.takeOver!=='boolean')||
+     (input.release!==undefined && typeof input.release!=='boolean'))return false;
   const snapshot=input.snapshot;
   if(snapshot===undefined)return true;
   if(!Array.isArray(snapshot?.actors)||snapshot.actors.length!==ids.size||
@@ -32,12 +33,21 @@ export function validPresence(input) {
 }
 
 export function exchangeOfficePresence(current,input,now) {
+  const age=()=>Math.max(0,now-(current?.savedAt??now));
+  if(input.release) {
+    if(current?.owner!==input.client||current.until<=now)
+      return {write:false,result:{leader:false,snapshot:current?.snapshot??null}};
+    const next={...current,until:now,
+      ...(input.snapshot?{snapshot:input.snapshot,savedAt:now}:{})};
+    return {write:true,next,result:{leader:false,snapshot:next.snapshot}};
+  }
   if(!input.takeOver && current?.owner!==input.client && current?.until>now)
     return {write:false,result:{leader:false,snapshot:current.snapshot}};
-  const snapshot=input.snapshot&&current?.owner===input.client&&current.until>now
-    ?input.snapshot:current?.snapshot??null;
+  const accepted=Boolean(input.snapshot&&current?.owner===input.client&&current.until>now);
+  const snapshot=accepted?input.snapshot:current?.snapshot??null;
   if(!input.snapshot&&current?.owner===input.client&&current.until>now&&current.until-now>2500)
     return {write:false,result:{leader:true,snapshot}};
-  const next={owner:input.client,until:now+5500,snapshot};
-  return {write:true,next,result:{leader:true,snapshot,resume:current?.owner!==input.client||current?.until<=now}};
+  const next={owner:input.client,until:now+5500,snapshot,savedAt:accepted?now:current?.savedAt};
+  return {write:true,next,result:{leader:true,snapshot,resume:current?.owner!==input.client||current?.until<=now,
+    ...(accepted?{}:{age:age()})}};
 }

@@ -18,9 +18,13 @@ test('office presence preserves a snapshot through refresh and rejects an old le
     assert.deepEqual(store.officePresence({client,snapshot}).snapshot,snapshot);
     assert.deepEqual(store.officePresence({client:next,snapshot}),{leader:false,snapshot});
     now+=5600;
-    assert.deepEqual(store.officePresence({client:next}),{leader:true,snapshot,resume:true});
+    assert.deepEqual(store.officePresence({client:next}),{leader:true,snapshot,resume:true,age:5600});
     assert.deepEqual(store.officePresence({client,snapshot}),{leader:false,snapshot});
     assert.equal(store.officePresence({client,takeOver:true}).leader,true);
     assert.deepEqual(store.officePresence({client:next}),{leader:false,snapshot});
+    assert.equal(store.officePresence({client,snapshot,release:true}).leader,false);
+    assert.deepEqual(store.officePresence({client:next}),{leader:true,snapshot,resume:true,age:0});
+    assert.equal(store.officePresence({client,snapshot,release:true}).leader,false);
+    assert.equal(store.officePresence({client:next}).leader,true);
   } finally { store.close(); }
 });

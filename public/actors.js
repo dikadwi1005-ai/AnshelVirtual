@@ -461,6 +461,12 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   return {
     errors,actors,turns:conversations.turns,game,living,
     capture,apply,followSnapshot,
+    visible(value) {
+      for(const actor of actors) actor.root.visible=actor.shadowMesh.visible=value;
+    },
+    catchUp(seconds,state) {
+      for(let remaining=seconds;remaining>0;remaining-=.05) this.update(Math.min(.05,remaining),state,null,true,null);
+    },
     get sharedTurn() { return sharedTurn; },
     get solo() { return solo; },
     get directTurn() { return actors.find(actor=>actor.directTurn)?.directTurn; },
