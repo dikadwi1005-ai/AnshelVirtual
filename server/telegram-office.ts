@@ -389,7 +389,7 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
       'Worker: '+(state.worker?'heartbeat teramati dalam 40 detik':'tidak ada heartbeat terbaru')+'.\n'+
       'Integrasi Auto Office: '+dispatcher+'.\n'+
       'Gemini, n8n Published, Vercel deployment, dan layanan eksternal: belum diuji langsung oleh pemeriksaan ini. ' +
-      'Tidak ada klaim semua sistem sehat.';
+      'Pemeriksaan kesehatan menyeluruh memerlukan sumber eksternal yang belum terhubung.';
     await sendOfficeBotMessage(env,'management',text,{fetchImpl});
     return {sent:true,division:'management',kind:'health-evidence'};
   }
