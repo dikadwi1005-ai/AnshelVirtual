@@ -124,6 +124,12 @@ export function createStore(path: string, now = Date.now) {
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)});
       });
     },
+    // An actual authenticated scheduler call is evidence of connectivity,
+    // not evidence of n8n workflow health or successful Gemini requests.
+    recordOfficeDispatchPulse() {
+      return transaction(()=>{writeSetting('office_dispatch_seen_v1',now());return true;});
+    },
+    officeDispatchPulse() {return readSetting('office_dispatch_seen_v1',null);},
     officeGroupWorkspace() {
       return readSetting('office_group_workspace_v1',emptyGroupWorkspace());
     },
