@@ -269,9 +269,13 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
       :question,data.replyTo);
   if(isCollectiveCall(question)||discussion||followup) {
     const available=availableOfficeResponders(state,configured,enabled);
-    const recipients=discussion?discussion.filter(id=>available.includes(id)):available;
+    // Keep the existing 12s n8n delivery budget: never send seven bot
+    // messages in one request. Rotate the five responders across calls.
+    const offset=available.length?Number(String(data.updateId).slice(-3))%available.length:0;
+    const rotated=available.slice(offset).concat(available.slice(0,offset));
+    const recipients=discussion?discussion.filter(id=>available.includes(id)):rotated.slice(0,5);
     if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
-    // All four currently busy or not connected: no ungrounded "all present" message.
+    // No available workers: do not claim anyone attended a discussion.
     if(!recipients.length) return {mode:'handled',sent:false,reason:'all-workers-busy-or-offline'};
     const saved=await store.prepareOfficeGroupAI(String(data.updateId),'management',contextQuestion,recipients);
     return {mode:'generate',updateId:String(data.updateId),ticket:saved.ticket,
@@ -280,7 +284,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
         buildOfficeCollectiveRequest(contextQuestion,recipients,state,saved.groupHistory,enabled),media)};
   }
   const quoted=ownerReplyContext(data);
-  const addressed=/^@?(?:Alya|Bima|Citra|Dara)\b\s*[,：:]/i.test(question.trim());
+  const addressed=/^@?(?:Alya|Bima|Citra|Dara|Jihan|Indra|Hana)\b\s*[,：:]/i.test(question.trim());
   // A reported API/server incident belongs to IT even when it replies to an
   // unrelated bot's earlier message. A direct employee address still wins.
   const technical=!addressed&&isTechnicalIncident(question);
