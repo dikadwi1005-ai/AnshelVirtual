@@ -1,5 +1,23 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3K — Grup Telegram: perbaikan klaim tidak terverifikasi (uji 13 Nov 2026)
+
+Screenshot pengujian `Guys, hari ini ada kabar apa?` menunjukkan empat balasan berikut, padahal ada satu tugas Citra yang nyata-nyata masih **antre**:
+
+- Alya: `Hari ini belum ada info baru yang masuk ke tim kita.`
+- Bima: `Semua sistem terpantau aman dan belum ada laporan kendala.`
+- Citra: `Arsip dan catatan harian masih belum ada penambahan data baru.`
+- Dara: `Suasana tim hari ini tetap kondusif dan saling mendukung.`
+
+Balasan seperti ini bukan pemeriksaan sistem maupun kondisi sosial pegawai. Backend sekarang:
+
+- Menyaring pernyataan **sistem terpantau aman**, **suasana tim kondusif/kompak**, **arsip tidak bertambah** tanpa dasar verifikasi.
+- Ketika pemilik meminta kabar atau status, memasukkan **snapshot tugas empat pegawai aktif** dan angka antrean yang benar-benar tercatat ke konteks Gemini.
+- Menolak pernyataan umum "tidak ada info baru" saat ada pekerjaan antre/berjalan/terhambat/gagal; mengganti balasan dengan komentar kontekstual sesuai peran, misalnya menyebut tugas Citra masih antre. Tidak mengarang tugas baru ataupun menyatakan worker telah memeriksa server.
+- Tetap membolehkan kalimat seperti "Belum punya hasil pemeriksaan server" dan "Tugas Citra masih antre". Pengecekan berlaku untuk grup dan percakapan satu pegawai.
+- Tidak mengubah jeda dua detik, kalender Indonesia, bot, token, workflow n8n, atau jadwal operasional. Satu deployment backend setelah GitHub CI cukup.
+
+
 ## Phase 3J — Jeda balasan grup dan kalender Indonesia
 
 ### Percakapan seperti chat manusia, bukan spam empat akun sekaligus
