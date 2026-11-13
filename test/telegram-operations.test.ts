@@ -266,3 +266,29 @@ test('busy target remains excluded from direct two-person discussion',async()=>{
     assert.deepEqual(prep.request.generationConfig.responseSchema.required,['management']);
   }finally{store.close();}
 });
+
+
+test('Telegram /aktivitas never prints undefined when a task has no project',()=>{
+  const state={worker:false,people:{
+    management:{activity:'read',executing:false},
+    administration:{activity:'coffee',executing:false},
+  },tasks:[
+    {division:'management',status:'completed',sha256:'abc123',project:null},
+    {division:'administration',status:'queued',project:'Agenda Rapat'},
+  ]};
+  const text=officeActivityReply(state);
+  assert.doesNotMatch(text,/undefined|null|\[object Object\]/i);
+  assert.match(text,/Alya:.*tanpa nama proyek, hasil draf tercatat/i);
+  assert.match(text,/Citra:.*Agenda Rapat, antre/i);
+});
+
+test('responsive UI keeps all five tabs visible including Monitor on mobile',async()=>{
+  const html=await readFile('public/index.html','utf8');
+  const css=await readFile('public/office.css','utf8');
+  const tabNames=['office','projects','monitor','audit','tasks'];
+  for(const name of tabNames)assert.match(html,new RegExp('data-panel="'+name+'"'));
+  assert.match(css,/\.actions\{left:10px;right:10px;bottom:10px;transform:none;/);
+  assert.match(css,/\.floating-task\{right:10px;bottom:65px;/);
+  assert.match(css,/\.nav-button\{position:relative;flex:1;min-width:0;/);
+  assert.match(css,/\.nav-button span\{position:static;width:auto;height:auto;overflow:visible;/);
+});
