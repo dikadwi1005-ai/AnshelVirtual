@@ -1,5 +1,21 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3M — Diskusi beberapa putaran, tindak lanjut rapat, dan notifikasi
+
+**Lanjutan diskusi dengan kendali pemilik:** saat rapat aktif, ketik \`/rapat lanjut\`. Keempat bot tersedia membahas agenda dan keputusan yang tersimpan dalam satu permintaan Gemini, dengan riwayat percakapan pendek. Setelah \`/mode diskusi\`, pesan pemilik seperti \`Lanjutkan\` atau \`Menurut kalian?\` juga melanjutkan pembahasan. Setiap putaran membutuhkan pesan **baru dari pemilik**; bot tidak saling memicu pesan berulang atau membuat biaya tanpa persetujuan.
+
+**Tindak lanjut yang benar-benar tercatat:**
+- \`/rapat tugas Citra | Susun draf notulen hasil evaluasi\` membuat tugas draf baru pada antrean Citra dan menautkan ID asli ke notulen rapat yang masih aktif.
+- \`/serahkan ID-TUGAS | Bima\` mengalihkan tugas yang masih boleh dipindahkan ke Bima. Tidak mengubah hasil yang sudah selesai atau menjalankan kode secara otomatis.
+- \`/tinjau ID-TUGAS\` menandai tugas dalam antrean untuk meminta peninjauan (\`awaiting_approval\`). \`/setujui ID-TUGAS\` mengembalikannya ke antrean menurut alur status backend; **ini bukan tanda hasil akhir sudah lolos review**.
+- \`/tolak ID-TUGAS\`, \`/ulang ID-TUGAS\`, \`/jeda ID-TUGAS\`, dan \`/batalkan ID-TUGAS\` menggunakan validasi status dan jejak audit yang sudah tersedia.
+- \`/revisi ID-TUGAS | Perjelas poin risiko dan tindak lanjut\` membuat **tugas draf baru** yang merujuk ID tugas asal. Tugas asal dan hasilnya tidak ditimpa diam-diam.
+
+**Pengaturan sosial:** pemilik dapat mengatur \`/notifikasi penting\` untuk menonaktifkan percakapan check-in santai; \`/notifikasi semua\` mengaktifkannya kembali. \`/hening on\` mengirim pesan tanpa suara notifikasi (tetap ada di grup). Acara internal yang didaftarkan lewat \`/acara YYYY-MM-DD | Nama acara\` diberitahukan satu kali pada pemanggilan Auto Office di tanggal yang cocok, jika notifikasi tidak dibatasi ke penting. **Jam dan hari pemanggilan bergantung pada jadwal workflow Auto Office yang Published**, sehingga acara akhir pekan/tanggal di luar jadwal tidak dijamin menerima pesan di tanggal itu.
+
+Hanya empat bot yang telah terhubung digunakan. Tidak ada tindakan eksternal, publikasi, pembayaran, atau percakapan otomatis tanpa perintah pemilik. Status draf dan hasil tetap terpisah. Kegagalan pengiriman Telegram tidak boleh dianggap bukti tugas berhasil.
+
+
 ## Phase 3K — Grup Telegram: perbaikan klaim tidak terverifikasi (uji 13 Nov 2026)
 
 Screenshot pengujian `Guys, hari ini ada kabar apa?` menunjukkan empat balasan berikut, padahal ada satu tugas Citra yang nyata-nyata masih **antre**:

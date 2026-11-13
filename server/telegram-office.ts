@@ -191,7 +191,7 @@ function latestTask(state,division) {
 export function officeGroupReply(state,input,env) {
   const msg=input.trim().slice(0,1500);
   if (msg==='/bantuan'||msg==='/help') return {division:'management',
-    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai. /kalender untuk tanggal merah. /rapat mulai TOPIK, /rapat catat CATATAN, /rapat putuskan KEPUTUSAN, /rapat selesai; /ingat TOPIK | CATATAN; /memori; /acara; /ingatkan YYYY-MM-DD HH:MM | PESAN; /mode normal atau diskusi; /hening on atau off.'};
+    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai. /kalender untuk tanggal merah. /rapat mulai TOPIK, /rapat catat CATATAN, /rapat putuskan KEPUTUSAN, /rapat selesai; /ingat TOPIK | CATATAN; /memori; /acara; /ingatkan YYYY-MM-DD HH:MM | PESAN; /mode normal atau diskusi; /hening on atau off. /serahkan ID | Nama; /revisi ID | instruksi; /tinjau ID; /setujui ID; /rapat tugas Nama | instruksi.'};
   if(/^\/(?:aktivitas|pegawai|monitor)$/i.test(msg))
     return {division:'management',text:officeActivityReply(state,configuredOfficeBots(env).configured)};
   if(/^\/(?:kalender|libur)$/i.test(msg)) {
@@ -320,6 +320,24 @@ export function parseOwnerNaturalTask(text) {
   if(description.length<10||description.length>1200)return null;
   return {division,description,kind:'draft',urgent:false};
 }
+/** Owner-only task actions; never called from model-generated instructions. */
+export function parseOwnerTaskAction(text) {
+  if(typeof text!=='string'||text.length>1500)return null;
+  const q=text.trim();
+  const uuid='([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})';
+  const relay=new RegExp('^/serahkan\\s+'+uuid+'\\s*\\|\\s*(Alya|Bima|Citra|Dara)$','i').exec(q);
+  if(relay)return {type:'assign',id:relay[1],division:personFrom(relay[2])};
+  const status=new RegExp('^/(tinjau|setujui|tolak|ulang|jeda|batalkan)\\s+'+uuid+'$','i').exec(q);
+  if(status)return {type:({tinjau:'review',setujui:'approve',tolak:'reject',
+    ulang:'retry',jeda:'pause',batalkan:'cancel'})[status[1].toLowerCase()],id:status[2]};
+  const revise=new RegExp('^/revisi\\s+'+uuid+'\\s*\\|\\s*(.{10,800})$','is').exec(q);
+  if(revise)return {type:'revise',id:revise[1],description:revise[2].trim()};
+  const meeting=/^\/rapat\s+tugas\s+(Alya|Bima|Citra|Dara)\s*\|\s*(.{10,800})$/is.exec(q);
+  if(meeting)return {type:'meeting-task',division:personFrom(meeting[1]),
+    description:meeting[2].trim()};
+  return null;
+}
+
 export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch) {
   const {chatId,userId}=officeGroupConfig(env);
   if (String(data.chatId)!==chatId || String(data.userId)!==userId || data.isBot!==false)
@@ -329,6 +347,46 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const updateId=String(data.updateId);
   const novel=await store.reserveOfficeGroupUpdate(updateId);
   if (!novel)return {duplicate:true};
+  const taskAction=parseOwnerTaskAction(data.text);
+  if(taskAction) {
+    const workspace=await store.officeGroupWorkspace();
+    const silent=workspace.quiet===true;
+    if(taskAction.type==='meeting-task') {
+      if(!workspace.meeting)throw new Fault(409,'Mulai rapat dahulu dengan /rapat mulai TOPIK.');
+      const created=await store.create({
+        division:taskAction.division,description:taskAction.description,kind:'draft',
+        project:'Rapat: '+workspace.meeting.topic.slice(0,55),
+      },'Pemilik · rapat Telegram','office-group:'+updateId);
+      await store.applyOfficeGroupWorkspace({type:'meeting-link',division:taskAction.division,taskId:created.id});
+      await sendOfficeBotMessage(env,taskAction.division,
+        'Tindak lanjut rapat masuk antrean draf (ID: '+created.id+'). Belum dikerjakan atau disetujui.',
+        {fetchImpl,silent});
+      return {sent:true,division:taskAction.division,createdTaskId:created.id,source:'meeting'};
+    }
+    if(taskAction.type==='revise') {
+      const original=(await store.state()).tasks.find(t=>t.id===taskAction.id);
+      if(!original)throw new Fault(404,'Tugas asal tidak terlihat di daftar tugas terbaru. Buka panel Tugas untuk detail.');
+      if(!activeAuto.has(original.division))throw new Fault(400,'Revisi Telegram hanya untuk empat divisi aktif.');
+      const created=await store.create({division:original.division,kind:'draft',
+        project:original.project||'Revisi Telegram',
+        description:'Revisi atas tugas '+original.id+': '+taskAction.description},
+        'Pemilik · revisi Telegram','office-group:'+updateId);
+      await sendOfficeBotMessage(env,original.division,
+        'Permintaan revisi dibuat sebagai tugas draf baru (ID: '+created.id+
+        '). Tugas asal tidak diubah, dan revisi belum selesai.',{fetchImpl,silent});
+      return {sent:true,division:original.division,createdTaskId:created.id,source:'revision'};
+    }
+    const acted=await store.action(taskAction.id,taskAction.type,
+      taskAction.type==='assign'?{division:taskAction.division}:{},'Pemilik · grup Telegram');
+    const target=taskAction.type==='assign'?taskAction.division:acted.division;
+    const reply=taskAction.type==='assign'
+      ?'Tugas '+acted.id+' dialihkan ke '+divisions.find(d=>d.id===target)?.employee+
+        ' (status '+acted.status+'). Ini serah-terima antrean, bukan hasil selesai.'
+      :'Tindakan '+taskAction.type+' dicatat untuk tugas '+acted.id+
+        ' (status '+acted.status+'). Ini perubahan status, bukan verifikasi hasil draf.';
+    await sendOfficeBotMessage(env,activeAuto.has(target)?target:'management',reply,{fetchImpl,silent});
+    return {sent:true,division:target,taskId:acted.id,action:taskAction.type};
+  }
   const groupCommand=parseGroupWorkspaceCommand(data.text);
   if(groupCommand) {
     let result;
@@ -357,8 +415,9 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
     const target=divisions.find(d=>d.id===task.division);
     const message='Siap, tugas baru untuk '+target.name+' sudah masuk antrean (ID: '+created.id+
       '). Aku mulai kalau jadwal dan kuota worker mengizinkan, ya.';
-    await sendOfficeBotMessage(env,target.id,message,{fetchImpl,silent});
-    return {sent:true,division:target.id,createdTaskId:created.id};
+    const sender=configuredOfficeBots(env).configured.includes(target.id)?target.id:'management';
+    await sendOfficeBotMessage(env,sender,message,{fetchImpl,silent});
+    return {sent:true,division:target.id,acknowledgedBy:sender,createdTaskId:created.id};
   }
   const reply=officeGroupReply(await store.state(),data.text,env);
   await sendOfficeBotMessage(env,reply.division,reply.text,{fetchImpl,silent});
@@ -439,6 +498,17 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
       }
     }
   }
+  const today=new Date(Number(state.now)+7*3600_000).toISOString().slice(0,10);
+  const events=Array.isArray(settings?.events)?settings.events.filter(e=>e.date===today):[];
+  if(events.length&&settings?.notifications!=='important'&&configured.has('management')&&
+     await store.claimOfficeGroupSignal('internal-event')) {
+    const names=events.slice(0,3).map(e=>e.label).join('; ');
+    await sendOfficeBotMessage(env,'management',
+      'Agenda internal Anshel hari ini ('+today+'): '+names+
+      '. Ini pengingat acara terdaftar, bukan bukti acaranya sudah berlangsung.',
+      {fetchImpl,silent});
+    return {sent:true,kind:'internal-event',division:'management'};
+  }
   const warning=officeQueueDelayAlert(state);
   if(warning&&configured.has('operations') &&
      await store.claimOfficeGroupSignal('queued-worker-silent')) {
@@ -505,15 +575,21 @@ export function officeVirtualCheckin(state,configured) {
 export async function dispatchOfficeGroupCheckin(store,env,fetchImpl=fetch) {
   officeGroupConfig(env);
   const state=await store.state();
+  const settings=typeof store.officeGroupWorkspace==='function'
+    ?await store.officeGroupWorkspace():null;
+  if(settings?.notifications==='important')
+    return {sent:false,reason:'non-essential-messages-disabled'};
   if(!officeCheckinWindow(state.now))return {sent:false,reason:'outside-checkin-window'};
   const configured=configuredOfficeBots(env).configured;
   const conversation=officeVirtualCheckin(state,configured);
   if(!conversation)return {sent:false,reason:'not-enough-active-bots'};
   if(!await store.claimOfficeGroupCheckin())return {sent:false,reason:'already-sent-today'};
-  const replyId=await sendOfficeBotMessage(env,conversation.first,conversation.text,{fetchImpl});
+  const replyId=await sendOfficeBotMessage(env,conversation.first,conversation.text,
+    {fetchImpl,silent:settings?.quiet===true});
   let followedUp=false;
   try {
-    await sendOfficeBotMessage(env,conversation.second,conversation.reply,{fetchImpl,replyTo:replyId});
+    await sendOfficeBotMessage(env,conversation.second,conversation.reply,
+      {fetchImpl,replyTo:replyId,silent:settings?.quiet===true});
     followedUp=true;
   } catch {
     // The daily lock prevents repeat attempts and spam on partial failure.
