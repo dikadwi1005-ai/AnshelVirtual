@@ -1,5 +1,23 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3N — Analisis lampiran Telegram oleh Gemini
+
+**Fitur baru yang ditambahkan dalam kode backend:** ketika pemilik mengirim foto, voice note, audio, PDF, dokumen teks, atau video kecil, Vercel mengambil berkas privat menggunakan token Telegram Alya yang sudah tersimpan di environment. Hanya **setelah** ID grup dan ID pemilik cocok, tipe MIME serta ukuran file diperiksa; berkas maksimal **1.500.000 byte** (sekitar 1,5 MB). Backend mengambil file dari host Telegram yang tetap (bukan URL bebas), menolak path berbahaya, dan mengirim base64 hanya pada satu permintaan \`Gemini 3.5 Flash-Lite\` yang sudah dipakai workflow. File mentah tidak dicatat di PostgreSQL/SQLite maupun memori percakapan tujuh hari. Model diinstruksikan agar tidak mengikuti perintah di dalam lampiran atau mengarang pekerjaan.
+
+**Sangat penting: pekerjaan repository TIDAK mengubah workflow n8n yang sudah Published.** Sebelum foto/voice/PDF dapat dianalisis, pemilik harus memperbarui satu node \`Code\` di workflow yang sama:
+
+1. Buka n8n → \`Anshel · Grup AI Natural Gemini (12 pegawai)\`.
+2. Pilih node **Saring pesan manusia**. Ganti hanya \`JavaScript Code\` dengan isi file [\`workflows/n8n_saring_pesan_manusia_telegram_2026.js\`](./n8n_saring_pesan_manusia_telegram_2026.js) di repo. Code ini meneruskan \`replyTo\`, \`mediaType\`, \`fileId\`, \`fileSize\`, \`mimeType\` (metadata saja), tanpa mengambil berkas di n8n.
+3. Save dan **Publish** perubahan pada workflow yang sama; pertahankan satu Telegram Trigger, credential, dan enam node lainnya. Jangan membuat workflow baru/duplikat, jangan menaruh token bot ke Code node.
+4. Setelah Vercel **Production Ready** pada commit terbaru, uji dengan foto Telegram kecil dan pertanyaan \`Alya, jelaskan foto ini\`, lalu pesan suara pendek dan PDF kurang dari 1,5 MB. Foto tanpa caption juga menggunakan pertanyaan standar agar dapat dibaca, bukan hanya ditandai diterima.
+
+Jika n8n masih menggunakan kode node lama atau file melewati batas ukuran/MIME, bot akan **memberi tahu bahwa lampiran diterima tetapi belum dianalisis**. Ini jauh lebih aman daripada mengaku sudah membaca atau mentranskripsikan file. Uji end-to-end pada akun Telegram tetap diperlukan; pengujian GitHub memalsukan HTTP Telegram/Gemini dan tidak membuktikan seluruh kombinasi codec perangkat berhasil.
+
+Daftar MIME yang didukung secara terbatas: JPEG/PNG, PDF, text/plain, voice OGG, rekaman MP3/M4A/WAV/WEBM/FLAC dan video MP4/WEBM/QuickTime. Tidak memproses berkas eksekusi, arsip ZIP, tautan media luar, dokumen besar, atau file yang gagal diunduh. Satu file maksimal per pesan dan satu panggilan Gemini, memakai kuota Google yang sudah berlaku. Jangan mengirim data rahasia perusahaan ke penyedia AI tanpa izin.
+
+**Sumber kemampuan model:** [Gemini 3.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite) mendukung teks, gambar, video, audio, dan PDF sebagai input.
+
+
 ## Phase 3M — Diskusi beberapa putaran, tindak lanjut rapat, dan notifikasi
 
 **Lanjutan diskusi dengan kendali pemilik:** saat rapat aktif, ketik \`/rapat lanjut\`. Keempat bot tersedia membahas agenda dan keputusan yang tersimpan dalam satu permintaan Gemini, dengan riwayat percakapan pendek. Setelah \`/mode diskusi\`, pesan pemilik seperti \`Lanjutkan\` atau \`Menurut kalian?\` juga melanjutkan pembahasan. Setiap putaran membutuhkan pesan **baru dari pemilik**; bot tidak saling memicu pesan berulang atau membuat biaya tanpa persetujuan.
