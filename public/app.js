@@ -1,4 +1,5 @@
 import { activities, divisions, timezone } from './catalog.js';
+import { createCharacterStick } from './character-input.js';
 import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
 import { rooms, roomById, wings } from './layout.js';
@@ -38,20 +39,26 @@ let spatialAudio = localStorage.getItem('anshel-office-spatial-audio')==='on';
 const partnerChoices=divisions.filter(person=>employeeProfile(person.id).presentation==='perempuan');
 let partner=partnerChoices.find(person=>person.id===localStorage.getItem('anshel-partner'))?.id ?? '';
 let characterActive=false;
-const movementKeys=new Map(), movementPointers=new Map();
+const movementKeys=new Map();
+const analog={x:0,y:0};
 const keyDirections={KeyW:'up',ArrowUp:'up',KeyS:'down',ArrowDown:'down',
   KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right'};
 
 function updateMovement() {
-  const directions=new Set([...movementKeys.values(),...movementPointers.values()]);
-  scene?.moveCharacter(Number(directions.has('right'))-Number(directions.has('left')),
-    Number(directions.has('up'))-Number(directions.has('down')));
+  const directions=new Set(movementKeys.values());
+  scene?.moveCharacter(Number(directions.has('right'))-Number(directions.has('left'))+analog.x,
+    Number(directions.has('up'))-Number(directions.has('down'))+analog.y);
 }
+
+const stick=createCharacterStick($('character-stick'),(x,y)=>{
+  analog.x=x;
+  analog.y=y;
+  updateMovement();
+});
 
 function clearMovement() {
   movementKeys.clear();
-  movementPointers.clear();
-  updateMovement();
+  stick.reset();
 }
 
 function setCharacterMode(enabled) {
@@ -599,18 +606,6 @@ window.addEventListener('keyup',event=>{
 });
 window.addEventListener('blur',clearMovement);
 document.addEventListener('visibilitychange',()=>{ if (document.hidden) clearMovement(); });
-for (const button of buttons('[data-move]')) {
-  button.addEventListener('pointerdown',event=>{
-    if (event.button!==0) return;
-    event.preventDefault();
-    button.setPointerCapture(event.pointerId);
-    movementPointers.set(event.pointerId,button.dataset.move);
-    updateMovement();
-  });
-  for (const type of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(type,event=>{
-    if (movementPointers.delete(event.pointerId)) updateMovement();
-  });
-}
 buttons('[data-camera]').forEach(button=>{
   const key=button.dataset.camera;
   button.addEventListener('click',async()=>{

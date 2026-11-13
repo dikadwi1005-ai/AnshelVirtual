@@ -343,7 +343,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   }
 
   renderer.domElement.addEventListener('pointerdown',event=>{
-    if (!event.isPrimary || event.button!==0) return;
+    if (event.button!==0 || (characterActive()?drag:!event.isPrimary)) return;
     press=[event.clientX,event.clientY];
     if (characterActive()) {
       drag={id:event.pointerId,x:event.clientX,y:event.clientY,moved:false};
@@ -359,15 +359,18 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     drag.y=event.clientY;
   });
   const cancelPointer=()=>{press=null;drag=null;};
-  renderer.domElement.addEventListener('pointercancel',cancelPointer);
-  renderer.domElement.addEventListener('lostpointercapture',cancelPointer);
+  const cancelCapturedPointer=event=>{
+    if (characterActive()?event.pointerId===drag?.id:event.isPrimary) cancelPointer();
+  };
+  renderer.domElement.addEventListener('pointercancel',cancelCapturedPointer);
+  renderer.domElement.addEventListener('lostpointercapture',cancelCapturedPointer);
   renderer.domElement.addEventListener('wheel',event=>{
     if (!characterActive()) return;
     event.preventDefault();
     chase.zoom(event.deltaY<0?1.12:1/1.12);
   },{passive:false});
   renderer.domElement.addEventListener('pointerup',event=>{
-    if (!event.isPrimary || !press) return;
+    if (!press || (characterActive()?event.pointerId!==drag?.id:!event.isPrimary)) return;
     const moved=drag?.moved || Math.hypot(press[0]-event.clientX,press[1]-event.clientY)>7;
     cancelPointer();
     if (moved) return;

@@ -7,6 +7,7 @@
   <title>Anshel Virtual Tech</title>
   <link rel="manifest" href="/office.webmanifest">
   <link rel="icon" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="stylesheet" href="/office.css">
   <script type="importmap">{"imports":{"three":"/lib/three/build/three.module.js","three/addons/":"/lib/three/examples/jsm/"}}</script>
   <script type="module" src="/app.js"></script>
@@ -40,12 +41,11 @@
       </div>
       <div class="worker-status hud"><i id="worker-light"></i><span id="worker-status">Memeriksa worker</span></div>
     </div>
-    <div id="character-controls" class="hud" aria-label="Kontrol gerak Dika" hidden>
-      <span>WASD · Geser untuk melihat</span>
-      <button data-move="up" aria-label="Maju" type="button">↑</button>
-      <button data-move="left" aria-label="Kiri" type="button">←</button>
-      <button data-move="down" aria-label="Mundur" type="button">↓</button>
-      <button data-move="right" aria-label="Kanan" type="button">→</button>
+    <div id="character-controls" hidden>
+      <p class="hud">WASD · Seret untuk melihat</p>
+      <div id="character-stick" role="group" aria-label="Joystick untuk menggerakkan Dika">
+        <span aria-hidden="true"></span>
+      </div>
     </div>
 
     <nav class="actions hud" aria-label="Panel kantor">
