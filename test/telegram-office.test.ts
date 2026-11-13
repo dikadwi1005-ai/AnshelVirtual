@@ -131,7 +131,8 @@ test('pemilik dapat bertanya ke Eka, QA, status, dan membuat draf secara eksplis
     assert.equal(s.state().tasks.length,1);
     assert.equal(s.state().tasks[0].division,'creative');
     assert.equal(s.state().tasks[0].status,'queued');
-    assert.ok(sent[0].url.includes(allTokens.creative));
+    assert.ok(sent[0].url.includes(allTokens.management));
+    assert.match(sent[0].body.text,/belum aktif sebagai bot Telegram pilot/i);
     assert.deepEqual(await sendOfficeGroupOwnerMessage(s,env,payload,fake),{duplicate:true});
     assert.equal(s.state().tasks.length,1);
     await assert.rejects(sendOfficeGroupOwnerMessage(s,env,{...payload,userId:'888',updateId:'112'},fake),e=>e.status===403);
