@@ -411,14 +411,13 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   }
   const task=parseOfficeGroupTask(data.text)||parseOwnerNaturalTask(data.text);
   if(task) {
-    if(!activeAuto.has(task.division))
-      throw new Fault(400,'Untuk saat ini hanya Alya, Bima, Citra, dan Dara yang aktif di Telegram.');
     const created=await store.create(task,'Pemilik · grup Telegram','office-group:'+updateId);
     const target=divisions.find(d=>d.id===task.division);
     const message='Siap, tugas baru untuk '+target.name+' sudah masuk antrean (ID: '+created.id+
       '). Aku mulai kalau jadwal dan kuota worker mengizinkan, ya.';
-    await sendOfficeBotMessage(env,target.id,message,{fetchImpl,silent});
-    return {sent:true,division:target.id,createdTaskId:created.id};
+    const sender=configuredOfficeBots(env).configured.includes(target.id)?target.id:'management';
+    await sendOfficeBotMessage(env,sender,message,{fetchImpl,silent});
+    return {sent:true,division:target.id,acknowledgedBy:sender,createdTaskId:created.id};
   }
   const reply=officeGroupReply(await store.state(),data.text,env);
   await sendOfficeBotMessage(env,reply.division,reply.text,{fetchImpl,silent});
