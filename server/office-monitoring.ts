@@ -15,7 +15,7 @@ const safeProject=s=>String(s||'tanpa nama proyek').replace(/[\r\n\t@<>]/g,' ').
 
 export function officeEmployeeOverview(state,configured=pilotDivisions) {
   const enabled=new Set(configured);
-  return pilotDivisions.filter(id=>enabled.has(id)).map(id=>{
+  return [...pilotDivisions,'marketing'].filter(id=>enabled.has(id)).map(id=>{
     const person=state.people?.[id]||{};
     const jobs=(state.tasks||[]).filter(t=>t.division===id);
     const task=jobs.find(t=>t.status==='running')||jobs.find(t=>t.status==='queued')||jobs[0];
@@ -55,12 +55,12 @@ export function officeSummaryDue(state) {
   return Number.isFinite(close)&&moment>=close&&moment<=Math.min(close+120,23*60+59);
 }
 
-export function officeDailySummary(state) {
+export function officeDailySummary(state,allowed=pilotDivisions) {
   const day=scheduledDraftDay(new Date(state.now));
   const audit=(state.audit||[]).filter(item=>Number.isFinite(Number(item.at)) &&
     scheduledDraftDay(new Date(Number(item.at)))===day);
   const count=action=>new Set(audit.filter(a=>a.action===action).map(a=>a.task||a.id)).size;
-  const recent=(state.tasks||[]).filter(t=>pilotDivisions.includes(t.division) &&
+  const recent=(state.tasks||[]).filter(t=>allowed.includes(t.division) &&
     t.status==='completed' && Number(t.ended)>0 &&
     scheduledDraftDay(new Date(t.ended))===day).slice(0,3);
   const detail=recent.map(t=>labels[t.division]+' ('+safeProject(t.project)+')').join('; ');
@@ -74,10 +74,10 @@ export function officeDailySummary(state) {
     'Ini ringkasan catatan sistem, bukan bukti hasil sudah ditinjau atau dipublikasikan.';
 }
 
-export function officeQueueDelayAlert(state) {
+export function officeQueueDelayAlert(state,allowed=pilotDivisions) {
   const now=Number(state.now);
   if(!Number.isFinite(now)||state.worker||!['work','review','open'].includes(state.phase))return null;
-  const stale=(state.tasks||[]).filter(t=>pilotDivisions.includes(t.division) &&
+  const stale=(state.tasks||[]).filter(t=>allowed.includes(t.division) &&
     t.status==='queued' && Number.isFinite(Number(t.created))&&
     now-Number(t.created)>=2*60*60_000 && now-Number(t.created)<=48*60*60_000);
   if(!stale.length)return null;
