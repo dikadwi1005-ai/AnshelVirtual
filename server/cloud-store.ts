@@ -112,6 +112,14 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)},client);
       });
     },
+    async recordOfficeDispatchPulse() {
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293115)',[],client);
+        await writeSetting('office_dispatch_seen_v1',now(),client);
+        return true;
+      });
+    },
+    async officeDispatchPulse() {return readSetting('office_dispatch_seen_v1',null);},
     async officeGroupWorkspace() {
       return readSetting('office_group_workspace_v1',emptyGroupWorkspace());
     },
