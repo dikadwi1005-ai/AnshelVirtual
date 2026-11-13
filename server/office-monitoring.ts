@@ -33,7 +33,7 @@ export function officeActivityReply(state,configured=pilotDivisions) {
     p.task?.status==='queued'?'ada tugas menunggu di antrean':
     'tidak sedang mengeksekusi tugas')+
     '; avatar virtual '+p.avatar.toLowerCase()+
-    (p.task?' ('+p.project+', '+(status[p.task.status]||'status belum diketahui')+')':''));
+    (p.task?' ('+p.task.project+', '+(status[p.task.status]||'status belum diketahui')+')':''));
   return 'Aktivitas empat pegawai Anshel (berdasarkan catatan kantor, bukan pengamatan nyata):\n'+
     lines.join('\n')+'\nWorker: '+(state.worker?'terlihat aktif baru-baru ini':'belum terlihat aktif dalam 40 detik terakhir')+
     '. Hasil tugas tersedia di panel Tugas setelah benar-benar tersimpan.';
