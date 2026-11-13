@@ -169,6 +169,20 @@ export function createStore(path: string, now = Date.now) {
         return true;
       });
     },
+    releaseOfficeGroupSignal(kind) {
+      if(!['daily-summary','queued-worker-silent','internal-event'].includes(kind))
+        throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
+      return transaction(()=>{
+        const key='office_group_signals_v1';
+        const today=scheduledDraftDay(new Date(now()));
+        const checkpoint=readSetting(key,{date:'',sent:[]});
+        if(checkpoint.date!==today)return false;
+        const sent=(checkpoint.sent||[]).filter(x=>x!==kind);
+        if(sent.length===(checkpoint.sent||[]).length)return false;
+        writeSetting(key,{...checkpoint,sent});
+        return true;
+      });
+    },
     claimOfficeGroupCheckin() {
       return transaction(() => {
         const key='office_virtual_checkin_v1';
