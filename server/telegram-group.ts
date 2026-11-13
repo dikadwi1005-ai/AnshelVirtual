@@ -11,6 +11,7 @@ const styles={
   operations:'Bima, santai, anak IT yang to the point; tidak mengaku cek server.',
   administration:'Citra, teliti dan kalem; suka menjelaskan catatan secara ringkas.',
   hr:'Dara, empatik dan ringan; fokus kebutuhan tim tanpa mengarang dialog.',
+  marketing:'Jihan, fokus SEO, strategi keyword dan sumber data; jangan pernah mengarang trafik atau ranking.',
 };
 const labels=Object.fromEntries(divisions.map(d=>[d.id,d.employee]));
 
@@ -27,15 +28,23 @@ export function isCollectiveCall(text) {
 }
 
 /** Named 2–4 workers; flexible separators but never a person merely quoted in prose. */
-export function requestedOfficeDiscussion(text) {
+export function requestedOfficeDiscussion(text,enabled=automaticOfficeDivisions) {
   if(typeof text!=='string'||text.length>1500)return null;
   const q=text.split('\n')[0].trim();
-  const match=/^(?:tolong\s+)?((?:@?(?:Alya|Bima|Citra|Dara)\s*(?:(?:,\s*|dan\s+|&\s*|,\s*dan\s+)@?(?:Alya|Bima|Citra|Dara)\s*){1,3}))[,：:]?\s*(?:tolong\s+)?(?:diskusikan|diskusi(?:kan)?|bahas|bicarakan|menurut\s+kalian|gimana\s+menurut\s+kalian|coba\s+diskusi)?\s*(.{7,})$/i.exec(q);
+  const lookup={alya:'management',bima:'operations',citra:'administration',
+    dara:'hr',jihan:'marketing'};
+  const names=Object.keys(lookup).filter(n=>enabled.includes(lookup[n])).join('|');
+  if(!names)return null;
+  const named='(?:'+names+')';
+  const pattern=new RegExp('^(?:tolong\\s+)?((?:@?'+named+
+    '\\s*(?:(?:,\\s*|dan\\s+|&\\s*|,\\s*dan\\s+)@?'+named+
+    '\\s*){1,4}))[,：:]?\\s*(?:tolong\\s+)?(?:diskusikan|diskusi(?:kan)?|bahas|bicarakan|menurut\\s+kalian|gimana\\s+menurut\\s+kalian|coba\\s+diskusi)?\\s*(.{7,})$','i');
+  const match=pattern.exec(q);
   if(!match)return null;
-  const found=[...match[1].matchAll(/@?(Alya|Bima|Citra|Dara)\b/gi)].map(m=>m[1].toLowerCase());
+  const namesRegex=new RegExp('@?('+names+')\\b','gi');
+  const found=[...match[1].matchAll(namesRegex)].map(m=>lookup[m[1].toLowerCase()]);
   if(found.length<2||new Set(found).size!==found.length)return null;
-  const lookup={alya:'management',bima:'operations',citra:'administration',dara:'hr'};
-  return found.map(name=>lookup[name]);
+  return found;
 }
 
 /** Metadata is received only from the authenticated n8n Telegram Trigger.
@@ -47,7 +56,7 @@ export function ownerReplyContext(data) {
   const sender=typeof source.sender==='string'?source.sender.trim().slice(0,45):'';
   const text=typeof source.text==='string'?source.text.trim().slice(0,350):'';
   const employee=Object.entries({alya:'management',bima:'operations',
-    citra:'administration',dara:'hr'}).find(([name])=>
+    citra:'administration',dara:'hr',jihan:'marketing'}).find(([name])=>
       new RegExp('(?:^|\\b)'+name+'(?:\\b|$)','i').test(sender))?.[1]||null;
   if(!text)return null;
   return {sender:sender||'anggota grup',text,employee};
@@ -70,24 +79,24 @@ export function groupDelayMs(updateId,division,index) {
   return 1600+(value%1201);
 }
 /** Work in progress excludes a bot. Queued tasks and casual avatar activity do not. */
-export function availableOfficeResponders(state,configured) {
+export function availableOfficeResponders(state,configured,allowed=automaticOfficeDivisions) {
   const enabled=new Set(configured||[]);
   const working=new Set((state.running||[]).filter(t=>t.status==='running'||!t.status).map(t=>t.division));
   for(const item of state.tasks||[]) if(item.status==='running')working.add(item.division);
-  for(const id of automaticOfficeDivisions)
+  for(const id of allowed)
     if(state.people?.[id]?.executing===true)working.add(id);
-  return automaticOfficeDivisions.filter(id=>enabled.has(id)&&!working.has(id));
+  return allowed.filter(id=>enabled.has(id)&&!working.has(id));
 }
 
 /**
  * Short shared memory across the four already configured employees.
  * Historical model replies are conversational context, never verified work.
  */
-export function summarizeSharedOfficeConversation(history=[]) {
-  const allowed=new Set(automaticOfficeDivisions);
+export function summarizeSharedOfficeConversation(history=[],allowed=automaticOfficeDivisions) {
+  const identities=new Set(allowed);
   const turns=[];
   for(const entry of (Array.isArray(history)?history:[]).slice(-12)) {
-    if(!entry || !allowed.has(entry.division) ||
+    if(!entry || !identities.has(entry.division) ||
        typeof entry.question!=='string'||typeof entry.reply!=='string')continue;
     const question=entry.question.trim().slice(0,180);
     const reply=entry.reply.trim().slice(0,180);
@@ -103,9 +112,9 @@ export function summarizeSharedOfficeConversation(history=[]) {
 }
 
 /** One model call produces separate, short messages for the available bots. */
-export function buildOfficeCollectiveRequest(question,recipients,state,history=[]) {
-  const valid=Array.isArray(recipients)&&recipients.length>0&&recipients.length<=4&&
-    recipients.every(id=>automaticOfficeDivisions.includes(id))&&new Set(recipients).size===recipients.length;
+export function buildOfficeCollectiveRequest(question,recipients,state,history=[],allowed=automaticOfficeDivisions) {
+  const valid=Array.isArray(recipients)&&recipients.length>0&&recipients.length<=5&&
+    recipients.every(id=>allowed.includes(id))&&new Set(recipients).size===recipients.length;
   if(!valid)throw new Fault(400,'Panggilan pegawai aktif tidak valid.');
   const people=recipients.map(id=>{
     const avatar=state.people?.[id];
@@ -120,10 +129,10 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
       completed:Number(state.counts?.completed)||0,
       blocked:Number(state.counts?.blocked)||0,failed:Number(state.counts?.failed)||0}:null,
     recentWork:wantsWorkNews?(state.tasks||[])
-      .filter(t=>automaticOfficeDivisions.includes(t.division))
+      .filter(t=>allowed.includes(t.division))
       .slice(0,5).map(t=>({division:t.division,status:t.status,
         project:typeof t.project==='string'?t.project.slice(0,55):''})):null,
-    recentConversation:summarizeSharedOfficeConversation(history),
+    recentConversation:summarizeSharedOfficeConversation(history,allowed),
     groupWorkspace:workspacePromptContext(state.groupWorkspace,state.now??Date.now()),
     indonesiaCalendar:officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,question)};
   const prompt=[
@@ -179,49 +188,56 @@ function fallbackFor(id,q,state={}) {
       operations:'Semangat juga! Kalau ada kendala teknis, langsung bahas bareng.',
       administration:'Makasih! Kalau nanti ada catatan yang perlu dirapikan, bilang aja.',
       hr:'Makasih. Semoga semua tetap semangat dan punya waktu istirahat.',
+      marketing:'Makasih! Semoga strategi SEO kita nanti dibahas pakai data yang benar-benar ada.',
     },
     thanks:{
       management:'Sama-sama, Pak. Kalau ada keputusan penting, kita bahas sesuai prioritas.',
       operations:'Santai, sama-sama. Kalau butuh bantu ngurai masalah teknis, kabarin.',
       administration:'Sama-sama! Nanti kalau butuh catatan tambahan, bilang aja ya.',
       hr:'Sama-sama. Senang kalau urusan tim bisa dibahas dengan baik.',
+      marketing:'Sama-sama. Kalau ada riset keyword, aku bisa bantu merancang pendekatannya.',
     },
     updates:{
       management:'Aku bisa bantu rangkum progres tugas yang tercatat kalau diperlukan.',
       operations:'Untuk progres teknis, aku cuma bisa memastikan dari tugas yang tercatat.',
       administration:'Kalau butuh rekap dokumen, aku bisa bantu lihat catatan tugas.',
       hr:'Untuk urusan tim, kita bisa bahas status tugas yang tercatat dulu.',
+      marketing:'Kalau soal SEO, aku belum bisa memastikan ranking tanpa data terverifikasi.',
     },
     activity:{
       management:'Lagi santai sebentar di simulasi kantor. Ada prioritas yang mau dibahas?',
       operations:'Kalau belum ada tugas berjalan, avatarku bisa saja sedang santai.',
       administration:'Aku lagi ikut aktivitas kantor virtual. Ada hal yang perlu dicatat?',
       hr:'Lagi ikut kegiatan di kantor virtual. Ada kabar tentang tim?',
+      marketing:'Lagi ikut aktivitas di simulasi kantor, belum berarti audit SEO sudah berjalan.',
     },
     help:{
       management:'Bisa, Pak. Ceritakan dulu apa yang mau diselesaikan bersama.',
       operations:'Boleh, jelasin kendala teknisnya biar kita tahu mulai dari mana.',
       administration:'Bisa, ada dokumen atau catatan yang perlu dibereskan?',
       hr:'Boleh, ini soal koordinasi atau kebutuhan tim?',
+      marketing:'Boleh, ini soal SEO, riset kata kunci, atau strategi konten?',
     },
     greeting:{
       management:'Halo, Pak. Ada topik yang ingin kita bahas bareng?',
       operations:'Hai! Aku ada. Lagi mau bahas apa nih?',
       administration:'Halo! Kalau ada catatan penting, boleh disampaikan.',
       hr:'Halo semuanya. Semoga harinya berjalan nyaman.',
+      marketing:'Hai semua, Jihan hadir. Ada topik SEO yang ingin dibahas?',
     },
     neutral:{
       management:'Aku dengar, Pak. Apa yang perlu kita putuskan bersama?',
       operations:'Bima nyimak. Ada sisi teknis yang mau dibahas?',
       administration:'Aku ikut dengar. Ada catatan atau jadwal yang perlu dibicarakan?',
       hr:'Dara di sini. Kalau menyangkut tim, kita bisa ngobrol.',
+      marketing:'Jihan ikut menyimak. Data SEO apa yang mau jadi fokus diskusi?',
     },
   };
   const category=encouragement?'encouragement':thanks?'thanks':updates?'updates':
     activity?'activity':needHelp?'help':greeting?'greeting':'neutral';
   // Ground answers to actual task/avatars when the owner asks about progress or activity.
   if(category==='updates') {
-    const open=(state.tasks||[]).filter(t=>automaticOfficeDivisions.includes(t.division) &&
+    const open=(state.tasks||[]).filter(t=>[...automaticOfficeDivisions,'marketing'].includes(t.division) &&
       ['queued','running','blocked','failed'].includes(t.status));
     const queued=open.find(t=>t.status==='queued');
     const running=open.find(t=>t.status==='running');
@@ -238,6 +254,7 @@ function fallbackFor(id,q,state={}) {
         ?'Tugas administrasi '+fact+' di Anshel, jadi belum ada hasil dari tugas itu.'
         :'Ada pekerjaan yang '+fact+' di antrean. Catatan lanjutannya bisa kita bahas.';
       if(id==='hr')return 'Kalau perlu menyusun prioritas tim, ada tugas yang '+fact+' untuk dibahas.';
+      if(id==='marketing')return 'Ada tugas yang '+fact+' di antrean. Strategi SEO tetap perlu hasil dan data sebelum dinilai.';
     }
     const tasks=(state.tasks||[]).filter(t=>t.division===id);
     const current=tasks.find(t=>t.status==='running');
@@ -282,7 +299,7 @@ export function resolveOfficeCollectiveResponse(output,recipients,question,clean
       ?cleaner(raw,fallback,question):fallback;
     let ai=typeof raw==='string'&&message!==fallback;
     // A blanket "nothing new" conflicts with an actual outstanding job.
-    const hasOpenWork=(state.tasks||[]).some(t=>automaticOfficeDivisions.includes(t.division) &&
+    const hasOpenWork=(state.tasks||[]).some(t=>[...automaticOfficeDivisions,'marketing'].includes(t.division) &&
       ['queued','running','blocked','failed'].includes(t.status));
     if(hasOpenWork && /\b(?:kabar|update|perkembangan|progres|hari ini)\b/i.test(question) &&
        /\b(?:belum|tidak|nggak|gak)\s+ada\s+(?:info|kabar|perkembangan|pembaruan)\s+baru\b/i.test(message)) {

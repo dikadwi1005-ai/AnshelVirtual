@@ -440,3 +440,53 @@ test('API/server incidents route to Bima IT rather than arbitrary reply recipien
     assert.equal(store.state().tasks.length,0,'incident chat does not fabricate a task or a real diagnosis');
   } finally {store.close();}
 });
+
+test('Jihan conversations and pair discussions are opt-in and never awaken other dormant bots',async()=>{
+  const {enabledOfficeDivisions}=await import('../server/telegram-office.ts');
+  const {requestedOfficeDiscussion}=await import('../server/telegram-group.ts');
+  const ready={...env,ANSHEL_JIHAN_ENABLED:'true'};
+  assert.equal(requestedOfficeDiscussion('Alya dan Jihan, bahas strategi konten SEO'),null);
+  assert.deepEqual(requestedOfficeDiscussion('Alya dan Jihan, bahas strategi konten SEO',
+    enabledOfficeDivisions(ready)),['management','marketing']);
+  assert.equal(requestedOfficeDiscussion('Alya dan Eka, bahas strategi SEO',
+    enabledOfficeDivisions(ready)),null);
+  const saved=[];
+  const fake=transport(saved);
+  const inactive=createStore(':memory:',()=>clock.value);
+  try {
+    const r=await prepareOfficeNaturalChat(inactive,env,userMessage(88001,'Jihan, bantu bahas SEO'),fake);
+    assert.equal(r.mode,'handled');
+    assert.equal(r.division,'management');
+    assert.equal(r.inactiveDivision,'marketing');
+    assert.ok(saved[0].url.includes(tokens.management));
+  }finally{inactive.close();}
+  const direct=createStore(':memory:',()=>clock.value);
+  try{
+    const prep=await prepareOfficeNaturalChat(direct,ready,userMessage(88002,'Jihan, strategi SEO seperti apa?'),fake);
+    assert.equal(prep.mode,'generate');
+    assert.equal(prep.division,'marketing');
+    assert.match(prep.request.systemInstruction.parts[0].text,/Jihan/);
+    const result=await deliverOfficeNaturalChat(direct,ready,{
+      updateId:prep.updateId,ticket:prep.ticket,
+      output:'Kita mulai dari riset keyword dan kebutuhan pengunjung; ranking perlu data yang terverifikasi.'
+    },fake);
+    assert.equal(result.division,'marketing');
+    assert.ok(saved.at(-1).url.includes(tokens.marketing));
+  }finally{direct.close();}
+  const together=createStore(':memory:',()=>clock.value);
+  try{
+    const prep=await prepareOfficeNaturalChat(together,ready,userMessage(88003,
+      'Alya dan Jihan, bahas strategi konten SEO'),fake);
+    assert.equal(prep.group,true);
+    assert.deepEqual(prep.recipients,['management','marketing']);
+    assert.deepEqual(prep.request.generationConfig.responseSchema.required,['management','marketing']);
+    const result=await deliverOfficeNaturalChat(together,ready,{
+      updateId:prep.updateId,ticket:prep.ticket,
+      output:JSON.stringify({management:'Prioritaskan riset sebelum menentukan target.',
+        marketing:'Sepakat, keyword dan pesaing harus divalidasi dulu.'})
+    },fake,async()=>{});
+    assert.deepEqual(result.divisions,['management','marketing']);
+    assert.ok(saved.at(-1).url.includes(tokens.marketing));
+    assert.ok(saved.every(row=>!row.url.includes(tokens.development)));
+  }finally{together.close();}
+});

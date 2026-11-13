@@ -1,5 +1,22 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Aktivasi bertahap Jihan — SEO & Pemasaran
+
+Jihan adalah bot Telegram kelima yang **opsional**. Empat bot asli (Alya, Bima, Citra, Dara) tetap aktif dan tujuh divisi lainnya tetap nonaktif. Kode mendukung panggilan langsung **Jihan**, diskusi bersama **Alya dan Jihan**, panggilan kolektif **Guys**, serta pencatatan /tugas Jihan sebagai antrean draf. Ini tidak otomatis menghubungkan OpenSEO/Google Analytics/Search Console, mengubah website, atau menjamin worker SEO memproses tugas.
+
+**Langkah aktivasi setelah kode Production READY:**
+
+1. Buat bot melalui **@BotFather** di Telegram untuk pegawai Jihan. Tentukan nama dan username unik; jangan bagikan token ke percakapan, grup Telegram, atau screenshot.
+2. Undang bot Jihan ke **grup Anshel yang sudah digunakan**, izinkan mengirim pesan. **Jangan membuat Telegram Trigger kedua**. Trigger Alya pada workflow Natural Gemini yang sudah Published tetap menjadi satu-satunya pemicu pesan pemilik; Jihan memakai token botnya sendiri untuk balasan.
+3. Vercel → **anshel-virtual → Settings → Environment Variables → Production**: edit `TELEGRAM_BOT_TOKENS_JSON` yang sudah ada, tambahkan `"marketing":"TOKEN_JIHAN"`, dan **jangan hapus token empat bot lama**. JSON harus valid; lakukan pengeditan melalui dashboard aman.
+4. Tambahkan environment variable **ANSHEL_JIHAN_ENABLED=true** untuk **Production**. Sekadar menyimpan token Jihan tidak akan mengaktifkannya. Setelah menyimpan kedua nilai, deploy ulang **main** ke Production agar variabelnya terbaca.
+5. Uji di grup: `Jihan, siapa kamu dan apa tugasmu?`, `Alya dan Jihan, bahas strategi SEO tanpa mengarang ranking`, `Guys, kita bahas SEO`, lalu `/tugas Jihan | Buat rancangan audit SEO untuk situs contoh`. Pastikan pesan keluar dari bot Jihan, tugas masih antre hingga benar-benar diproses, dan pekerja lain tidak mendadak aktif.
+6. Jika bot gagal merespons, periksa izin Telegram bot dan status workflow n8n tanpa menyalin token. Rollback aktivasi dengan **ANSHEL_JIHAN_ENABLED=false**, kemudian deploy Production ulang.
+
+**Batas kemampuan:** Jihan dapat berdiskusi mengenai SEO berdasarkan informasi yang diberikan dan status tugas Anshel; tidak ada akses independen ke Google Analytics/Search Console, tidak ada integrasi OpenSEO yang otomatis, tidak ada worker SEO khusus yang dikonfirmasi aktif, dan tidak ada hak publikasi atau perubahan situs.
+
+---
+
 ## Pembagian tanggung jawab API dan IT (Phase 3P)
 
 - **Bima — IT & Operasional** adalah pemilik masalah API, server, database, webhook, koneksi, insiden integrasi, dan status teknis worker. Perintah `/kesehatan` dijawab Bima. Jika token Bima belum tersedia, Alya boleh menyampaikan status yang diperoleh tanpa berpura-pura menjadi Bima.
