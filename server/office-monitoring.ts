@@ -34,7 +34,8 @@ export function officeActivityReply(state,configured=pilotDivisions) {
     'tidak sedang mengeksekusi tugas')+
     '; avatar virtual '+p.avatar.toLowerCase()+
     (p.task?' ('+p.task.project+', '+(status[p.task.status]||'status belum diketahui')+')':''));
-  return (employees.length===4?'Aktivitas empat pegawai Anshel':'Aktivitas pegawai Telegram aktif Anshel')+\n    ' (berdasarkan catatan kantor, bukan pengamatan nyata):\n'+
+  return (employees.length===4?'Aktivitas empat pegawai Anshel':'Aktivitas pegawai Telegram aktif Anshel')+
+    ' (berdasarkan catatan kantor, bukan pengamatan nyata):\n'+
     lines.join('\n')+'\nWorker: '+(state.worker?'terlihat aktif baru-baru ini':'belum terlihat aktif dalam 40 detik terakhir')+
     '. Hasil tugas tersedia di panel Tugas setelah benar-benar tersimpan.';
 }
