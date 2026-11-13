@@ -194,7 +194,7 @@ function fallbackFor(id,q,state={}) {
       if(id==='management')return 'Ada tugas '+who+' yang '+fact+' menurut catatan Anshel. Belum bisa disebut selesai.';
       if(id==='operations')return 'Dari catatan tugas, ada pekerjaan yang '+fact+'. Aku belum punya hasil pemeriksaan server.';
       if(id==='administration')return mostRelevant.division==='administration'
-        ?'Tugas administrasi masih '+fact+' di Anshel, jadi belum ada hasil dari tugas itu.'
+        ?'Tugas administrasi '+fact+' di Anshel, jadi belum ada hasil dari tugas itu.'
         :'Ada pekerjaan yang '+fact+' di antrean. Catatan lanjutannya bisa kita bahas.';
       if(id==='hr')return 'Kalau perlu menyusun prioritas tim, ada tugas yang '+fact+' untuk dibahas.';
     }
