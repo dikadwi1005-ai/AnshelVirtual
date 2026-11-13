@@ -105,13 +105,26 @@ export async function sendOfficeBotMessage(env,division,text,options={}) {
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),
       signal:AbortSignal.timeout(6000),
     });
-    if (!res.ok) throw new Error('Telegram HTTP request failed');
+    if (!res.ok) {
+      const failure=new Error('Telegram HTTP request rejected');
+      failure.deliveryRejected=true;
+      throw failure;
+    }
     const data=await res.json();
-    if (data?.ok!==true || !Number.isSafeInteger(data?.result?.message_id)) throw new Error('Telegram API rejected request');
+    if (data?.ok!==true) {
+      const failure=new Error('Telegram API rejected request');
+      failure.deliveryRejected=true;
+      throw failure;
+    }
+    if(!Number.isSafeInteger(data?.result?.message_id))
+      throw new Error('Telegram reply is incomplete');
     return data.result.message_id;
-  } catch {
-    // Never include Telegram URL, bot token, request body or raw Telegram errors in logs.
-    throw new Fault(502,'Telegram belum menerima pesan. Periksa token bot dan izin mengirim ke grup.');
+  } catch(error) {
+    // HTTP rejection confirms non-delivery. Timeout/connection loss is uncertain:
+    // never blindly retry it, or the owner could receive duplicate messages.
+    const failure=new Fault(502,'Pengiriman Telegram belum terkonfirmasi. Periksa token bot dan izin grup.');
+    failure.deliveryRejected=error?.deliveryRejected===true;
+    throw failure;
   }
 }
 
@@ -473,6 +486,20 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
     ...(routine?{routine:routine.kind}:{})};
 }
 
+/** Retry a daily signal on the next dispatcher call only when Telegram explicitly
+ * rejected its message, never when the network outcome is unknown. */
+async function sendRoutineSignal(store,env,kind,division,message,fetchImpl,silent) {
+  if(!await store.claimOfficeGroupSignal(kind))return false;
+  try {
+    await sendOfficeBotMessage(env,division,message,{fetchImpl,silent});
+    return true;
+  }catch(error){
+    if(error?.deliveryRejected===true && typeof store.releaseOfficeGroupSignal==='function')
+      await store.releaseOfficeGroupSignal(kind);
+    throw error;
+  }
+}
+
 /**
  * Reuse the hourly published n8n Auto Office /dispatch route.
  * Distinct once-a-day signal keys prevent repeated reports and warning spam.
@@ -485,8 +512,8 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
     ?await store.officeGroupWorkspace():null;
   const silent=settings?.quiet===true;
   if(officeSummaryDue(state)&&configured.has('management') &&
-     await store.claimOfficeGroupSignal('daily-summary')) {
-    await sendOfficeBotMessage(env,'management',officeDailySummary(state),{fetchImpl,silent});
+     await sendRoutineSignal(store,env,'daily-summary','management',
+       officeDailySummary(state),fetchImpl,silent)) {
     return {sent:true,kind:'daily-summary',division:'management'};
   }
   const workspace=typeof store.officeGroupWorkspace==='function'
@@ -509,19 +536,16 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
   }
   const today=new Date(Number(state.now)+7*3600_000).toISOString().slice(0,10);
   const events=Array.isArray(settings?.events)?settings.events.filter(e=>e.date===today):[];
-  if(events.length&&settings?.notifications!=='important'&&configured.has('management')&&
-     await store.claimOfficeGroupSignal('internal-event')) {
+  if(events.length&&settings?.notifications!=='important'&&configured.has('management')) {
     const names=events.slice(0,3).map(e=>e.label).join('; ');
-    await sendOfficeBotMessage(env,'management',
+    if(await sendRoutineSignal(store,env,'internal-event','management',
       'Agenda internal Anshel hari ini ('+today+'): '+names+
       '. Ini pengingat acara terdaftar, bukan bukti acaranya sudah berlangsung.',
-      {fetchImpl,silent});
-    return {sent:true,kind:'internal-event',division:'management'};
+      fetchImpl,silent))return {sent:true,kind:'internal-event',division:'management'};
   }
   const warning=officeQueueDelayAlert(state);
   if(warning&&configured.has('operations') &&
-     await store.claimOfficeGroupSignal('queued-worker-silent')) {
-    await sendOfficeBotMessage(env,'operations',warning,{fetchImpl,silent});
+     await sendRoutineSignal(store,env,'queued-worker-silent','operations',warning,fetchImpl,silent)) {
     return {sent:true,kind:'queue-delay-alert',division:'operations'};
   }
   return null;
