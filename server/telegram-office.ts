@@ -73,6 +73,20 @@ export function configuredOfficeBots(env) {
     && /^[0-9]{5,15}:[A-Za-z0-9_-]{20,}$/.test(parsed[item.id])).map(item=>item.id);
   return {parsed,configured,missing:divisions.filter(item=>!configured.includes(item.id)).map(item=>item.id)};
 }
+/** Optional Telegram typing hint, never a second message and never a proof of work. */
+export async function sendOfficeBotTyping(env,division,fetchImpl=fetch) {
+  const token=configuredOfficeBots(env).parsed[division];
+  if(!token)return false;
+  try{
+    const response=await fetchImpl('https://api.telegram.org/bot'+token+'/sendChatAction',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,action:'typing'}),
+      signal:AbortSignal.timeout(900),
+    });
+    return response.ok;
+  }catch{return false;}
+}
+
 export async function sendOfficeBotMessage(env,division,text,options={}) {
   officeGroupConfig(env);
   if (!divisions.some(item=>item.id===division)) throw new Fault(400,'Divisi pegawai AI tidak valid.');
@@ -80,7 +94,7 @@ export async function sendOfficeBotMessage(env,division,text,options={}) {
   if (!config.configured.includes(division)) throw new Fault(503,'Token bot divisi '+division+' belum dikonfigurasi.');
   if (typeof text!=='string'||!text.trim()||text.length>3800) throw new Fault(400,'Pesan bot tidak valid.');
   const token=config.parsed[division];
-  const payload={chat_id:env.TELEGRAM_CHAT_ID,text,disable_notification:false};
+  const payload={chat_id:env.TELEGRAM_CHAT_ID,text,disable_notification:options.silent===true};
   if (Number.isSafeInteger(options.replyTo)&&options.replyTo>0) {
     payload.reply_parameters={message_id:options.replyTo,allow_sending_without_reply:true};
   }
@@ -314,6 +328,13 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const updateId=String(data.updateId);
   const novel=await store.reserveOfficeGroupUpdate(updateId);
   if (!novel)return {duplicate:true};
+  if(data.mediaType && ['photo','voice','audio','document','video'].includes(data.mediaType)) {
+    const supported={photo:'foto',voice:'pesan suara',audio:'audio',document:'dokumen',video:'video'};
+    await sendOfficeBotMessage(env,'management',
+      'Lampiran '+supported[data.mediaType]+' sudah terlihat di grup, tetapi kontennya belum bisa dianalisis oleh worker saat ini. '+
+      'Kalau ada bagian yang ingin dibahas, tuliskan isi atau ringkasannya di pesan teks.',{fetchImpl});
+    return {sent:true,division:'management',attachment:supported[data.mediaType],analyzed:false};
+  }
   const task=parseOfficeGroupTask(data.text)||parseOwnerNaturalTask(data.text);
   if(task) {
     const created=await store.create(task,'Pemilik · grup Telegram','office-group:'+updateId);
