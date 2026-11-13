@@ -1,19 +1,18 @@
 # n8n Cloud, Gemini, dan Telegram
 
-## Aktivasi bertahap Jihan — SEO & Pemasaran
+## Aktivasi Jihan — SEO & Pemasaran (token saja)
 
-Jihan adalah bot Telegram kelima yang **opsional**. Empat bot asli (Alya, Bima, Citra, Dara) tetap aktif dan tujuh divisi lainnya tetap nonaktif. Kode mendukung panggilan langsung **Jihan**, diskusi bersama **Alya dan Jihan**, panggilan kolektif **Guys**, serta pencatatan /tugas Jihan sebagai antrean draf. Ini tidak otomatis menghubungkan OpenSEO/Google Analytics/Search Console, mengubah website, atau menjamin worker SEO memproses tugas.
+Jihan mengikuti pola Alya, Bima, Citra, Dara: jika key `marketing` berisi token bot Telegram yang valid dalam `TELEGRAM_BOT_TOKENS_JSON`, Jihan otomatis dapat menjawab pesan dari Telegram setelah **commit yang mendukung Jihan** dipasang di Vercel Production. **Tidak perlu** `ANSHEL_JIHAN_ENABLED`; variabel lama tersebut diabaikan, baik nilainya `true` maupun `false`.
 
-**Langkah aktivasi setelah kode Production READY:**
+Untuk mengaktifkan Jihan:
+1. Buat bot dengan @BotFather dan undang ke grup Anshel yang sudah digunakan; izinkan mengirim pesan.
+2. Pada Vercel Production, tambahkan `"marketing":"TOKEN_JIHAN"` ke **JSON lama**, tanpa menghapus empat token sebelumnya. Jangan salin token ke chat, screenshot, issue, atau workflow n8n.
+3. Deploy commit `main` yang berisi perbaikan token-only ke **Production**, bukan Redeploy commit lama. Lingkungan Production harus menggunakan `TELEGRAM_BOT_TOKENS_JSON` terbaru.
+4. Uji `Jihan, halo!`, `Alya dan Jihan, bahas strategi SEO`, dan `/tugas Jihan | Rancangan audit SEO`. Balasan harus berasal dari akun Jihan; tugas hanya tercatat sampai dikerjakan worker yang benar-benar tersedia.
 
-1. Buat bot melalui **@BotFather** di Telegram untuk pegawai Jihan. Tentukan nama dan username unik; jangan bagikan token ke percakapan, grup Telegram, atau screenshot.
-2. Undang bot Jihan ke **grup Anshel yang sudah digunakan**, izinkan mengirim pesan. **Jangan membuat Telegram Trigger kedua**. Trigger Alya pada workflow Natural Gemini yang sudah Published tetap menjadi satu-satunya pemicu pesan pemilik; Jihan memakai token botnya sendiri untuk balasan.
-3. Vercel → **anshel-virtual → Settings → Environment Variables → Production**: edit `TELEGRAM_BOT_TOKENS_JSON` yang sudah ada, tambahkan `"marketing":"TOKEN_JIHAN"`, dan **jangan hapus token empat bot lama**. JSON harus valid; lakukan pengeditan melalui dashboard aman.
-4. Tambahkan environment variable **ANSHEL_JIHAN_ENABLED=true** untuk **Production**. Sekadar menyimpan token Jihan tidak akan mengaktifkannya. Setelah menyimpan kedua nilai, deploy ulang **main** ke Production agar variabelnya terbaca.
-5. Uji di grup: `Jihan, siapa kamu dan apa tugasmu?`, `Alya dan Jihan, bahas strategi SEO tanpa mengarang ranking`, `Guys, kita bahas SEO`, lalu `/tugas Jihan | Buat rancangan audit SEO untuk situs contoh`. Pastikan pesan keluar dari bot Jihan, tugas masih antre hingga benar-benar diproses, dan pekerja lain tidak mendadak aktif.
-6. Jika bot gagal merespons, periksa izin Telegram bot dan status workflow n8n tanpa menyalin token. Rollback aktivasi dengan **ANSHEL_JIHAN_ENABLED=false**, kemudian deploy Production ulang.
+Tidak perlu mengubah n8n Published atau menambah Telegram Trigger. Tujuh divisi lain tetap nonaktif **meski tokennya disimpan**. Aktivasi Jihan hanya memberi akses percakapan dan pemberitahuan tugas, bukan akses langsung ke OpenSEO, Google Analytics/Search Console, perubahan situs, atau publikasi konten.
 
-**Batas kemampuan:** Jihan dapat berdiskusi mengenai SEO berdasarkan informasi yang diberikan dan status tugas Anshel; tidak ada akses independen ke Google Analytics/Search Console, tidak ada integrasi OpenSEO yang otomatis, tidak ada worker SEO khusus yang dikonfirmasi aktif, dan tidak ada hak publikasi atau perubahan situs.
+Untuk menonaktifkan Jihan di masa depan, hilangkan **hanya key `marketing`** dari `TELEGRAM_BOT_TOKENS_JSON` sambil mempertahankan empat token lainnya, lalu deploy Production. Sebaiknya validasi JSON terlebih dahulu dan simpan backup kredensial di pengelola rahasia sebelum perubahan.
 
 ---
 
