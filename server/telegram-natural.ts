@@ -1,7 +1,8 @@
 import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
-  sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask,sendOfficeBotTyping } from './telegram-office.ts';
+  sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask,sendOfficeBotTyping,
+  parseOwnerTaskAction } from './telegram-office.ts';
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse,ownerReplyContext,conversationQuestion,groupDelayMs } from './telegram-group.ts';
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
@@ -21,7 +22,7 @@ const persona={
   qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
   finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
-const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur|rapat|ingat|lupakan|memori|acara|ingatkan|pengingat|mode|hening|pengaturan)(?:\s|$)/i;
+const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur|rapat|ingat|lupakan|memori|acara|ingatkan|pengingat|mode|hening|pengaturan|serahkan|revisi|tinjau|setujui|tolak|ulang|jeda|batalkan)(?:\s|$)/i;
 const actionClaim=/\b(?:sudah|telah|berhasil)\s+(?:(?:aku|saya|kami|kita)\s+)?(?:mengirim|mempublikasikan|memposting|menghapus|membayar|mentransfer|menginstal|mendeploy)\b/i;
 const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 // Only use company-wide totals when the user actually asks about the office as a whole.
@@ -222,7 +223,10 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
       {...data,text:'/lampiran'},fetchImpl);
     return {mode:'handled',...done};
   }
-  if(command.test(data.text.trim())||parseGroupWorkspaceCommand(data.text)||parseOwnerNaturalTask(data.text)) {
+  const meetingContinue=/^\/rapat\s+lanjut$/i.test(data.text.trim());
+  if(!meetingContinue &&
+    (command.test(data.text.trim())||parseGroupWorkspaceCommand(data.text)||
+      parseOwnerNaturalTask(data.text)||parseOwnerTaskAction(data.text))) {
     const done=await sendOfficeGroupOwnerMessage(store,env,data,fetchImpl);
     return {mode:'handled',...done};
   }
@@ -231,8 +235,14 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     state.groupWorkspace=await store.officeGroupWorkspace();
   const configured=configuredOfficeBots(env).configured;
   const discussion=requestedOfficeDiscussion(data.text);
-  const contextQuestion=conversationQuestion(data.text,data.replyTo);
-  if(isCollectiveCall(data.text)||discussion) {
+  const followup=meetingContinue ||
+    (state.groupWorkspace?.mode==='diskusi' &&
+      /^(?:lanjut(?:kan)?|tanggapi|menurut kalian|apa pendapat kalian|setuju nggak)\b/i.test(data.text.trim()));
+  const contextQuestion=conversationQuestion(
+    meetingContinue&&state.groupWorkspace?.meeting
+      ?'Guys, lanjutkan diskusi rapat "'+state.groupWorkspace.meeting.topic+'". Tanggapi pendapat sebelumnya berdasarkan catatan.'
+      :data.text,data.replyTo);
+  if(isCollectiveCall(data.text)||discussion||followup) {
     const available=availableOfficeResponders(state,configured);
     const recipients=discussion?discussion.filter(id=>available.includes(id)):available;
     if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
