@@ -531,7 +531,16 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   }
   const message=officeTaskConversation(event);
   if (!message) throw new Fault(500,'Audit tugas tidak bisa dipetakan ke pegawai kantor.');
-  const replyId=await sendOfficeBotMessage(env,message.division,message.text,{fetchImpl,silent});
+  let replyId;
+  try {
+    replyId=await sendOfficeBotMessage(env,message.division,message.text,{fetchImpl,silent});
+  }catch(error){
+    // Unknown delivery cannot be safely auto-retried: advance the outbox cursor
+    // while surfacing the failure to n8n for manual verification.
+    if(error?.deliveryRejected!==true)
+      await store.ackTelegramNotification(event.eventId,event.token,false);
+    throw error;
+  }
   await store.ackTelegramNotification(event.eventId,event.token,true);
   let followedUp=false;
   if (message.followUp && activeAuto.has(message.followUp.division) &&
@@ -586,15 +595,18 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
      typeof store.claimDueOfficeReminder==='function') {
     const due=await store.claimDueOfficeReminder();
     if(due) {
-      let sent=false;
+      let sent=false,uncertain=false;
       try{
         await sendOfficeBotMessage(env,'management',
           'Pengingat Anshel ('+due.date+' '+due.time+' WIB): '+due.text,
           {fetchImpl,silent:workspace.quiet});
         sent=true;
         return {sent:true,kind:'owner-reminder',division:'management'};
+      }catch(error){
+        uncertain=error?.deliveryRejected!==true;
+        throw error;
       }finally{
-        await store.ackOfficeReminder(due.id,sent);
+        await store.ackOfficeReminder(due.id,sent,uncertain);
       }
     }
   }
