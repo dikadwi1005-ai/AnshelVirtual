@@ -361,3 +361,66 @@ test('shared group memory expires after seven days in store and remains bounded'
     assert.deepEqual(later.groupHistory,[]);
   } finally {store.close();}
 });
+
+
+test('screenshot 13 Nov: all four unsupported claims fall back to real queued Citra task',()=>{
+  const state={now:Date.parse('2026-11-13T01:16:00Z'),counts:{queued:1,running:0,completed:2},
+    tasks:[{division:'administration',status:'queued',
+      project:'Agenda rapat tim',created:Date.parse('2026-11-13T00:47:00Z')},
+      {division:'management',status:'completed',project:'Tester Auto Worker'}],
+    people:{}};
+  const question='Guys, hari ini ada kabar apa?';
+  const texts={
+    management:'Hari ini belum ada info baru yang masuk ke tim kita.',
+    operations:'Semua sistem terpantau aman dan belum ada laporan kendala.',
+    administration:'Arsip dan catatan harian masih belum ada penambahan data baru.',
+    hr:'Suasana tim hari ini tetap kondusif dan saling mendukung.',
+  };
+  for(const [id,reply] of Object.entries(texts)){
+    const denied=cleanOfficeNaturalResponse(reply,'balasan aman',question);
+    if(id!=='management')assert.equal(denied,'balasan aman',id);
+  }
+  const req=buildOfficeCollectiveRequest(question,four,state);
+  const prompt=req.systemInstruction.parts[0].text;
+  const facts=JSON.parse(prompt.split('DATA: ').at(-1));
+  assert.equal(facts.counts.queued,1);
+  assert.ok(facts.recentWork.some(t=>t.division==='administration'&&t.status==='queued'));
+  assert.match(prompt,/jangan menyimpulkan semua sistem/i);
+  const out=resolveOfficeCollectiveResponse(JSON.stringify(texts),four,question,
+    cleanOfficeNaturalResponse,state);
+  assert.equal(out.generated,0);
+  assert.equal(out.fallbackReason,'provider-no-valid-replies');
+  assert.match(out.answers.management.text,/tugas Citra yang masih antre/i);
+  assert.match(out.answers.operations.text,/belum punya hasil pemeriksaan server/i);
+  assert.match(out.answers.administration.text,/Tugas administrasi masih antre/i);
+  assert.match(out.answers.hr.text,/prioritas tim/i);
+  assert.ok(Object.values(out.answers).every(x=>x.ai===false));
+  assert.doesNotMatch(Object.values(out.answers).map(x=>x.text).join(' '),
+    /terpantau aman|suasana tim.*kondusif|tidak ada info baru|arsip.*belum ada penambahan/i);
+});
+
+test('natural work updates remain accepted while unsupported generalities are rejected',()=>{
+  const question='Guys, hari ini ada kabar apa?';
+  const safe=[
+    'Di catatan Anshel, tugas Citra masih antre dan belum diproses.',
+    'Aku belum punya hasil pemeriksaan server. Kalau ada kendala, kabarkan ya.',
+    'Kalau mau koordinasi, kita lihat prioritas tugas yang antre dulu.',
+    'Ada hasil draf tercatat tetapi masih perlu ditinjau.',
+  ];
+  for(const reply of safe) assert.equal(cleanOfficeNaturalResponse(reply,'fallback',question),reply);
+  for(const unsafe of [
+    'Semua sistem terpantau aman dan belum ada laporan kendala.',
+    'Suasana tim hari ini tetap kondusif dan saling mendukung.',
+    'Arsip dan catatan harian masih belum ada penambahan data baru.',
+    'Seluruh server normal dan stabil tanpa masalah.',
+  ])assert.equal(cleanOfficeNaturalResponse(unsafe,'fallback',question),'fallback',unsafe);
+});
+
+test('without any recorded tasks fallback does not invent specific work updates',()=>{
+  const state={now:Date.parse('2026-11-13T01:15:00Z'),counts:{queued:0},tasks:[],people:{}};
+  const responses=resolveOfficeCollectiveResponse(null,four,'Guys, hari ini ada kabar apa?',
+    cleanOfficeNaturalResponse,state);
+  assert.equal(responses.generated,0);
+  assert.doesNotMatch(Object.values(responses.answers).map(x=>x.text).join(' '),
+    /tugas Citra yang masih antre/i);
+});
