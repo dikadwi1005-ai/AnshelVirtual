@@ -4,7 +4,7 @@ import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask } from './telegram-office.ts';
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse } from './telegram-group.ts';
-import { officeIndonesiaCalendarContext } from './office-calendar.ts';
+import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -93,6 +93,15 @@ export function officeScheduleReply(division,question,state) {
       ?'dijadwalkan masuk kantor virtual. '+regular
       :'tidak ada jadwal masuk kantor virtual (libur menurut pengaturan). Hari operasional: '+
         dayList+'. '+regular);
+    const calendar=officeIndonesiaDay(at,asksTomorrow?1:0,schedule);
+    if(calendar?.event) {
+      reply+=' Kalender nasional mencatat '+calendar.event.name+' ('+calendar.event.type+
+        ') pada tanggal ini. Ini tidak otomatis mengubah jadwal operasional Anshel.';
+    } else if(calendar?.calendarVerified && /libur|tanggal merah/i.test(question)) {
+      reply+=' Tidak ada libur nasional atau cuti bersama yang tercatat pada tanggal ini.';
+    } else if(calendar && !calendar.calendarVerified && /libur|tanggal merah/i.test(question)) {
+      reply+=' Data resmi hari libur nasional untuk tahun itu belum tersedia.';
+    }
   } else {
     reply='Jadwal kantor virtual yang tersimpan: '+dayList+'. '+regular;
   }
