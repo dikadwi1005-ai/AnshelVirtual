@@ -113,8 +113,9 @@ test('All-hands Telegram replies arrive one at a time with three 2-second pacing
     assert.equal(result.sent,true);
     assert.deepEqual(result.divisions,four);
     assert.deepEqual(calls.map(x=>x.division),four);
-    assert.deepEqual(pacing,[{ms:2000,beforeCount:1},{ms:2000,beforeCount:2},
-      {ms:2000,beforeCount:3}]);
+    assert.deepEqual(pacing.map(x=>x.beforeCount),[1,2,3]);
+    assert.ok(pacing.every(x=>x.ms>=1600&&x.ms<=2800),
+      'Pacing varies naturally between 1.6 and 2.8 seconds.');
     assert.ok(calls.every(x=>x.replyTo===undefined));
   }finally{store.close();}
 });
@@ -142,7 +143,8 @@ test('Two-employee discussions wait two seconds before the threaded second reply
       {updateId:pre.updateId,ticket:pre.ticket,output},fakeSend,
       async(ms)=>delays.push(ms));
     assert.equal(done.sent,true);
-    assert.deepEqual(delays,[2000]);
+    assert.equal(delays.length,1);
+    assert.ok(delays[0]>=1600&&delays[0]<=2800);
     assert.equal(sent.length,2);
     assert.equal(sent[1].body.reply_parameters.message_id,901);
   }finally{store.close();}

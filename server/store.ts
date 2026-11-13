@@ -4,6 +4,7 @@ import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
 import { evaluateOwnerGroupUpdate,ownerMessageDailyLimit,ownerMessageMinimumGapMs } from './telegram-owner-limits.ts';
+import {emptyGroupWorkspace,applyGroupWorkspaceCommand} from './telegram-workspace.ts';
 
 export class Fault extends Error {
   status: number;
@@ -121,6 +122,39 @@ export function createStore(path: string, now = Date.now) {
         const used=checkpoint.date===today?(checkpoint.used||0):0;
         writeSetting(key,{cursor:eventId,pending:null,date:today,
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)});
+      });
+    },
+    officeGroupWorkspace() {
+      return readSetting('office_group_workspace_v1',emptyGroupWorkspace());
+    },
+    applyOfficeGroupWorkspace(command) {
+      return transaction(()=>{
+        const state=readSetting('office_group_workspace_v1',emptyGroupWorkspace());
+        const result=applyGroupWorkspaceCommand(state,command,now());
+        writeSetting('office_group_workspace_v1',result.workspace);
+        return result;
+      });
+    },
+    claimDueOfficeReminder() {
+      return transaction(()=>{
+        const state=readSetting('office_group_workspace_v1',emptyGroupWorkspace());
+        const selected=(state.reminders||[]).find(r=>!r.sent&&r.due<=now()&&
+          (!r.leaseUntil||r.leaseUntil<=now()));
+        if(!selected)return null;
+        selected.leaseUntil=now()+60_000;
+        writeSetting('office_group_workspace_v1',state);
+        return {id:selected.id,text:selected.text,date:selected.date,time:selected.time};
+      });
+    },
+    ackOfficeReminder(id,sent) {
+      return transaction(()=>{
+        const state=readSetting('office_group_workspace_v1',emptyGroupWorkspace());
+        const r=(state.reminders||[]).find(x=>x.id===id);
+        if(!r)return false;
+        if(sent)r.sent=true;
+        delete r.leaseUntil;
+        writeSetting('office_group_workspace_v1',state);
+        return true;
       });
     },
     claimOfficeGroupSignal(kind) {

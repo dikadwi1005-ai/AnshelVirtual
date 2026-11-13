@@ -4,6 +4,7 @@ import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
 import { evaluateOwnerGroupUpdate,ownerMessageDailyLimit,ownerMessageMinimumGapMs } from './telegram-owner-limits.ts';
+import {emptyGroupWorkspace,applyGroupWorkspaceCommand} from './telegram-workspace.ts';
 import { Fault, validateWorkerTaskId } from './store.ts';
 
 // All timestamps remain Unix milliseconds to preserve existing SQLite API contracts.
@@ -109,6 +110,42 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         const used=checkpoint.date===today?(checkpoint.used||0):0;
         await writeSetting(key,{cursor:eventId,pending:null,date:today,
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)},client);
+      });
+    },
+    async officeGroupWorkspace() {
+      return readSetting('office_group_workspace_v1',emptyGroupWorkspace());
+    },
+    async applyOfficeGroupWorkspace(command) {
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293114)',[],client);
+        const state=await readSetting('office_group_workspace_v1',emptyGroupWorkspace(),client);
+        const result=applyGroupWorkspaceCommand(state,command,now());
+        await writeSetting('office_group_workspace_v1',result.workspace,client);
+        return result;
+      });
+    },
+    async claimDueOfficeReminder() {
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293114)',[],client);
+        const state=await readSetting('office_group_workspace_v1',emptyGroupWorkspace(),client);
+        const selected=(state.reminders||[]).find(r=>!r.sent&&r.due<=now()&&
+          (!r.leaseUntil||r.leaseUntil<=now()));
+        if(!selected)return null;
+        selected.leaseUntil=now()+60_000;
+        await writeSetting('office_group_workspace_v1',state,client);
+        return {id:selected.id,text:selected.text,date:selected.date,time:selected.time};
+      });
+    },
+    async ackOfficeReminder(id,sent) {
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293114)',[],client);
+        const state=await readSetting('office_group_workspace_v1',emptyGroupWorkspace(),client);
+        const r=(state.reminders||[]).find(x=>x.id===id);
+        if(!r)return false;
+        if(sent)r.sent=true;
+        delete r.leaseUntil;
+        await writeSetting('office_group_workspace_v1',state,client);
+        return true;
       });
     },
     async claimOfficeGroupSignal(kind) {
