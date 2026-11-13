@@ -308,8 +308,9 @@ test('responsive UI keeps all five tabs visible including Monitor on mobile',asy
 test('kesehatan Telegram melaporkan database, worker, dan dispatch berbasis bukti',async()=>{
   let now=day(13);
   const store=createStore(':memory:',()=>now);
-  const messages=[];
+  const messages=[],senders=[];
   const transport=async(url,opts)=>{
+    senders.push(url);
     messages.push(JSON.parse(opts.body).text);
     return new Response(JSON.stringify({ok:true,result:{message_id:999}}),{status:200});
   };
@@ -317,6 +318,10 @@ test('kesehatan Telegram melaporkan database, worker, dan dispatch berbasis bukt
     assert.equal(store.officeDispatchPulse(),null);
     const out=await prepareOfficeNaturalChat(store,env,msg(99001,'/kesehatan'),transport);
     assert.equal(out.kind,'health-evidence');
+    assert.equal(out.division,'operations');
+    assert.equal(out.technicalOwner,'operations');
+    assert.ok(senders[0].includes(tokens.operations));
+    assert.match(messages.at(-1),/^Bima · Laporan teknis IT Anshel:/);
     assert.match(messages.at(-1),/database: permintaan ini berhasil dibaca/i);
     assert.match(messages.at(-1),/belum diuji langsung/i);
     assert.doesNotMatch(messages.at(-1),/semua sistem sehat\./i);
@@ -326,6 +331,8 @@ test('kesehatan Telegram melaporkan database, worker, dan dispatch berbasis bukt
     now+=3000;
     const again=await prepareOfficeNaturalChat(store,env,msg(99002,'/kesehatan'),transport);
     assert.equal(again.kind,'health-evidence');
+    assert.equal(again.division,'operations');
+    assert.ok(senders.at(-1).includes(tokens.operations));
     assert.match(messages.at(-1),/0 menit sejak panggilan/i);
   }finally{store.close();}
 });

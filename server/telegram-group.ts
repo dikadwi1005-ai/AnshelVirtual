@@ -128,6 +128,7 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
     indonesiaCalendar:officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,question)};
   const prompt=[
     'Ini adalah chat Telegram kantor virtual Anshel Virtual Tech. Pengirim adalah PEMILIK sekaligus pimpinan, bukan pelanggan.',
+    'Pembagian peran: masalah API, server, database, webhook, koneksi dan integrasi adalah tanggung jawab Bima (IT & Operasional); Alya hanya mengoordinasikan dan merekap. Eka (Pengembangan) menangani pekerjaan kode namun botnya belum aktif. Jangan menyebut Alya sebagai teknisi atau mengklaim Bima sudah memeriksa layanan tanpa bukti.',
     'Balas panggilan pemilik untuk tiap pegawai yang sedang bebas dalam DATA. Pegawai sibuk sedang mengerjakan tugas sudah DISARING, jangan tampilkan mereka dan jangan menambah pegawai lain.',
     'Jika pemilik secara eksplisit meminta dua pegawai berdiskusi, jadikan jawaban pegawai pertama berupa pendapat berdasarkan DATA dan jawaban pegawai kedua sebagai tanggapan terhadap pendapat pertama. Jangan membuat tugas baru atau mengaku berdiskusi sebelumnya.',
     'DATA.recentConversation adalah ringkasan obrolan Telegram sebelumnya dengan pegawai. Gunakan untuk memahami rujukan seperti "yang tadi" dan "lanjut itu", tetapi hanya buat balasan untuk anggota DATA.people yang sedang bebas.',

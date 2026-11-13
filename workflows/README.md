@@ -1,5 +1,14 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Pembagian tanggung jawab API dan IT (Phase 3P)
+
+- **Bima — IT & Operasional** adalah pemilik masalah API, server, database, webhook, koneksi, insiden integrasi, dan status teknis worker. Perintah `/kesehatan` dijawab Bima. Jika token Bima belum tersedia, Alya boleh menyampaikan status yang diperoleh tanpa berpura-pura menjadi Bima.
+- **Alya — Manajemen** mengoordinasikan atau meneruskan laporan teknis, bukan mengaku sudah melakukan diagnosis atau memperbaiki API.
+- **Eka — Pengembangan** menangani perancangan dan perubahan kode, tetapi bot Telegram-nya masih nonaktif pada pilot empat bot. Tidak ada aktivasi otomatis.
+- Keluhan teknis tanpa nama pegawai yang dituju dipetakan ke Bima, termasuk ketika pesan merupakan Reply terhadap pegawai lain. Penyebutan pegawai secara eksplisit tetap dihormati. Mengobrol soal insiden **tidak otomatis membuat tugas, menjalankan diagnosis, atau memperbaiki server**.
+- Tidak perlu mengubah node n8n atau menambahkan trigger untuk koreksi pembagian peran ini; backend diperbarui lewat deployment GitHub/Vercel.
+
+
 ## Phase 3O — Pengiriman andal, audit kesehatan, dan review hasil
 
 **Penerapan ke n8n Published bukan bagian dari merge GitHub.** Jangan mengimpor workflow duplikat atau membuat Telegram Trigger baru.

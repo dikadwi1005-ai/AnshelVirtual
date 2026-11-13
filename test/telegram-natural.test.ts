@@ -420,3 +420,23 @@ test('pesan divisi nonaktif dijawab Alya tanpa tugas palsu atau Gemini',async()=
     assert.ok(sent[0].url.includes(tokens.management));
   }finally{s.close();}
 });
+
+test('API/server incidents route to Bima IT rather than arbitrary reply recipient',async()=>{
+  const state={tasks:[],counts:{},people:{}};
+  const {officeGroupReply,isTechnicalIncident}=await import('../server/telegram-office.ts');
+  assert.equal(isTechnicalIncident('API error setelah integrasi gagal'),true);
+  assert.equal(isTechnicalIncident('Diskusikan konsep dokumentasi API'),false);
+  assert.equal(officeGroupReply(state,'API error, kenapa koneksi gagal?',env).division,'operations');
+  assert.equal(officeGroupReply(state,'Alya, API error dan perlu koordinasi',env).division,'management');
+  let now=clock.value;
+  const store=createStore(':memory:',()=>now);
+  try {
+    const payload={...userMessage(89001,'API error dan server bermasalah'),
+      replyTo:{sender:'Dara',text:'Sedang bahas tim'}};
+    const outcome=await prepareOfficeNaturalChat(store,env,payload);
+    assert.equal(outcome.mode,'generate');
+    assert.equal(outcome.division,'operations');
+    assert.match(outcome.request.systemInstruction.parts[0].text,/Bima di IT & Operasional/);
+    assert.equal(store.state().tasks.length,0,'incident chat does not fabricate a task or a real diagnosis');
+  } finally {store.close();}
+});

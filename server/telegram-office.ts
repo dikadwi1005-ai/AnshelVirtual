@@ -161,6 +161,12 @@ function getUsernames(env) {
     .map(([id,value])=>[value.toLowerCase(),id]));
 }
 const personFrom=input=>divisionByName.get(input.toLowerCase()) ?? null;
+// Only suggest a technical owner on explicit incidents, never on the mere
+// appearance of API/server in a general chat or in a task description.
+export const isTechnicalIncident=text=>
+  typeof text==='string' &&
+  /\b(?:api|endpoint|server|database|webhook|integrasi|n8n|vercel|supabase|worker|koneksi)\b/i.test(text) &&
+  /\b(?:error|gagal|masalah|gangguan|down|rusak|putus|bermasalah|timeout|cek|periksa|kenapa|status|tidak\s+(?:jalan|bisa|tersambung)|nggak\s+(?:jalan|bisa))\b/i.test(text);
 // Only match complete employee names, never substrings inside unrelated words.
 // Match names anywhere in a message so the owner can speak naturally.
 const employeeNamePattern=new RegExp('(^|[^A-Za-z0-9_])('+divisions.map(d=>d.employee).join('|')+')(?=$|[^A-Za-z0-9_])','ig');
@@ -214,7 +220,7 @@ function latestTask(state,division) {
 export function officeGroupReply(state,input,env) {
   const msg=input.trim().slice(0,1500);
   if (msg==='/bantuan'||msg==='/help') return {division:'management',
-    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai. /kalender untuk tanggal merah. /rapat mulai TOPIK, /rapat catat CATATAN, /rapat putuskan KEPUTUSAN, /rapat selesai; /ingat TOPIK | CATATAN; /memori; /acara; /ingatkan YYYY-MM-DD HH:MM | PESAN; /mode normal atau diskusi; /hening on atau off. /serahkan ID | Nama; /revisi ID | instruksi; /tinjau ID; /setujui ID; /rapat tugas Nama | instruksi.'};
+    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /kesehatan untuk status teknis dari Bima (IT), /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai. /kalender untuk tanggal merah. /rapat mulai TOPIK, /rapat catat CATATAN, /rapat putuskan KEPUTUSAN, /rapat selesai; /ingat TOPIK | CATATAN; /memori; /acara; /ingatkan YYYY-MM-DD HH:MM | PESAN; /mode normal atau diskusi; /hening on atau off. /serahkan ID | Nama; /revisi ID | instruksi; /tinjau ID; /setujui ID; /rapat tugas Nama | instruksi.'};
   if(/^\/(?:aktivitas|pegawai|monitor)$/i.test(msg))
     return {division:'management',text:officeActivityReply(state,configuredOfficeBots(env).configured)};
   if(/^\/(?:kalender|libur)$/i.test(msg)) {
@@ -294,7 +300,9 @@ export function officeGroupReply(state,input,env) {
       ' sedang dikerjakan, '+(c.completed||0)+' selesai, '+(c.blocked||0)+' terhambat, '+(c.failed||0)+
       ' gagal. Hasil lengkapnya tetap ada di dashboard privat Anshel.'};
   }
-  const target=getAddressedDivision(msg,env);
+  const addressed=getAddressedDivision(msg,env);
+  const target=!addressed.explicit&&isTechnicalIncident(msg)
+    ?{division:'operations',text:msg,explicit:false}:addressed;
   if (!target.division) return {division:'management',
     text:'Aku belum bisa menemukan pegawai yang kamu maksud. Coba /tim untuk nama pegawai, lalu /tanya Nama | pertanyaan.'};
   const person=divisions.find(d=>d.id===target.division);
@@ -384,14 +392,17 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
       ?Math.floor((state.now-last)/60_000):null;
     const dispatcher=elapsed===null?'belum ada pemanggilan terverifikasi'
       :elapsed+' menit sejak panggilan /dispatch terakhir';
-    const text='Alya · Pemeriksaan faktual Anshel:\n'+
+    const itConnected=configuredOfficeBots(env).configured.includes('operations');
+    const sender=itConnected?'operations':'management';
+    const text=(itConnected?'Bima · Laporan teknis IT Anshel:\n':
+      'Alya · Meneruskan status IT (bot Bima belum terhubung):\n')+
       'API dan database: permintaan ini berhasil dibaca.\n'+
       'Worker: '+(state.worker?'heartbeat teramati dalam 40 detik':'tidak ada heartbeat terbaru')+'.\n'+
       'Integrasi Auto Office: '+dispatcher+'.\n'+
       'Gemini, n8n Published, Vercel deployment, dan layanan eksternal: belum diuji langsung oleh pemeriksaan ini. ' +
       'Pemeriksaan kesehatan menyeluruh memerlukan sumber eksternal yang belum terhubung.';
-    await sendOfficeBotMessage(env,'management',text,{fetchImpl});
-    return {sent:true,division:'management',kind:'health-evidence'};
+    await sendOfficeBotMessage(env,sender,text,{fetchImpl});
+    return {sent:true,division:sender,technicalOwner:'operations',kind:'health-evidence'};
   }
   const taskAction=parseOwnerTaskAction(data.text);
   if(taskAction) {
