@@ -144,6 +144,18 @@ test('hourly dispatch alerts Bima after a real queued task waits two hours',asyn
   } finally {store.close();}
 });
 
+test('routine notification retries explicit Telegram rejection, avoids repeat after success',async()=>{
+  const store=createStore(':memory:',()=>day(17));
+  const rejected=async()=>new Response(JSON.stringify({ok:false}),{status:429});
+  try{
+    await assert.rejects(dispatchOfficeGroupEvent(store,env,rejected),e=>
+      e.status===502 && e.deliveryRejected===true);
+    const recovered=await dispatchOfficeGroupEvent(store,env,fakeTelegram);
+    assert.equal(recovered.kind,'daily-summary');
+    assert.deepEqual(await dispatchOfficeGroupEvent(store,env,fakeTelegram),{sent:false});
+  }finally{store.close();}
+});
+
 test('natural language creates only four allowlisted draft tasks, with idempotence and no Gemini',async()=>{
   assert.deepEqual(parseOwnerNaturalTask('Tolong Bima buat draf pemeriksaan layanan API'),{
     division:'operations',description:'draf pemeriksaan layanan API',kind:'draft',urgent:false,
