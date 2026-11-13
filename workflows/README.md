@@ -1,5 +1,21 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Jihan BCIFT News Hunter + Indra/Hana lintas proyek
+
+**Rilis fitur bersyarat:** perubahan kode GitHub tidak otomatis berlaku ke Production sampai commit baru benar-benar di-deploy ke Vercel. Kode ini tidak mengubah workflow Published di n8n.
+
+- **Jihan (marketing)** khusus SEO dan pemasaran **BCIFT** (`bcift.co.id`), bukan domain ferry, bisnis, atau proyek klien lain. Aktif otomatis bila token `marketing` ada di `TELEGRAM_BOT_TOKENS_JSON`. Tidak memerlukan `ANSHEL_JIHAN_ENABLED`.
+- **Indra (research)** melayani riset dan verifikasi lintas proyek; aktif otomatis saat token `research` ditambahkan. **Hana (social)** menangani konten media sosial lintas proyek; aktif saat token `social` ditambahkan. Jangan aktivasi sebelum bot resmi dibuat dan diundang ke grup.
+- Ketiga bot memakai **Telegram Trigger Alya yang sama**, bukan trigger, webhook, atau workflow n8n baru. Satu Telegram update dari pemilik diproses sekali, tetapi pengiriman pesan dilakukan oleh akun bot masing-masing.
+- Contoh perintah: `Jihan, carikan hot news minggu ini untuk blog BCIFT`, `Indra, riset sejarah Indonesia dari sumber primer`, `Hana, buat ide Reels untuk proyek animasi sejarah`, `Indra dan Hana, bahas konsep konten edukasi sejarah`.
+- Berita BCIFT dicari **saat diminta**, dengan `Gemini 3.5 Flash-Lite` dan Google Search grounding; *bukan* hasil riset dari database internal, bukan pemantauan otomatis yang selalu berjalan. Penelusuran Google lewat Gemini **dapat dikenakan biaya sesuai tarif penyedia**. Belum ada jadwal berita mingguan tanpa persetujuan khusus.
+- Permintaan hot news memaksa tanggal sumber dalam **7 hari terakhir WIB** dan URL **HTTPS sumber resmi** (`.go.id`, `.gov.sg`, atau BCIFT). Kandidat yang tanggal/URL-nya tidak lolos pemeriksaan tidak dikirim sebagai rekomendasi: bot menyatakan tidak menemukan bukti yang cukup. Tautan yang dicantumkan adalah petunjuk verifikasi dan masih perlu **pemeriksaan manusia atas isi halaman** sebelum membuat artikel.
+- Judul artikel lama BCIFT dibaca dari `https://bcift.co.id/blog/` saat mencari berita, dengan batas waktu unduh 2,6 detik dan daftar artikel lama yang diketahui sebagai fallback; jika pembacaan gagal, pengecekan duplikat bisa tidak lengkap. Pembuatan/publikasi artikel, backlink, perubahan website, dan pengambilan metrik SEO live **tidak dilakukan otomatis**.
+- Karena node n8n Published `Periksa jawaban AI` saat ini membatasi jawaban hingga 700 karakter, Jihan menyajikan maksimal **dua kandidat pendek** per pesan. Bila ingin laporan 3–5 topik lengkap, perlu menaikkan batas pesan pada workflow yang sama setelah pengujian (bukan membuat workflow duplikat).
+- Panggilan kolektif maksimal lima bot per update agar tidak melewati batas HTTP 12 detik di n8n; identitas peserta dirotasi. Diskusi berpasangan tetap memungkinkan Indra/Hana, dan tujuh divisi yang belum punya bot tidak boleh berpura-pura hadir.
+- Aktifkan token hanya melalui Vercel Production → `TELEGRAM_BOT_TOKENS_JSON` dengan key `research` / `social`, menjaga empat token lama. Token tidak boleh dikirim lewat chat, GitHub PR, atau screenshot. Gunakan satu deployment Production commit terbaru setelah konfigurasi siap; `ANSHEL_JIHAN_ENABLED` diabaikan.
+
+
 ## Aktivasi Jihan — SEO & Pemasaran (token saja)
 
 Jihan mengikuti pola Alya, Bima, Citra, Dara: jika key `marketing` berisi token bot Telegram yang valid dalam `TELEGRAM_BOT_TOKENS_JSON`, Jihan otomatis dapat menjawab pesan dari Telegram setelah **commit yang mendukung Jihan** dipasang di Vercel Production. **Tidak perlu** `ANSHEL_JIHAN_ENABLED`; variabel lama tersebut diabaikan, baik nilainya `true` maupun `false`.
