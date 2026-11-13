@@ -1,5 +1,31 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3J — Jeda balasan grup dan kalender Indonesia
+
+### Percakapan seperti chat manusia, bukan spam empat akun sekaligus
+- Saat pemilik menulis `Guys, ...`, empat akun aktif (Alya, Bima, Citra, Dara) **tidak lagi dikirim secara paralel**. Backend mengirim berurutan, berjarak target **2 detik** antara pesan.
+- Saat pemilik menulis `Alya dan Bima, diskusikan ...`, satu permintaan Gemini tetap membuat dua jawaban saling terkait. Jawaban Bima muncul setelah sekitar dua detik serta **di-reply** ke pesan Alya.
+- Delay memakai batas lunak sekitar **9 detik** agar tidak menambah risiko timeout pada node n8n **Kirim dari bot pegawai** yang sekarang memakai timeout 12 detik. Jika koneksi Telegram sedang lambat, sebagian jeda boleh dilewati; hal ini **tidak menjamin** jeda persis 2 detik dalam semua kondisi. Tidak ada penjadwalan pesan di background, tidak ada workflow, token, ataupun node baru.
+- Jangan membuat satu respons AI untuk setiap pegawai secara terpisah. Mekanisme satu request Gemini dan pemilihan identitas hanya dari backend tetap dipertahankan, termasuk pengecualian pegawai yang sedang mengerjakan tugas.
+
+### Kesadaran tanggal merah dan perayaan Indonesia
+- Server punya daftar **hari libur nasional dan cuti bersama 2026–2027** dari publikasi resmi pemerintah. Kalender memakai **WIB (Asia/Jakarta)** dan memisahkan:
+  1. Libur nasional: contoh Natal, Imlek, Nyepi, Idulfitri, Iduladha, Pancasila, Kemerdekaan, Paskah, dan lain-lain menurut tahun.
+  2. Cuti bersama: tanggal dan alasan tersendiri, tidak otomatis berarti semua kantor swasta libur.
+  3. Peringatan umum yang **bukan otomatis libur**: Hari Kartini, Hari Pendidikan Nasional, Hari Sumpah Pemuda, Hari Pahlawan, Hari Ibu.
+- Data tanggal hari ini dan besok dimasukkan secara ringkas ke prompt Gemini tiap pegawai, sedangkan kalender yang mendekati atau cocok dengan pertanyaan dimasukkan ketika relevan. Jangan mengarang hari raya untuk tahun tanpa daftar resmi.
+- Jadwal `state.schedule.days` dan `state.schedule.holidays` adalah **sumber keputusan kapan kantor virtual tutup**. Penambahan informasi hari libur resmi tidak diam-diam mengubah jadwal, mematikan worker, atau mengirim pengumuman massal.
+- Perintah `/kalender` (alias `/libur`) dijawab langsung oleh Alya berdasarkan data resmi, tidak memerlukan request Gemini. Pertanyaan biasa seperti `Alya, besok kantor libur nggak?` tetap memakai aturan operasional backend dan akan menjelaskan hari libur nasional yang relevan.
+- Penggunaan salam hari raya dibuat kontekstual dan tidak terus-menerus; jangan mengasumsikan agama atau kebiasaan perayaan pemilik maupun pegawai.
+- Jadwal Idulfitri dan Iduladha pada SKB bisa memerlukan penetapan lanjutan Kementerian Agama. Perbarui daftar resmi jika ada perubahan; untuk tahun setelah 2027 kalender nasional belum diverifikasi.
+
+**Sumber resmi:**
+- [Kementerian Sekretariat Negara — SKB 3 Menteri Libur Nasional dan Cuti Bersama 2026](https://www.setneg.go.id/baca/index/inilah_skb_3_menteri_libur_nasional_dan_cuti_bersama_2026)
+- [Kementerian Sekretariat Negara — SKB 3 Menteri Libur Nasional dan Cuti Bersama 2027](https://setneg.go.id/baca/index/inilah_skb_3_menteri_libur_nasional_dan_cuti_bersama_2027)
+
+**Cara cek lewat HP setelah Production Ready:** Kirim `/kalender`, kemudian `Alya, besok kantor libur nggak?`, dan `Guys, minggu depan ada perayaan apa?`. Untuk jeda, coba `Guys, hari ini ada kabar?` atau `Alya dan Bima, diskusikan status antrean tugas`. Balasan harus terurut, tidak memanggil pegawai sibuk atau menyebut tanggal libur palsu.
+
+
 ## Phase 3I — Operasional Telegram, monitoring, laporan, dan kontrol dari HP
 
 **Hanya empat bot yang sudah aktif:** Alya, Bima, Citra, Dara. Delapan bot lain tetap ditunda. Workflow n8n Auto Office yang sudah Published tetap bisa dipakai, karena backend memanfaatkan panggilan `POST /api/integrations/office-group/dispatch` setiap jam pada hari kerja pukul 09–17 WIB. Tidak ada Telegram Trigger baru, credential baru, atau database schema baru. Setelah perubahan masuk Production, cek bahwa workflow Auto Office itu memang Published dan berjalan pada jam tersebut.
