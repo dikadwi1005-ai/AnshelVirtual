@@ -144,7 +144,7 @@ export function createStore(path: string, now = Date.now) {
     claimDueOfficeReminder() {
       return transaction(()=>{
         const state=readSetting('office_group_workspace_v1',emptyGroupWorkspace());
-        const selected=(state.reminders||[]).find(r=>!r.sent&&r.due<=now()&&
+        const selected=(state.reminders||[]).find(r=>!r.sent&&!r.uncertain&&r.due<=now()&&
           (!r.leaseUntil||r.leaseUntil<=now()));
         if(!selected)return null;
         selected.leaseUntil=now()+60_000;
@@ -152,12 +152,13 @@ export function createStore(path: string, now = Date.now) {
         return {id:selected.id,text:selected.text,date:selected.date,time:selected.time};
       });
     },
-    ackOfficeReminder(id,sent) {
+    ackOfficeReminder(id,sent,uncertain=false) {
       return transaction(()=>{
         const state=readSetting('office_group_workspace_v1',emptyGroupWorkspace());
         const r=(state.reminders||[]).find(x=>x.id===id);
         if(!r)return false;
         if(sent)r.sent=true;
+        if(!sent&&uncertain)r.uncertain=true;
         delete r.leaseUntil;
         writeSetting('office_group_workspace_v1',state);
         return true;
