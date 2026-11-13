@@ -448,3 +448,37 @@ test('perintah cek diarahkan ke empat pegawai aktif dan tidak menyalakan delapan
   assert.equal(unknown.division,'management');
   assert.match(unknown.text,/\/cek Bima/);
 });
+
+test('Jihan only joins the pilot after explicit flag plus valid marketing token',async()=>{
+  const {enabledOfficeDivisions,inactiveOfficeAddress,parseOwnerNaturalTask}=await import('../server/telegram-office.ts');
+  const ready={...env,ANSHEL_JIHAN_ENABLED:'true'};
+  const noToken={...ready,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify({
+    management:allTokens.management,operations:allTokens.operations,
+    administration:allTokens.administration,hr:allTokens.hr,
+  })};
+  assert.deepEqual(enabledOfficeDivisions(env),automaticOfficeDivisions);
+  assert.deepEqual(enabledOfficeDivisions({...env,ANSHEL_JIHAN_ENABLED:'false'}),automaticOfficeDivisions);
+  assert.deepEqual(enabledOfficeDivisions(noToken),automaticOfficeDivisions);
+  assert.deepEqual(enabledOfficeDivisions(ready),[...automaticOfficeDivisions,'marketing']);
+  assert.equal(enabledOfficeDivisions(ready).includes('development'),false);
+  assert.equal(enabledOfficeDivisions(ready).includes('creative'),false);
+  assert.equal(inactiveOfficeAddress('Jihan, sedang apa?',env).division,'marketing');
+  assert.equal(inactiveOfficeAddress('Jihan, sedang apa?',ready),null);
+  assert.equal(officeGroupReply({tasks:[],counts:{}},'Jihan, apa kabar?',ready).division,'marketing');
+  assert.equal(parseOwnerNaturalTask('Tolong Jihan buat draf strategi keyword',env),null);
+  assert.equal(parseOwnerNaturalTask('Tolong Jihan buat draf strategi keyword',ready)?.division,'marketing');
+  const s=createStore(':memory:',()=>start);
+  try {
+    const sent=[];
+    const transport=async(url,options)=>{sent.push({url,payload:JSON.parse(options.body)});return goodResponse(911+sent.length);};
+    const result=await sendOfficeGroupOwnerMessage(s,ready,
+      {chatId:ready.TELEGRAM_CHAT_ID,userId:ready.TELEGRAM_USER_ID,
+       updateId:'995511',text:'/tugas Jihan | Buat rancangan audit SEO awal',isBot:false},transport);
+    assert.equal(result.acknowledgedBy,'marketing');
+    assert.equal(s.state().tasks.length,1);
+    assert.equal(s.state().tasks[0].division,'marketing');
+    assert.equal(s.state().tasks[0].status,'queued');
+    assert.ok(sent[0].url.includes(allTokens.marketing));
+    assert.equal(sent.length,1);
+  }finally{s.close();}
+});
