@@ -2,7 +2,7 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask,sendOfficeBotTyping,
-  parseOwnerTaskAction,inactiveOfficeAddress } from './telegram-office.ts';
+  parseOwnerTaskAction,inactiveOfficeAddress,isTechnicalIncident } from './telegram-office.ts';
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse,ownerReplyContext,conversationQuestion,groupDelayMs } from './telegram-group.ts';
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
@@ -166,6 +166,7 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'Utamakan pertanyaan TERAKHIR. Kalau ada dua pertanyaan, jawab keduanya. Jangan menyelipkan statistik atau topik lain yang tidak diminta.',
     'Nama kamu boleh disebut di tengah atau akhir pesan, misalnya "Eh, Bima lagi ngapain?". Anggap itu pertanyaan untukmu jika kamu adalah Bima; jawab langsung sebagai dirimu sendiri, bukan melaporkan Bima sebagai orang ketiga.',
     'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar YANG TERCATAT di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
+    'Urusan API, endpoint, server, database, webhook, integrasi, koneksi, dan insiden teknis adalah ranah Bima di IT & Operasional. Alya mengoordinasikan dan menerima laporan, bukan mengaku mendiagnosis sendiri. Eka di Pengembangan berfokus pada perubahan kode dan masih non-pilot.',
     'Belum ada tugas IT tercatat tidak berarti server pasti aman. Tanpa bukti pemeriksaan, jangan klaim kondisi sistem aman, stabil, normal, atau bebas kendala.',
     'Jangan pernah bilang sistem terpantau aman, semua server normal, atau tim sedang kondusif/kompak/saling mendukung jika itu hanya dugaan dari percakapan. Ceritakan apa yang benar-benar tercatat, bukan membuat kesimpulan umum.',
     'Jangan bilang tidak ada pembaruan arsip/catatan harian tanpa daftar dokumen yang tervalidasi. Jika tugas administrasi baru masuk antrean, katakan antrean itu belum diproses, bukan menganggap arsip sudah dicek.',
@@ -270,8 +271,12 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   }
   const quoted=ownerReplyContext(data);
   const addressed=/^@?(?:Alya|Bima|Citra|Dara)\b\s*[,：:]/i.test(question.trim());
-  const target=!addressed&&quoted?.employee&&configured.includes(quoted.employee)
-    ?{division:quoted.employee}:officeGroupReply(state,question,env);
+  // A reported API/server incident belongs to IT even when it replies to an
+  // unrelated bot's earlier message. A direct employee address still wins.
+  const technical=!addressed&&isTechnicalIncident(question);
+  const target=technical?{division:'operations'}:
+    !addressed&&quoted?.employee&&configured.includes(quoted.employee)
+      ?{division:quoted.employee}:officeGroupReply(state,question,env);
   if(!configuredOfficeBots(env).configured.includes(target.division))
     throw new Fault(503,'Token pegawai '+target.division+' belum dikonfigurasi.');
   // Precise office hours are system settings, not a Gemini improvisation.
