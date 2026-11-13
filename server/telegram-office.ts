@@ -2,6 +2,7 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert } from './office-monitoring.ts';
+import { parseGroupWorkspaceCommand } from './telegram-workspace.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
 // Pilot automation uses the four connected bots only. More workers remain opt-in.
@@ -190,7 +191,7 @@ function latestTask(state,division) {
 export function officeGroupReply(state,input,env) {
   const msg=input.trim().slice(0,1500);
   if (msg==='/bantuan'||msg==='/help') return {division:'management',
-    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai. /kalender untuk tanggal merah dan peringatan Indonesia.'};
+    text:'Boleh ngobrol dengan Alya, Bima, Citra, atau Dara. /aktivitas untuk melihat aktivitas empat bot dan worker, /ringkasan untuk status tugas, /kendala untuk tugas bermasalah, /cek Nama untuk progres pribadi, /status dan /tim untuk informasi kantor. Beri draf dengan /tugas Nama | instruksi, atau tulis: Tolong Bima buat draf pemeriksaan API. Tugas yang dibuat masuk antrean, bukan langsung selesai. /kalender untuk tanggal merah. /rapat mulai TOPIK, /rapat catat CATATAN, /rapat putuskan KEPUTUSAN, /rapat selesai; /ingat TOPIK | CATATAN; /memori; /acara; /ingatkan YYYY-MM-DD HH:MM | PESAN; /mode normal atau diskusi; /hening on atau off.'};
   if(/^\/(?:aktivitas|pegawai|monitor)$/i.test(msg))
     return {division:'management',text:officeActivityReply(state,configuredOfficeBots(env).configured)};
   if(/^\/(?:kalender|libur)$/i.test(msg)) {
@@ -328,6 +329,13 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const updateId=String(data.updateId);
   const novel=await store.reserveOfficeGroupUpdate(updateId);
   if (!novel)return {duplicate:true};
+  const groupCommand=parseGroupWorkspaceCommand(data.text);
+  if(groupCommand) {
+    const result=await store.applyOfficeGroupWorkspace(groupCommand);
+    await sendOfficeBotMessage(env,'management',result.text,
+      {fetchImpl,silent:result.workspace.quiet});
+    return {sent:true,division:'management',groupCommand:groupCommand.type};
+  }
   if(data.mediaType && ['photo','voice','audio','document','video'].includes(data.mediaType)) {
     const supported={photo:'foto',voice:'pesan suara',audio:'audio',document:'dokumen',video:'video'};
     await sendOfficeBotMessage(env,'management',
@@ -398,6 +406,24 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
      await store.claimOfficeGroupSignal('daily-summary')) {
     await sendOfficeBotMessage(env,'management',officeDailySummary(state),{fetchImpl});
     return {sent:true,kind:'daily-summary',division:'management'};
+  }
+  const workspace=typeof store.officeGroupWorkspace==='function'
+    ?await store.officeGroupWorkspace():null;
+  if(workspace && configured.has('management') &&
+     typeof store.claimDueOfficeReminder==='function') {
+    const due=await store.claimDueOfficeReminder();
+    if(due) {
+      let sent=false;
+      try{
+        await sendOfficeBotMessage(env,'management',
+          'Pengingat Anshel ('+due.date+' '+due.time+' WIB): '+due.text,
+          {fetchImpl,silent:workspace.quiet});
+        sent=true;
+        return {sent:true,kind:'owner-reminder',division:'management'};
+      }finally{
+        await store.ackOfficeReminder(due.id,sent);
+      }
+    }
   }
   const warning=officeQueueDelayAlert(state);
   if(warning&&configured.has('operations') &&
