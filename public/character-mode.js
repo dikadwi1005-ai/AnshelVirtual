@@ -26,6 +26,7 @@ export async function createCharacter(scene,nav,shadowMap) {
   const root=new THREE.Group();
   const figure=characterFigure(asset,{asset:formalAsset,stature:1.71});
   root.name='Dika';
+  root.rotation.y=Math.PI;
   root.add(figure);
   root.visible=false;
   scene.add(root);
@@ -77,8 +78,9 @@ export async function createCharacter(scene,nav,shadowMap) {
       root.visible=shadow.visible=value;
       return value;
     },
-    update(delta,input,camera,actors) {
-      camera.getWorldDirection(forward);
+    update(delta,input,view,actors) {
+      if (view.isCamera) view.getWorldDirection(forward);
+      else forward.copy(view);
       forward.y=0;
       forward.normalize();
       const direction=[forward.x*input.y-forward.z*input.x,forward.z*input.y+forward.x*input.x];

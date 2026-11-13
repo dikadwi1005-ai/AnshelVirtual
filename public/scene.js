@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createActors } from './actors.js';
 import { createCharacter } from './character-mode.js';
+import { createCharacterCamera } from './character-camera.js';
 import { insideRoom, rooms, roomById, point } from './layout.js';
 import { radialTexture } from './materials.js';
 import { navigation } from './navigation.js';
@@ -36,6 +37,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   renderer.domElement.setAttribute('aria-label','Kantor 3D interaktif');
 
   const camera=new THREE.OrthographicCamera(-32,32,24,-24,.1,190);
+  const chase=createCharacterCamera();
   const controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true;
   controls.dampingFactor=.10;
@@ -67,9 +69,12 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const shadow=radialTexture();
   const temp=new THREE.Vector3(), offset=new THREE.Vector3(), ray=new THREE.Raycaster();
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
-  let world, population, character, directorView, state=null, following=null, selected=null, cameraMove=null;
+  let world, population, character, state=null, following=null, selected=null, cameraMove=null, drag=null;
   const movement={x:0,y:0};
   const characterActive=()=>character?.root.visible===true;
+  const viewCamera=()=>characterActive()?chase.camera:camera;
+  const viewTarget=()=>characterActive()?chase.focus:controls.target;
+  const viewZoom=()=>characterActive()?6:camera.zoom;
   let mode='auto', night=0, press=null, loaded=false, auditCursor=null, suspended=false;
   const roomLabels=[];
   const bubble=document.createElement('div');
@@ -120,6 +125,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     const vertical=Math.max(26.4,34.5/aspect);
     Object.assign(camera,{left:-vertical*aspect,right:vertical*aspect,top:vertical,bottom:-vertical});
     camera.updateProjectionMatrix();
+    chase.resize(aspect);
     renderer.setSize(width,height,false);
   }
   const resizeObserver=new ResizeObserver(resize);
@@ -133,7 +139,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   function reset() {
     following=null;
     if (characterActive()) {
-      focus(character.root.position.x,character.root.position.z,host.clientWidth<650?5:6);
+      chase.reset(character.root.rotation.y);
+      chase.update(character.root,0,host.clientWidth<650);
       return;
     }
     cameraMove={target:center.clone(),position:overview.clone(),zoom:1};
@@ -171,7 +178,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   controls.addEventListener('start',()=>{cameraMove=null;following=null;});
   function updateCamera(delta) {
     const blend=1-Math.exp(-delta*7);
-    const root=characterActive()?character.root:following && population?.actors.find(item=>item.person.id===following)?.root;
+    const root=following && population?.actors.find(item=>item.person.id===following)?.root;
     if (root) {
       temp.copy(root.position).y=.55;
       if (cameraMove) {
@@ -215,19 +222,25 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const skyNight=new THREE.Color(evening.sky), groundNight=new THREE.Color(evening.ground);
 
   function updateLabels(width,height) {
+    const view=viewCamera(), zoom=viewZoom(), target=viewTarget();
+    const avatar=characterActive()?temp.copy(target).project(view):null;
+    const avatarX=avatar && (.5+avatar.x*.5)*width;
+    const avatarY=avatar && (.5-avatar.y*.5)*height;
     const boxes=[];
     const narrow=width<700;
     for (const {room,element,anchors} of roomLabels) {
       const focused=selected===room.id;
-      const relevant=camera.zoom<18 && (focused || (!narrow && camera.zoom<1.55) ||
-        (camera.zoom>1.48 && Math.hypot(controls.target.x-room.x,controls.target.z-room.z)<7.8));
+      const relevant=zoom<18 && (focused || (!narrow && zoom<1.55) ||
+        (zoom>1.48 && Math.hypot(target.x-room.x,target.z-room.z)<(characterActive()?5.5:7.8)));
       const labelWidth=Math.min(135,42+room.label.length*4);
       let position=null;
       if (relevant) {
         for (const anchor of anchors) {
-          temp.copy(anchor).project(camera);
+          temp.copy(anchor).project(view);
+          if (temp.z<=-1 || temp.z>=1) continue;
           const left=(temp.x*.5+.5)*width, top=(.5-temp.y*.5)*height;
           if (left<labelWidth/2+9 || left>width-labelWidth/2-9 || top<75 || top>height-74) continue;
+          if (avatar && Math.abs(left-avatarX)<labelWidth/2+width*.07 && Math.abs(top-avatarY)<height*.16) continue;
           const overlaps=boxes.some(item=>Math.abs(item.left-left)<(labelWidth+item.width)/2 && Math.abs(item.top-top)<24);
           if (overlaps && !focused) continue;
           position={left,top,width:labelWidth};
@@ -245,17 +258,19 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   function updateSpeech(width,height) {
     let closest=null, distance=7.5, x, y;
-    if (population && camera.zoom>2.15 && state?.phase!=='paused') {
+    if (population && viewZoom()>2.15 && state?.phase!=='paused') {
+      const view=viewCamera(), target=viewTarget();
       const candidates=[...population.turns.values()];
       if (population.solo) candidates.push(population.solo);
       candidates.sort((a,b)=>Number(a!==shownTurn)-Number(b!==shownTurn));
       for (const turn of candidates) {
         const actor=turn.speaker;
         const position=actor.root.position;
-        const range=Math.hypot(position.x-controls.target.x,position.z-controls.target.z);
+        const range=Math.hypot(position.x-target.x,position.z-target.z);
         if (range>=distance || (turn.solo && closest)) continue;
         temp.copy(position).y+=actor.stature+(actor.stage==='seated'?-.19:.15);
-        temp.project(camera);
+        temp.project(view);
+        if (temp.z<=-1 || temp.z>=1) continue;
         const left=(.5+temp.x*.5)*width, top=(.5-temp.y*.5)*height;
         if (left<42 || left>width-42 || top<146 || top>height-84) continue;
         closest=turn;
@@ -328,15 +343,37 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   }
 
   renderer.domElement.addEventListener('pointerdown',event=>{
-    if (event.isPrimary && event.button===0) press=[event.clientX,event.clientY];
+    if (!event.isPrimary || event.button!==0) return;
+    press=[event.clientX,event.clientY];
+    if (characterActive()) {
+      drag={id:event.pointerId,x:event.clientX,y:event.clientY,moved:false};
+      renderer.domElement.setPointerCapture(event.pointerId);
+    }
   });
-  renderer.domElement.addEventListener('pointercancel',()=>{press=null;});
+  renderer.domElement.addEventListener('pointermove',event=>{
+    if (drag?.id!==event.pointerId || !press) return;
+    if (!drag.moved && Math.hypot(event.clientX-press[0],event.clientY-press[1])<5) return;
+    drag.moved=true;
+    chase.rotate(event.clientX-drag.x,event.clientY-drag.y);
+    drag.x=event.clientX;
+    drag.y=event.clientY;
+  });
+  const cancelPointer=()=>{press=null;drag=null;};
+  renderer.domElement.addEventListener('pointercancel',cancelPointer);
+  renderer.domElement.addEventListener('lostpointercapture',cancelPointer);
+  renderer.domElement.addEventListener('wheel',event=>{
+    if (!characterActive()) return;
+    event.preventDefault();
+    chase.zoom(event.deltaY<0?1.12:1/1.12);
+  },{passive:false});
   renderer.domElement.addEventListener('pointerup',event=>{
-    if (!event.isPrimary || !press || Math.hypot(press[0]-event.clientX,press[1]-event.clientY)>7) return;
-    press=null;
+    if (!event.isPrimary || !press) return;
+    const moved=drag?.moved || Math.hypot(press[0]-event.clientX,press[1]-event.clientY)>7;
+    cancelPointer();
+    if (moved) return;
     const bounds=host.getBoundingClientRect();
     pointer.set((event.clientX-bounds.left)/bounds.width*2-1,1-(event.clientY-bounds.top)/bounds.height*2);
-    ray.setFromCamera(pointer,camera);
+    ray.setFromCamera(pointer,viewCamera());
     const device=world?.displays.pick(ray,scene.children);
     if (device) { onDisplay(device); return; }
     const candidate=population?.actors.map(actor=>{
@@ -358,23 +395,27 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (!width || !height) return;
     if (population) {
       const steps=Math.max(1,Math.ceil(delta/.05));
-      const speechFocus=camera.zoom>2.15 ? controls.target : null;
+      const speechFocus=viewZoom()>2.15 ? viewTarget() : null;
       for (let step=0;step<steps;step++) {
-        if (characterActive()) character.update(delta/steps,movement,camera,population.actors);
-        population.update(delta/steps,state,speechFocus,camera.zoom<1.6,characterActive()?character.root:null);
+        if (characterActive()) character.update(delta/steps,movement,chase.forward,population.actors);
+        population.update(delta/steps,state,speechFocus,viewZoom()<1.6,characterActive()?character.root:null);
       }
       world?.showDockedControllers(population.game.players);
     }
-    updateCamera(delta);
-    camera.updateMatrixWorld();
+    if (characterActive()) chase.update(character.root,delta,width<650);
+    else {
+      updateCamera(delta);
+      camera.updateMatrixWorld();
+    }
+    const view=viewCamera(), target=viewTarget(), zoom=viewZoom();
     refreshLighting(delta);
     const lounge=roomById.gaming;
-    const gameVisible=camera.zoom>=2 && Math.hypot(controls.target.x-lounge.x,controls.target.z-lounge.z)<10;
-    world?.displays.update(now,camera.zoom,population?.game,gameVisible);
+    const gameVisible=zoom>=2 && Math.hypot(target.x-lounge.x,target.z-lounge.z)<10;
+    world?.displays.update(now,zoom,population?.game,gameVisible);
     updateSpeech(width,height);
-    if (population && camera.zoom>2.15 && state?.phase!=='paused') sound.update(population.actors,controls.target,camera.position);
+    if (population && zoom>2.15 && state?.phase!=='paused') sound.update(population.actors,target,view.position);
     else sound.clear();
-    renderer.render(scene,camera);
+    renderer.render(scene,view);
     if (now-lastLabelUpdate>=45) {
       updateLabels(width,height);
       lastLabelUpdate=now;
@@ -413,15 +454,15 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       if (!character || enabled===characterActive()) return characterActive();
       if (enabled) {
         if (!character.enable(true,population.actors)) return false;
-        directorView={target:controls.target.clone(),position:camera.position.clone(),zoom:camera.zoom};
         following=null;
-        controls.enablePan=false;
+        cameraMove=null;
+        controls.enabled=false;
         reset();
       } else {
         character.enable(false,population.actors);
-        controls.enablePan=true;
+        controls.enabled=true;
+        cancelPointer();
         movement.x=movement.y=0;
-        cameraMove=directorView;
       }
       return enabled;
     },
@@ -468,6 +509,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     },
     isFollowing(id) { return following===id; },
     zoom(factor) {
+      if (characterActive()) { chase.zoom(factor); return; }
       cameraMove=null;
       camera.zoom=THREE.MathUtils.clamp(camera.zoom*factor,controls.minZoom,controls.maxZoom);
       camera.updateProjectionMatrix();

@@ -568,11 +568,23 @@ function syncLightingControl() {
   button.dataset.next=next;
 }
 $('light-toggle').addEventListener('click',()=>setLighting($('light-toggle').dataset.next ?? 'evening'));
-$('character-mode').addEventListener('click',()=>{
+function toggleCharacterMode() {
   const enable=!characterActive;
   setCharacterMode(enable);
   if (enable && characterActive) setPanel(null);
   else if (enable) notice('Area masuk Dika sedang terhalang. Coba lagi sebentar.');
+}
+const characterButton=$('character-mode');
+let lastTouchToggle=-Infinity;
+characterButton.addEventListener('pointerup',event=>{
+  if (event.pointerType!=='touch' || characterButton.disabled ||
+      !characterButton.contains(document.elementFromPoint(event.clientX,event.clientY))) return;
+  lastTouchToggle=performance.now();
+  toggleCharacterMode();
+});
+characterButton.addEventListener('click',event=>{
+  if (event.detail && performance.now()-lastTouchToggle<500) return;
+  toggleCharacterMode();
 });
 window.addEventListener('keydown',event=>{
   if (!characterActive || event.altKey || event.ctrlKey || event.metaKey ||

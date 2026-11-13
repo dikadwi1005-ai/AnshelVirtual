@@ -34,6 +34,8 @@ h1,h2,h3,.brand,.clock{font-family:'Space Grotesk',sans-serif}
 .icon-button{width:37px;height:37px;display:grid;place-items:center}
 .icon-button:hover,.nav-button:hover,.icon-button.active,.nav-button.active{background:#344b66;color:#fff}
 [data-icon] svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#character-mode{touch-action:manipulation}
+#character-mode svg{pointer-events:none}
 .navigation-hud{bottom:20px;left:20px;display:flex;align-items:flex-start;gap:7px;flex-direction:column}
 .camera{padding:3px;gap:1px}
 #character-controls{position:absolute;z-index:2;left:20px;bottom:114px;padding:8px;display:grid;grid-template-columns:repeat(3,40px);gap:4px;text-align:center;touch-action:none;user-select:none}
