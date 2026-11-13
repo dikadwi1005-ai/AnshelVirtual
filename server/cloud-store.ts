@@ -112,6 +112,14 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)},client);
       });
     },
+    async recordOfficeDispatchPulse() {
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293115)',[],client);
+        await writeSetting('office_dispatch_seen_v1',now(),client);
+        return true;
+      });
+    },
+    async officeDispatchPulse() {return readSetting('office_dispatch_seen_v1',null);},
     async officeGroupWorkspace() {
       return readSetting('office_group_workspace_v1',emptyGroupWorkspace());
     },
@@ -128,7 +136,7 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
       return transaction(async client=>{
         await query('SELECT pg_advisory_xact_lock(17293114)',[],client);
         const state=await readSetting('office_group_workspace_v1',emptyGroupWorkspace(),client);
-        const selected=(state.reminders||[]).find(r=>!r.sent&&r.due<=now()&&
+        const selected=(state.reminders||[]).find(r=>!r.sent&&!r.uncertain&&r.due<=now()&&
           (!r.leaseUntil||r.leaseUntil<=now()));
         if(!selected)return null;
         selected.leaseUntil=now()+60_000;
@@ -136,13 +144,14 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         return {id:selected.id,text:selected.text,date:selected.date,time:selected.time};
       });
     },
-    async ackOfficeReminder(id,sent) {
+    async ackOfficeReminder(id,sent,uncertain=false) {
       return transaction(async client=>{
         await query('SELECT pg_advisory_xact_lock(17293114)',[],client);
         const state=await readSetting('office_group_workspace_v1',emptyGroupWorkspace(),client);
         const r=(state.reminders||[]).find(x=>x.id===id);
         if(!r)return false;
         if(sent)r.sent=true;
+        if(!sent&&uncertain)r.uncertain=true;
         delete r.leaseUntil;
         await writeSetting('office_group_workspace_v1',state,client);
         return true;
@@ -158,6 +167,21 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         const sent=checkpoint.date===today&&Array.isArray(checkpoint.sent)?checkpoint.sent:[];
         if(sent.includes(kind))return false;
         await writeSetting(key,{date:today,sent:[...sent,kind]},client);
+        return true;
+      });
+    },
+    async releaseOfficeGroupSignal(kind) {
+      if(!['daily-summary','queued-worker-silent','internal-event'].includes(kind))
+        throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293112)',[],client);
+        const key='office_group_signals_v1';
+        const today=scheduledDraftDay(new Date(now()));
+        const checkpoint=await readSetting(key,{date:'',sent:[]},client);
+        if(checkpoint.date!==today)return false;
+        const sent=(checkpoint.sent||[]).filter(x=>x!==kind);
+        if(sent.length===(checkpoint.sent||[]).length)return false;
+        await writeSetting(key,{...checkpoint,sent},client);
         return true;
       });
     },
@@ -363,6 +387,37 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
           [status, status === 'cancelled' ? now() : null, id], client);
         await log(id, actor, action, '', client);
         return publicTask((await find(id, client)));
+      });
+    },
+    async officeArtifactReview(id) {
+      validateWorkerTaskId(id);
+      const task=await find(id);
+      if(!task)throw new Fault(404,'Tugas tidak ditemukan.');
+      const records=await readSetting('office_artifact_reviews_v1',{});
+      const record=records[id];
+      return {id:task.id,division:task.division,project:task.project,status:task.status,
+        sha256:task.sha256||null,ended:task.ended||null,
+        review:record?.sha256===task.sha256?record.decision:null};
+    },
+    async decideOfficeArtifact(id,decision,reason='',actor=owner) {
+      validateWorkerTaskId(id);
+      if(!['approved','rejected'].includes(decision)||typeof reason!=='string'||reason.length>180)
+        throw new Fault(400,'Keputusan review tidak valid.');
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293116)',[],client);
+        const task=await find(id,client);
+        if(!task)throw new Fault(404,'Tugas tidak ditemukan.');
+        if(task.status!=='completed'||!task.sha256||!task.result)
+          throw new Fault(409,'Hanya hasil draf yang selesai dan tersimpan dapat direview.');
+        const key='office_artifact_reviews_v1';
+        const previous=await readSetting(key,{},client);
+        if(previous[id]?.sha256===task.sha256&&previous[id]?.decision===decision)
+          return {id,decision,sha256:task.sha256,duplicate:true};
+        const records=Object.fromEntries(Object.entries(previous).slice(-149));
+        records[id]={decision,sha256:task.sha256,at:now()};
+        await writeSetting(key,records,client);
+        await log(id,actor,decision==='approved'?'artifact_approved':'artifact_rejected',reason.slice(0,160),client);
+        return {id,decision,sha256:task.sha256,duplicate:false};
       });
     },
     async settings(input, actor = owner) {

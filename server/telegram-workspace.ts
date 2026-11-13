@@ -57,7 +57,7 @@ export function applyGroupWorkspaceCommand(previous,command,now) {
       if(command.section==='memori')answer=state.notes.length?'Catatan yang disimpan pemilik:\n'+state.notes.map(n=>n.key+': '+n.value).join('\n'):'Belum ada catatan jangka panjang.';
       if(command.section==='acara')answer=state.events.length?'Acara internal tercatat:\n'+state.events.map(e=>e.date+' · '+e.label).join('\n'):'Belum ada acara internal yang terdaftar.';
       if(command.section==='rapat')answer=state.meeting?'Rapat aktif: '+state.meeting.topic+'. Keputusan '+state.meeting.decisions.length+', catatan '+state.meeting.notes.length+'.':'Belum ada rapat aktif.';
-      if(command.section==='pengingat')answer=state.reminders.length?'Pengingat:\n'+state.reminders.slice(-8).map(r=>r.date+' '+r.time+' WIB · '+r.text+' ('+(r.sent?'terkirim':'menunggu')+')').join('\n'):'Belum ada pengingat tersimpan.';
+      if(command.section==='pengingat')answer=state.reminders.length?'Pengingat:\n'+state.reminders.slice(-8).map(r=>r.date+' '+r.time+' WIB · '+r.text+' ('+(r.sent?'terkirim':r.uncertain?'periksa pengiriman di Telegram':'menunggu')+')').join('\n'):'Belum ada pengingat tersimpan.';
       break;
     }
     case 'quiet':state.quiet=command.enabled;answer='Mode hening '+(state.quiet?'aktif: pesan tetap ada tanpa notifikasi suara.':'nonaktif: notifikasi normal.') ;break;

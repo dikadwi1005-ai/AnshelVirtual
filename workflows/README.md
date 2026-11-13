@@ -1,5 +1,26 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Phase 3O — Pengiriman andal, audit kesehatan, dan review hasil
+
+**Penerapan ke n8n Published bukan bagian dari merge GitHub.** Jangan mengimpor workflow duplikat atau membuat Telegram Trigger baru.
+
+1. Dalam n8n, buka workflow grup yang sudah Published: **Anshel · Grup AI Natural Gemini (12 pegawai)**. Di node **Saring pesan manusia**, salin seluruh isi `workflows/n8n_saring_pesan_manusia_telegram_2026.js` yang sudah ada dalam repo. Save, Publish workflow yang sama, dan pertahankan credential serta trigger yang ada.
+2. Pada workflow **Anshel · Auto Office — Alya Bima Citra Dara** yang sudah Published, ubah hanya ekspresi cron node **Cek hasil kerja tiap jam** menjadi `0 * * * *`, dengan timezone `Asia/Jakarta`, dan Publish. Node check-in siang tetap `0 12 * * 1-5`. Tidak perlu membuat workflow tambahan. Perubahan template repo tidak otomatis memodifikasi workflow Published.
+3. Pastikan Vercel Production menunjukkan commit yang sudah di-merge, bukan hanya preview PR. Periksa endpoint `/api/session` melalui URL produksi dengan aman tanpa membagikan cookie atau token.
+4. Dari akun pemilik dalam grup yang diizinkan, kirim `/kesehatan` untuk membaca konektivitas permintaan API/database, worker heartbeat, dan timestamp panggilan `/dispatch` yang benar-benar teramati. **Timestamp ini bukan bukti n8n Published, Gemini, Vercel, atau Supabase secara keseluruhan sehat.**
+5. Uji `Eka, tolong jelaskan status divisi` dan pastikan Alya menjelaskan status belum aktif, bukan berpura-pura menjadi Eka; kirim `/tugas desain | Buat draf konsep visual` lalu pastikan dashboard hanya mencatat antrean dan bukan hasil selesai.
+6. Uji lampiran foto kecil dan voice/PDF kurang dari 1,5 MB; n8n harus meneruskan `fileId`, `fileSize`, `mimeType`, `mediaType`, `replyTo` pada alur yang sama. Bila metadata masih hilang, jangan klaim AI sudah membaca file.
+7. Selesaikan satu **draf nonrahasia** melalui worker yang benar-benar terhubung. Kirim `/hasil UUID` dan pastikan SHA-256 tersedia; tinjau dokumen lengkap lewat panel privat sebelum `/sahkan UUID` atau `/kembalikan UUID | alasan`. Perintah ini mencatat keputusan **artefak setelah selesai**, tidak mempublikasikan atau menjalankan pembayaran. `/setujui UUID` tetap untuk antrean sebelum dikerjakan.
+8. Untuk failure test, gunakan test CI yang memalsukan penolakan API; jangan sengaja membuat kegagalan produksi. Penolakan eksplisit membuka retry pada dispatch berikutnya. Timeout/koneksi putus memiliki hasil tidak pasti sehingga retry otomatis ditahan agar tidak menggandakan pesan. Ingatkan operator untuk memeriksa Telegram dan n8n Executions saat ada kegagalan.
+
+**Monitoring yang tersedia:** backend merespons, koneksi database berhasil dibaca, heartbeat worker maksimum 40 detik, dan panggilan scheduler berotorisasi terakhir. Monitoring eksternal independen Vercel, n8n, Supabase, dan Google Gemini masih memerlukan koneksi/status API serta pengujian nyata; jangan mengasumsikan semua layanan aman.
+
+**Aktivasi delapan divisi lain:** tetap opt-in. Sebelum mengaktifkan setiap bot, verifikasi token dan identitas Telegram, alur n8n satu trigger, kapasitas worker nyata per peran, izin akses data, batas kuota Gemini, kasus regresi dan rollback. Menyimpan token non-pilot tidak mengaktifkan bot. Tidak ada aktivasi massal pada Phase 3O.
+
+**Batas pengingat:** cron tiap jam bukan jaminan pengiriman tepat menit. Jika scheduler tidak Published atau berhenti, pengingat tidak mungkin dikirim hingga dispatcher kembali aktif; review laporan gagal di n8n dan lakukan penanganan manual.
+
+---
+
 ## Phase 3N — Analisis lampiran Telegram oleh Gemini
 
 **Fitur baru yang ditambahkan dalam kode backend:** ketika pemilik mengirim foto, voice note, audio, PDF, dokumen teks, atau video kecil, Vercel mengambil berkas privat menggunakan token Telegram Alya yang sudah tersimpan di environment. Hanya **setelah** ID grup dan ID pemilik cocok, tipe MIME serta ukuran file diperiksa; berkas maksimal **1.500.000 byte** (sekitar 1,5 MB). Backend mengambil file dari host Telegram yang tetap (bukan URL bebas), menolak path berbahaya, dan mengirim base64 hanya pada satu permintaan \`Gemini 3.5 Flash-Lite\` yang sudah dipakai workflow. File mentah tidak dicatat di PostgreSQL/SQLite maupun memori percakapan tujuh hari. Model diinstruksikan agar tidak mengikuti perintah di dalam lampiran atau mengarang pekerjaan.

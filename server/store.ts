@@ -124,6 +124,12 @@ export function createStore(path: string, now = Date.now) {
           used:used+(sent?1:0),lastSent:sent?now():(checkpoint.lastSent||0)});
       });
     },
+    // An actual authenticated scheduler call is evidence of connectivity,
+    // not evidence of n8n workflow health or successful Gemini requests.
+    recordOfficeDispatchPulse() {
+      return transaction(()=>{writeSetting('office_dispatch_seen_v1',now());return true;});
+    },
+    officeDispatchPulse() {return readSetting('office_dispatch_seen_v1',null);},
     officeGroupWorkspace() {
       return readSetting('office_group_workspace_v1',emptyGroupWorkspace());
     },
@@ -138,7 +144,7 @@ export function createStore(path: string, now = Date.now) {
     claimDueOfficeReminder() {
       return transaction(()=>{
         const state=readSetting('office_group_workspace_v1',emptyGroupWorkspace());
-        const selected=(state.reminders||[]).find(r=>!r.sent&&r.due<=now()&&
+        const selected=(state.reminders||[]).find(r=>!r.sent&&!r.uncertain&&r.due<=now()&&
           (!r.leaseUntil||r.leaseUntil<=now()));
         if(!selected)return null;
         selected.leaseUntil=now()+60_000;
@@ -146,12 +152,13 @@ export function createStore(path: string, now = Date.now) {
         return {id:selected.id,text:selected.text,date:selected.date,time:selected.time};
       });
     },
-    ackOfficeReminder(id,sent) {
+    ackOfficeReminder(id,sent,uncertain=false) {
       return transaction(()=>{
         const state=readSetting('office_group_workspace_v1',emptyGroupWorkspace());
         const r=(state.reminders||[]).find(x=>x.id===id);
         if(!r)return false;
         if(sent)r.sent=true;
+        if(!sent&&uncertain)r.uncertain=true;
         delete r.leaseUntil;
         writeSetting('office_group_workspace_v1',state);
         return true;
@@ -166,6 +173,20 @@ export function createStore(path: string, now = Date.now) {
         const sent=checkpoint.date===today&&Array.isArray(checkpoint.sent)?checkpoint.sent:[];
         if(sent.includes(kind))return false;
         writeSetting(key,{date:today,sent:[...sent,kind]});
+        return true;
+      });
+    },
+    releaseOfficeGroupSignal(kind) {
+      if(!['daily-summary','queued-worker-silent','internal-event'].includes(kind))
+        throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
+      return transaction(()=>{
+        const key='office_group_signals_v1';
+        const today=scheduledDraftDay(new Date(now()));
+        const checkpoint=readSetting(key,{date:'',sent:[]});
+        if(checkpoint.date!==today)return false;
+        const sent=(checkpoint.sent||[]).filter(x=>x!==kind);
+        if(sent.length===(checkpoint.sent||[]).length)return false;
+        writeSetting(key,{...checkpoint,sent});
         return true;
       });
     },
@@ -321,6 +342,39 @@ export function createStore(path: string, now = Date.now) {
           status,status === 'cancelled' ? now() : null,id);
         log(id,actor,action);
         return publicTask(find(id));
+      });
+    },
+    // Explicit artifact approval is independent of pre-execution /setujui.
+    // Do not expose full result text in Telegram, only review metadata.
+    officeArtifactReview(id) {
+      validateWorkerTaskId(id);
+      const task=find(id);
+      if(!task)throw new Fault(404,'Tugas tidak ditemukan.');
+      const records=readSetting('office_artifact_reviews_v1',{});
+      const record=records[id];
+      return {id:task.id,division:task.division,project:task.project,status:task.status,
+        sha256:task.sha256||null,ended:task.ended||null,
+        review:record?.sha256===task.sha256?record.decision:null};
+    },
+    decideOfficeArtifact(id,decision,reason='',actor=owner) {
+      validateWorkerTaskId(id);
+      if(!['approved','rejected'].includes(decision)||typeof reason!=='string'||reason.length>180)
+        throw new Fault(400,'Keputusan review tidak valid.');
+      return transaction(()=>{
+        const task=find(id);
+        if(!task)throw new Fault(404,'Tugas tidak ditemukan.');
+        if(task.status!=='completed'||!task.sha256||!task.result)
+          throw new Fault(409,'Hanya hasil draf yang selesai dan tersimpan dapat direview.');
+        const key='office_artifact_reviews_v1';
+        const previous=readSetting(key,{});
+        if(previous[id]?.sha256===task.sha256&&previous[id]?.decision===decision)
+          return {id,decision,sha256:task.sha256,duplicate:true};
+        const trimmed=Object.entries(previous).slice(-149);
+        const records=Object.fromEntries(trimmed);
+        records[id]={decision,sha256:task.sha256,at:now()};
+        writeSetting(key,records);
+        log(id,actor,decision==='approved'?'artifact_approved':'artifact_rejected',reason.slice(0,160));
+        return {id,decision,sha256:task.sha256,duplicate:false};
       });
     },
     settings(input, actor = owner) {

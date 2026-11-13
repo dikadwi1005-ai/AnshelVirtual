@@ -144,6 +144,18 @@ test('hourly dispatch alerts Bima after a real queued task waits two hours',asyn
   } finally {store.close();}
 });
 
+test('routine notification retries explicit Telegram rejection, avoids repeat after success',async()=>{
+  const store=createStore(':memory:',()=>day(17));
+  const rejected=async()=>new Response(JSON.stringify({ok:false}),{status:429});
+  try{
+    await assert.rejects(dispatchOfficeGroupEvent(store,env,rejected),e=>
+      e.status===502 && e.deliveryRejected===true);
+    const recovered=await dispatchOfficeGroupEvent(store,env,fakeTelegram);
+    assert.equal(recovered.kind,'daily-summary');
+    assert.deepEqual(await dispatchOfficeGroupEvent(store,env,fakeTelegram),{sent:false});
+  }finally{store.close();}
+});
+
 test('natural language creates only four allowlisted draft tasks, with idempotence and no Gemini',async()=>{
   assert.deepEqual(parseOwnerNaturalTask('Tolong Bima buat draf pemeriksaan layanan API'),{
     division:'operations',description:'draf pemeriksaan layanan API',kind:'draft',urgent:false,
@@ -291,4 +303,29 @@ test('responsive UI keeps all five tabs visible including Monitor on mobile',asy
   assert.match(css,/\.floating-task\{right:10px;bottom:65px;/);
   assert.match(css,/\.nav-button\{position:relative;flex:1;min-width:0;/);
   assert.match(css,/\.nav-button span\{position:static;width:auto;height:auto;overflow:visible;/);
+});
+
+test('kesehatan Telegram melaporkan database, worker, dan dispatch berbasis bukti',async()=>{
+  let now=day(13);
+  const store=createStore(':memory:',()=>now);
+  const messages=[];
+  const transport=async(url,opts)=>{
+    messages.push(JSON.parse(opts.body).text);
+    return new Response(JSON.stringify({ok:true,result:{message_id:999}}),{status:200});
+  };
+  try {
+    assert.equal(store.officeDispatchPulse(),null);
+    const out=await prepareOfficeNaturalChat(store,env,msg(99001,'/kesehatan'),transport);
+    assert.equal(out.kind,'health-evidence');
+    assert.match(messages.at(-1),/database: permintaan ini berhasil dibaca/i);
+    assert.match(messages.at(-1),/belum diuji langsung/i);
+    assert.doesNotMatch(messages.at(-1),/semua sistem sehat\./i);
+    now+=3000;
+    await dispatchOfficeGroupEvent(store,env,transport);
+    assert.equal(store.officeDispatchPulse(),now);
+    now+=3000;
+    const again=await prepareOfficeNaturalChat(store,env,msg(99002,'/kesehatan'),transport);
+    assert.equal(again.kind,'health-evidence');
+    assert.match(messages.at(-1),/0 menit sejak panggilan/i);
+  }finally{store.close();}
 });

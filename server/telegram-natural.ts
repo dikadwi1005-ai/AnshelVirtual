@@ -2,7 +2,7 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
   sendOfficeGroupOwnerMessage,officeGroupReply,parseOwnerNaturalTask,sendOfficeBotTyping,
-  parseOwnerTaskAction } from './telegram-office.ts';
+  parseOwnerTaskAction,inactiveOfficeAddress } from './telegram-office.ts';
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse,ownerReplyContext,conversationQuestion,groupDelayMs } from './telegram-group.ts';
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
@@ -23,7 +23,7 @@ const persona={
   qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
   finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
-const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur|rapat|ingat|lupakan|memori|acara|ingatkan|pengingat|mode|hening|pengaturan|notifikasi|serahkan|revisi|tinjau|setujui|tolak|ulang|jeda|batalkan)(?:\s|$)/i;
+const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur|rapat|ingat|lupakan|memori|acara|ingatkan|pengingat|mode|hening|pengaturan|notifikasi|serahkan|revisi|tinjau|setujui|tolak|ulang|jeda|batalkan|kesehatan|health|hasil|sahkan|kembalikan)(?:\s|$)/i;
 const actionClaim=/\b(?:sudah|telah|berhasil)\s+(?:(?:aku|saya|kami|kita)\s+)?(?:mengirim|mempublikasikan|memposting|menghapus|membayar|mentransfer|menginstal|mendeploy)\b/i;
 const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 // Only use company-wide totals when the user actually asks about the office as a whole.
@@ -239,6 +239,16 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     state.groupWorkspace=await store.officeGroupWorkspace();
   const configured=configuredOfficeBots(env).configured;
   const discussion=requestedOfficeDiscussion(question);
+  const inactive=!hasMedia?inactiveOfficeAddress(question,env):null;
+  if(inactive && !isCollectiveCall(question) && !discussion) {
+    if(!configured.includes('management'))
+      throw new Fault(503,'Bot Alya perlu diaktifkan untuk pemberitahuan divisi lain.');
+    if(!await store.reserveOfficeGroupUpdate(String(data.updateId)))
+      return {mode:'skip',duplicate:true};
+    await sendOfficeBotMessage(env,'management',inactive.text,
+      {fetchImpl,silent:state.groupWorkspace?.quiet===true});
+    return {mode:'handled',sent:true,division:'management',inactiveDivision:inactive.division};
+  }
   const followup=meetingContinue ||
     (state.groupWorkspace?.mode==='diskusi' &&
       /^(?:lanjut(?:kan)?|tanggapi|menurut kalian|apa pendapat kalian|setuju nggak)\b/i.test(question.trim()));

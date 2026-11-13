@@ -138,3 +138,58 @@ test('owner-only task controls reject unknown status changes without making task
     assert.equal(store.state().tasks.find(t=>t.id===created.id).status,'queued');
   }finally{store.close();}
 });
+
+test('hasil draf punya review terpisah dari persetujuan antrean dan tidak membeberkan isi',async()=>{
+  let now=Date.parse('2026-11-13T03:00:00Z');
+  const store=createStore(':memory:',()=>now);
+  const first=store.create({division:'administration',kind:'draft',
+    description:'Draf hasil evaluasi privat',project:'Uji review',urgent:true});
+  const worker=store.claim(['draft']);
+  assert.equal(worker.id,first.id);
+  store.finish(worker.id,worker.token,{output:'RAHASIA INTERNAL HASIL DRAF'});
+  const calls=[];
+  const sender=async(url,opts)=>{
+    calls.push(JSON.parse(opts.body).text);
+    return new Response(JSON.stringify({ok:true,result:{message_id:1100+calls.length}}),{status:200});
+  };
+  const send=async(id,text)=>{
+    const response=await prepareOfficeNaturalChat(store,env,message(id,text),sender);
+    now+=3000;
+    return response;
+  };
+  try{
+    const info=await send(98001,'/hasil '+first.id);
+    assert.equal(info.action,'artifact-info');
+    assert.match(calls.at(-1),/SHA-256/);
+    assert.doesNotMatch(calls.at(-1),/RAHASIA INTERNAL/);
+    const accepted=await send(98002,'/sahkan '+first.id);
+    assert.equal(accepted.action,'artifact-approve');
+    assert.equal(store.officeArtifactReview(first.id).review,'approved');
+    assert.equal(store.state().tasks[0].status,'completed');
+    const repeated=await send(98003,'/sahkan '+first.id);
+    assert.equal(repeated.action,'artifact-approve');
+    const rejected=await send(98004,'/kembalikan '+first.id+' | Perlu sumber yang lebih jelas');
+    assert.equal(rejected.action,'artifact-reject');
+    assert.equal(store.officeArtifactReview(first.id).review,'rejected');
+    assert.equal(store.state().audit.filter(a=>a.action==='artifact_approved').length,1);
+  }finally{store.close();}
+});
+
+test('uncertain reminder delivery is held for owner verification',async()=>{
+  let now=Date.parse('2026-11-13T02:00:00Z');
+  const store=createStore(':memory:',()=>now);
+  try {
+    store.applyOfficeGroupWorkspace({type:'reminder',date:'2026-11-13',
+      time:'10:00',text:'Konfirmasi rapat pagi'});
+    now+=3600_000;
+    const unreachable=async()=>{throw new Error('connection interrupted');};
+    await assert.rejects(dispatchOfficeGroupEvent(store,env,unreachable),e=>e.status===502);
+    const reminder=store.officeGroupWorkspace().reminders[0];
+    assert.equal(reminder.sent,false);
+    assert.equal(reminder.uncertain,true);
+    now+=3600_000;
+    assert.equal(store.claimDueOfficeReminder(),null);
+    const list=store.applyOfficeGroupWorkspace({type:'view',section:'pengingat'});
+    assert.match(list.text,/periksa pengiriman di Telegram/i);
+  }finally{store.close();}
+});

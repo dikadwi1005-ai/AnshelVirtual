@@ -105,13 +105,26 @@ export async function sendOfficeBotMessage(env,division,text,options={}) {
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),
       signal:AbortSignal.timeout(6000),
     });
-    if (!res.ok) throw new Error('Telegram HTTP request failed');
+    if (!res.ok) {
+      const failure=new Error('Telegram HTTP request rejected');
+      failure.deliveryRejected=true;
+      throw failure;
+    }
     const data=await res.json();
-    if (data?.ok!==true || !Number.isSafeInteger(data?.result?.message_id)) throw new Error('Telegram API rejected request');
+    if (data?.ok!==true) {
+      const failure=new Error('Telegram API rejected request');
+      failure.deliveryRejected=true;
+      throw failure;
+    }
+    if(!Number.isSafeInteger(data?.result?.message_id))
+      throw new Error('Telegram reply is incomplete');
     return data.result.message_id;
-  } catch {
-    // Never include Telegram URL, bot token, request body or raw Telegram errors in logs.
-    throw new Fault(502,'Telegram belum menerima pesan. Periksa token bot dan izin mengirim ke grup.');
+  } catch(error) {
+    // HTTP rejection confirms non-delivery. Timeout/connection loss is uncertain:
+    // never blindly retry it, or the owner could receive duplicate messages.
+    const failure=new Fault(502,'Pengiriman Telegram belum terkonfirmasi. Periksa token bot dan izin grup.');
+    failure.deliveryRejected=error?.deliveryRejected===true;
+    throw failure;
   }
 }
 
@@ -151,7 +164,7 @@ const personFrom=input=>divisionByName.get(input.toLowerCase()) ?? null;
 // Only match complete employee names, never substrings inside unrelated words.
 // Match names anywhere in a message so the owner can speak naturally.
 const employeeNamePattern=new RegExp('(^|[^A-Za-z0-9_])('+divisions.map(d=>d.employee).join('|')+')(?=$|[^A-Za-z0-9_])','ig');
-function getAddressedDivision(input,env) {
+export function getAddressedDivision(input,env) {
   const fromCommand=/^\/(?:tanya|ask)\s+([a-zA-Z0-9_]+)\s*\|\s*(.*)$/is.exec(input);
   if (fromCommand) return {division:personFrom(fromCommand[1]),text:fromCommand[2],explicit:true};
   const usernames=getUsernames(env);
@@ -178,6 +191,16 @@ function getAddressedDivision(input,env) {
   const found=employeeNamePattern.exec(prose);
   if(found) return {division:personFrom(found[2]),text:input,explicit:true};
   return {division:'management',text:input,explicit:false};
+}
+/** An inactive division cannot impersonate a connected Telegram bot. */
+export function inactiveOfficeAddress(input,env) {
+  const target=getAddressedDivision(input,env);
+  if(!target.explicit || !target.division || activeAuto.has(target.division))return null;
+  const person=divisions.find(d=>d.id===target.division);
+  return {division:target.division,text:person.employee+' ('+person.name+
+    ') belum aktif untuk percakapan Telegram saat ini. Aku Alya bisa mencatat tugas draf dengan /tugas '+
+    person.employee+' | instruksi, tetapi belum ada jaminan worker akan memprosesnya. '+
+    'Status tugas bisa diperiksa melalui dashboard Anshel.'};
 }
 function latestTask(state,division) {
   const tasks=(state.tasks||[]).filter(t=>t.division===division);
@@ -325,6 +348,12 @@ export function parseOwnerTaskAction(text) {
   if(typeof text!=='string'||text.length>1500)return null;
   const q=text.trim();
   const uuid='([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})';
+  const artifactInfo=new RegExp('^/hasil\\s+'+uuid+'$','i').exec(q);
+  if(artifactInfo)return {type:'artifact-info',id:artifactInfo[1]};
+  const artifactDecision=new RegExp('^/(sahkan|kembalikan)\\s+'+uuid+'(?:\\s*\\|\\s*(.{5,180}))?$','is').exec(q);
+  if(artifactDecision)return {type:artifactDecision[1].toLowerCase()==='sahkan'
+    ?'artifact-approve':'artifact-reject',id:artifactDecision[2],
+    reason:(artifactDecision[3]||'').trim()};
   const relay=new RegExp('^/serahkan\\s+'+uuid+'\\s*\\|\\s*(Alya|Bima|Citra|Dara)$','i').exec(q);
   if(relay)return {type:'assign',id:relay[1],division:personFrom(relay[2])};
   const status=new RegExp('^/(tinjau|setujui|tolak|ulang|jeda|batalkan)\\s+'+uuid+'$','i').exec(q);
@@ -347,10 +376,50 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const updateId=String(data.updateId);
   const novel=await store.reserveOfficeGroupUpdate(updateId);
   if (!novel)return {duplicate:true};
+  if(/^\/(?:kesehatan|health)$/i.test(data.text.trim())) {
+    const state=await store.state(); // An actual successful database round trip.
+    const last=typeof store.officeDispatchPulse==='function'
+      ?await store.officeDispatchPulse():null;
+    const elapsed=typeof last==='number'&&last>0&&last<=state.now
+      ?Math.floor((state.now-last)/60_000):null;
+    const dispatcher=elapsed===null?'belum ada pemanggilan terverifikasi'
+      :elapsed+' menit sejak panggilan /dispatch terakhir';
+    const text='Alya · Pemeriksaan faktual Anshel:\n'+
+      'API dan database: permintaan ini berhasil dibaca.\n'+
+      'Worker: '+(state.worker?'heartbeat teramati dalam 40 detik':'tidak ada heartbeat terbaru')+'.\n'+
+      'Integrasi Auto Office: '+dispatcher+'.\n'+
+      'Gemini, n8n Published, Vercel deployment, dan layanan eksternal: belum diuji langsung oleh pemeriksaan ini. ' +
+      'Pemeriksaan kesehatan menyeluruh memerlukan sumber eksternal yang belum terhubung.';
+    await sendOfficeBotMessage(env,'management',text,{fetchImpl});
+    return {sent:true,division:'management',kind:'health-evidence'};
+  }
   const taskAction=parseOwnerTaskAction(data.text);
   if(taskAction) {
     const workspace=await store.officeGroupWorkspace();
     const silent=workspace.quiet===true;
+    if(taskAction.type==='artifact-info') {
+      const review=await store.officeArtifactReview(taskAction.id);
+      const division=divisions.find(d=>d.id===review.division);
+      const text='Alya · Bukti hasil tugas '+review.id+':\\n'+
+        'Pegawai: '+(division?.employee||review.division)+'. Proyek: '+(clean(review.project)||'tanpa nama')+'.\\n'+
+        'Status: '+review.status+'. SHA-256: '+(review.sha256||'belum tersedia')+'.\\n'+
+        'Review pemilik: '+(review.review||'belum ada')+'.\\n'+
+        'Buka hasil lengkap di dashboard privat sebelum /sahkan ID atau /kembalikan ID | alasan. '+
+        'Perintah ini tidak menerbitkan pekerjaan.';
+      await sendOfficeBotMessage(env,'management',text,{fetchImpl,silent});
+      return {sent:true,division:'management',action:'artifact-info',taskId:review.id};
+    }
+    if(['artifact-approve','artifact-reject'].includes(taskAction.type)) {
+      const decision=taskAction.type==='artifact-approve'?'approved':'rejected';
+      const review=await store.decideOfficeArtifact(taskAction.id,decision,taskAction.reason,
+        'Pemilik · Telegram review');
+      const text='Alya · Review hasil '+review.id+' dicatat: '+decision+
+        '. SHA-256 '+review.sha256+'. '+
+        (review.duplicate?'Keputusan ini sudah tercatat. ':'')+
+        'Ini persetujuan atau penolakan artefak, bukan publikasi atau eksekusi tindakan eksternal.';
+      await sendOfficeBotMessage(env,'management',text,{fetchImpl,silent});
+      return {sent:true,division:'management',action:taskAction.type,taskId:review.id};
+    }
     if(taskAction.type==='meeting-task') {
       if(!workspace.meeting)throw new Fault(409,'Mulai rapat dahulu dengan /rapat mulai TOPIK.');
       const created=await store.create({
@@ -429,11 +498,19 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
     return {sent:true,division:target.id,acknowledgedBy:sender,createdTaskId:created.id};
   }
   const reply=officeGroupReply(await store.state(),data.text,env);
-  await sendOfficeBotMessage(env,reply.division,reply.text,{fetchImpl,silent});
-  return {sent:true,division:reply.division};
+  const inactive=inactiveOfficeAddress(data.text,env);
+  const configured=configuredOfficeBots(env).configured;
+  const sender=inactive || !activeAuto.has(reply.division)||!configured.includes(reply.division)
+    ?'management':reply.division;
+  const response=inactive?.text || (sender==='management'&&reply.division!=='management'
+    ?'Pegawai tersebut belum terhubung di Telegram. Tanyakan status melalui /monitor.':reply.text);
+  await sendOfficeBotMessage(env,sender,response,{fetchImpl,silent});
+  return {sent:true,division:sender,inactiveDivision:inactive?.division||null};
 }
 export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   officeGroupConfig(env);
+  if(typeof store.recordOfficeDispatchPulse==='function')
+    await store.recordOfficeDispatchPulse();
   const preferences=typeof store.officeGroupWorkspace==='function'
     ?await store.officeGroupWorkspace():null;
   const silent=preferences?.quiet===true;
@@ -454,7 +531,16 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
   }
   const message=officeTaskConversation(event);
   if (!message) throw new Fault(500,'Audit tugas tidak bisa dipetakan ke pegawai kantor.');
-  const replyId=await sendOfficeBotMessage(env,message.division,message.text,{fetchImpl,silent});
+  let replyId;
+  try {
+    replyId=await sendOfficeBotMessage(env,message.division,message.text,{fetchImpl,silent});
+  }catch(error){
+    // Unknown delivery cannot be safely auto-retried: advance the outbox cursor
+    // while surfacing the failure to n8n for manual verification.
+    if(error?.deliveryRejected!==true)
+      await store.ackTelegramNotification(event.eventId,event.token,false);
+    throw error;
+  }
   await store.ackTelegramNotification(event.eventId,event.token,true);
   let followedUp=false;
   if (message.followUp && activeAuto.has(message.followUp.division) &&
@@ -473,6 +559,20 @@ export async function dispatchOfficeGroupEvent(store,env,fetchImpl=fetch) {
     ...(routine?{routine:routine.kind}:{})};
 }
 
+/** Retry a daily signal on the next dispatcher call only when Telegram explicitly
+ * rejected its message, never when the network outcome is unknown. */
+async function sendRoutineSignal(store,env,kind,division,message,fetchImpl,silent) {
+  if(!await store.claimOfficeGroupSignal(kind))return false;
+  try {
+    await sendOfficeBotMessage(env,division,message,{fetchImpl,silent});
+    return true;
+  }catch(error){
+    if(error?.deliveryRejected===true && typeof store.releaseOfficeGroupSignal==='function')
+      await store.releaseOfficeGroupSignal(kind);
+    throw error;
+  }
+}
+
 /**
  * Reuse the hourly published n8n Auto Office /dispatch route.
  * Distinct once-a-day signal keys prevent repeated reports and warning spam.
@@ -485,8 +585,8 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
     ?await store.officeGroupWorkspace():null;
   const silent=settings?.quiet===true;
   if(officeSummaryDue(state)&&configured.has('management') &&
-     await store.claimOfficeGroupSignal('daily-summary')) {
-    await sendOfficeBotMessage(env,'management',officeDailySummary(state),{fetchImpl,silent});
+     await sendRoutineSignal(store,env,'daily-summary','management',
+       officeDailySummary(state),fetchImpl,silent)) {
     return {sent:true,kind:'daily-summary',division:'management'};
   }
   const workspace=typeof store.officeGroupWorkspace==='function'
@@ -495,33 +595,33 @@ export async function dispatchOfficeGroupRoutine(store,env,fetchImpl=fetch) {
      typeof store.claimDueOfficeReminder==='function') {
     const due=await store.claimDueOfficeReminder();
     if(due) {
-      let sent=false;
+      let sent=false,uncertain=false;
       try{
         await sendOfficeBotMessage(env,'management',
           'Pengingat Anshel ('+due.date+' '+due.time+' WIB): '+due.text,
           {fetchImpl,silent:workspace.quiet});
         sent=true;
         return {sent:true,kind:'owner-reminder',division:'management'};
+      }catch(error){
+        uncertain=error?.deliveryRejected!==true;
+        throw error;
       }finally{
-        await store.ackOfficeReminder(due.id,sent);
+        await store.ackOfficeReminder(due.id,sent,uncertain);
       }
     }
   }
   const today=new Date(Number(state.now)+7*3600_000).toISOString().slice(0,10);
   const events=Array.isArray(settings?.events)?settings.events.filter(e=>e.date===today):[];
-  if(events.length&&settings?.notifications!=='important'&&configured.has('management')&&
-     await store.claimOfficeGroupSignal('internal-event')) {
+  if(events.length&&settings?.notifications!=='important'&&configured.has('management')) {
     const names=events.slice(0,3).map(e=>e.label).join('; ');
-    await sendOfficeBotMessage(env,'management',
+    if(await sendRoutineSignal(store,env,'internal-event','management',
       'Agenda internal Anshel hari ini ('+today+'): '+names+
       '. Ini pengingat acara terdaftar, bukan bukti acaranya sudah berlangsung.',
-      {fetchImpl,silent});
-    return {sent:true,kind:'internal-event',division:'management'};
+      fetchImpl,silent))return {sent:true,kind:'internal-event',division:'management'};
   }
   const warning=officeQueueDelayAlert(state);
   if(warning&&configured.has('operations') &&
-     await store.claimOfficeGroupSignal('queued-worker-silent')) {
-    await sendOfficeBotMessage(env,'operations',warning,{fetchImpl,silent});
+     await sendRoutineSignal(store,env,'queued-worker-silent','operations',warning,fetchImpl,silent)) {
     return {sent:true,kind:'queue-delay-alert',division:'operations'};
   }
   return null;

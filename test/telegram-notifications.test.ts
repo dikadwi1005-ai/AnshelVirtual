@@ -65,3 +65,15 @@ test('update grup dicegah duplikat dan spam cepat',()=>{
     assert.throws(()=>s.reserveOfficeGroupUpdate('bad'),e=>e.status===400);
   } finally {s.close();}
 });
+
+test('claimed routine signal can be released on explicit Telegram rejection',()=>{
+  const s=createStore(':memory:',()=>start);
+  try{
+    assert.equal(s.claimOfficeGroupSignal('daily-summary'),true);
+    assert.equal(s.claimOfficeGroupSignal('daily-summary'),false);
+    assert.equal(s.releaseOfficeGroupSignal('daily-summary'),true);
+    assert.equal(s.releaseOfficeGroupSignal('daily-summary'),false);
+    assert.equal(s.claimOfficeGroupSignal('daily-summary'),true);
+    assert.throws(()=>s.releaseOfficeGroupSignal('unknown'),e=>e.status===400);
+  }finally{s.close();}
+});

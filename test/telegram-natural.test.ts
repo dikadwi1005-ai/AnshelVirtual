@@ -397,3 +397,26 @@ test('memori Gemini tidak mengulangi klaim lama bahwa kantor tidak punya jam mas
   assert.equal(result.contents[0].parts[0].text,'Alya, ada kerjaan?');
   assert.match(result.systemInstruction.parts[0].text,/jadwal operasional nyata yang tersimpan/i);
 });
+
+test('pesan divisi nonaktif dijawab Alya tanpa tugas palsu atau Gemini',async()=>{
+  const s=createStore(':memory:',()=>Date.parse('2026-11-13T03:00:00Z'));
+  const onlyFour={...env,TELEGRAM_BOT_TOKENS_JSON:JSON.stringify(
+    Object.fromEntries(['management','operations','administration','hr'].map(id=>[id,tokens[id]])))};
+  const sent=[];
+  const fake=async(url,opts)=>{
+    sent.push({url,payload:JSON.parse(opts.body)});
+    return new Response(JSON.stringify({ok:true,result:{message_id:701+sent.length}}),{status:200});
+  };
+  try{
+    const msg={chatId:onlyFour.TELEGRAM_CHAT_ID,userId:onlyFour.TELEGRAM_USER_ID,
+      updateId:'551100',text:'Eka, bisa bantu cek proyek ini?',isBot:false};
+    const out=await prepareOfficeNaturalChat(s,onlyFour,msg,fake);
+    assert.equal(out.mode,'handled');
+    assert.equal(out.division,'management');
+    assert.equal(out.inactiveDivision,'development');
+    assert.match(sent[0].payload.text,/belum aktif/i);
+    assert.equal(s.state().tasks.length,0);
+    assert.equal(sent.length,1);
+    assert.ok(sent[0].url.includes(tokens.management));
+  }finally{s.close();}
+});
