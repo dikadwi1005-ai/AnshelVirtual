@@ -271,7 +271,7 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     const available=availableOfficeResponders(state,configured,enabled);
     // Keep the existing 12s n8n delivery budget: never send seven bot
     // messages in one request. Rotate the five responders across calls.
-    const offset=available.length?Number(String(data.updateId).slice(-3))%available.length:0;
+    const offset=available.length>5?Number(String(data.updateId).slice(-3))%available.length:0;
     const rotated=available.slice(offset).concat(available.slice(0,offset));
     const recipients=discussion?discussion.filter(id=>available.includes(id)):rotated.slice(0,5);
     if(!await store.reserveOfficeGroupUpdate(String(data.updateId))) return {mode:'skip',duplicate:true};
