@@ -142,7 +142,8 @@ test('pemilik dapat bertanya ke Eka, QA, status, dan membuat draf secara eksplis
     clock+=9000;
     const reply=await sendOfficeGroupOwnerMessage(s,env,{
       ...payload,updateId:'112',text:'Eka, progres?'},fake);
-    assert.equal(reply.division,'development');
+    assert.equal(reply.division,'management');
+    assert.equal(reply.inactiveDivision,'development');
   } finally{s.close();}
 });
 
