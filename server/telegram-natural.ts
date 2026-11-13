@@ -29,7 +29,7 @@ const wantsAvatarActivity=text=>/\b(?:lagi\s+(?:apa|ngapain)|sedang\s+apa|kesibu
 const unsupportedMonitoring=/\b(?:lagi|sedang|barusan|tadi|sudah)\s+(?:(?:mantengin|memantau|monitoring|ngecek|mengecek|memeriksa|cek|audit|mengawasi)\s+(?:(?:log|server|sistem|database|dashboard|infrastruktur)\b))/i;
 const unverifiedHealth=/\b(?:it|server|sistem|operasional|jaringan|infrastruktur|layanan)\b.{0,65}\b(?:aman\s+terkendali|aman\s+semua|normal\s+semua|stabil\s+semua|bebas\s+(?:error|gangguan)|(?:terpantau|dipantau|dipastikan|terlihat)\s+(?:aman|normal|stabil|baik))\b|\b(?:semua|seluruh)\s+(?:sistem|server|layanan|jaringan)\b.{0,30}\b(?:aman|normal|stabil|baik)\b/i;
 const unsupportedTeamMood=/\b(?:suasana|kondisi|mood|semangat)\s+(?:tim|kantor|para\s+pegawai|pegawai)\b.{0,80}\b(?:kondusif|harmonis|kompak|saling\s+mendukung|nyaman|baik|positif|solid)\b|\b(?:semua\s+pegawai|seluruh\s+tim)\b.{0,40}\b(?:kompak|kondusif|saling\s+mendukung|baik\s+baik\s+saja)\b/i;
-const unsupportedArchiveUpdate=/\b(?:arsip|catatan(?:\s+(?:harian|kantor))?|dokumen)\b.{0,65}\b(?:tidak|belum|nggak|gak)\s+(?:ada\s+)?(?:penambahan|perubahan|update|data)\s+baru\b/i;
+const unsupportedArchiveUpdate=/\b(?:arsip|catatan(?:\s+(?:harian|kantor))?|dokumen)\b.{0,65}\b(?:tidak|belum|nggak|gak)\s+(?:ada\s+)?(?:penambahan(?:\s+data)?|perubahan(?:\s+data)?|update(?:\s+data)?|data)\s+baru\b/i;
 
 // Conversational LLMs sometimes claim they already prepared documents or
 // coordinated work even when the database only shows a casual group chat.
