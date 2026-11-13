@@ -27,7 +27,8 @@ const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 export const wantsCompanyOverview=text=>/\b(?:kantor|semua(?:\s+(?:tim|divisi|pegawai))?|seluruh|total|perusahaan|antardivisi|keseluruhan)\b/i.test(text);
 const wantsAvatarActivity=text=>/\b(?:lagi\s+(?:apa|ngapain)|sedang\s+apa|kesibukan|kegiatan|aktivitas|suasana|cerita|kabar(?:nya)?|di\s+mana)\b/i.test(text);
 const unsupportedMonitoring=/\b(?:lagi|sedang|barusan|tadi|sudah)\s+(?:(?:mantengin|memantau|monitoring|ngecek|mengecek|memeriksa|cek|audit|mengawasi)\s+(?:(?:log|server|sistem|database|dashboard|infrastruktur)\b))/i;
-const unverifiedHealth=/\b(?:it|server|sistem|operasional|jaringan)\b.{0,40}\b(?:aman\s+terkendali|aman\s+semua|normal\s+semua|stabil\s+semua|bebas\s+(?:error|gangguan))\b/i;
+const unverifiedHealth=/\b(?:it|server|sistem|operasional|jaringan|infrastruktur|layanan)\b.{0,65}\b(?:aman\s+terkendali|aman\s+semua|normal\s+semua|stabil\s+semua|bebas\s+(?:error|gangguan)|(?:terpantau|dipantau|dipastikan|terlihat)\s+(?:aman|normal|stabil|baik))\b|\b(?:semua|seluruh)\s+(?:sistem|server|layanan|jaringan)\b.{0,30}\b(?:aman|normal|stabil|baik)\b/i;
+const unsupportedTeamMood=/\b(?:suasana|kondisi|mood|semangat)\s+(?:tim|kantor|para\s+pegawai|pegawai)\b.{0,80}\b(?:kondusif|harmonis|kompak|saling\s+mendukung|nyaman|baik|positif|solid)\b|\b(?:semua\s+pegawai|seluruh\s+tim)\b.{0,40}\b(?:kompak|kondusif|saling\s+mendukung|baik\s+baik\s+saja)\b/i;
 
 // Conversational LLMs sometimes claim they already prepared documents or
 // coordinated work even when the database only shows a casual group chat.
@@ -161,6 +162,7 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'Nama kamu boleh disebut di tengah atau akhir pesan, misalnya "Eh, Bima lagi ngapain?". Anggap itu pertanyaan untukmu jika kamu adalah Bima; jawab langsung sebagai dirimu sendiri, bukan melaporkan Bima sebagai orang ketiga.',
     'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar YANG TERCATAT di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
     'Belum ada tugas IT tercatat tidak berarti server pasti aman. Tanpa bukti pemeriksaan, jangan klaim kondisi sistem aman, stabil, normal, atau bebas kendala.',
+    'Jangan pernah bilang sistem terpantau aman, semua server normal, atau tim sedang kondusif/kompak/saling mendukung jika itu hanya dugaan dari percakapan. Ceritakan apa yang benar-benar tercatat, bukan membuat kesimpulan umum.',
     'Jangan mengaku sedang mantengin log, cek server, bekerja, ngobrol dengan staf, mengirim sesuatu, atau melakukan kegiatan konkret yang tidak tersedia pada DATA KANTOR.',
     'Jangan menyebut format /tugas, cara memakai bot atau perintah teknis kecuali memang ditanya cara memberi tugas.',
     'Gunakan fakta hanya saat relevan. Jika pertanyaan tentang satu pegawai, jangan menyebut statistik semua divisi. Angka totalSemuaDivisi hanya tersedia saat ditanya kantor secara umum.',
@@ -257,7 +259,7 @@ export function cleanOfficeNaturalResponse(text,fallback,question='') {
   if(safe.length<4||safe.length>700||/[\x00-\x08\x0e-\x1f]/.test(safe)||
       actionClaim.test(safe)||unverifiedCompletedWorkClaim(safe)||
       rawStatus.test(safe)||unsupportedMonitoring.test(safe)||
-      unverifiedHealth.test(safe)||
+      unverifiedHealth.test(safe)||unsupportedTeamMood.test(safe)||
       (askedAtmosphere&&(atmosphere.test(safe)||physicalDisclaimer.test(safe))))
     return fallback;
   return safe;
