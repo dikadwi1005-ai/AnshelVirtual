@@ -411,5 +411,6 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,p
     news?jihanNoVerifiedNews:fallback,pending.question);
   await sendOfficeBotMessage(env,pending.division,text,{fetchImpl,silent:state.groupWorkspace?.quiet===true});
   await store.rememberOfficeGroupAI(pending.division,pending.question,text);
-  return {sent:true,division:pending.division,ai:typeof input.output==='string'&&text!==fallback};
+  return {sent:true,division:pending.division,ai:!newsAnswer&&typeof input.output==='string'&&
+    text!==(news?jihanNoVerifiedNews:fallback)};
 }
