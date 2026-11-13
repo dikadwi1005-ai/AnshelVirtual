@@ -81,6 +81,17 @@ export function applyGroupWorkspaceCommand(previous,command,now) {
       answer='Rapat dimulai: '+command.value+'. Pakai /rapat catat ... atau /rapat putuskan ..., lalu /rapat selesai untuk menyimpan notulen.';
       break;
     }
+    case 'meeting-link':{
+      if(!state.meeting)fail('Rapat sudah tidak aktif.');
+      const who={management:'Alya',operations:'Bima',administration:'Citra',hr:'Dara'}[command.division];
+      if(!who||!/^[a-f0-9-]{36}$/i.test(String(command.taskId||'')))
+        fail('Tindak lanjut rapat tidak valid.');
+      state.meeting={...state.meeting,notes:[
+        ...state.meeting.notes,'Tindak lanjut '+who+' dibuat sebagai tugas '+command.taskId+
+        ' (masih antre, bukan hasil final).'].slice(-12)};
+      answer='Tindak lanjut tugas '+command.taskId+' telah ditautkan ke catatan rapat.';
+      break;
+    }
     case 'meeting-catat':{
       if(!state.meeting)fail('Belum ada rapat aktif. Mulai dengan /rapat mulai topik.');
       if(state.meeting.notes.length>=12)fail('Catatan rapat mencapai batas 12 poin.');
