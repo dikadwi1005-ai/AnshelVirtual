@@ -140,7 +140,8 @@ test('SQLite group reminders are claimed once, leased, retried, then acknowledge
 });
 
 test('owner meeting controls require correct Telegram account and do not call Gemini',async()=>{
-  const store=createStore(':memory:',()=>clock.now);
+  let now=clock.now;
+  const store=createStore(':memory:',()=>now);
   sent.length=0;
   try{
     const a=await prepareOfficeNaturalChat(store,env,
@@ -152,6 +153,7 @@ test('owner meeting controls require correct Telegram account and do not call Ge
     await assert.rejects(prepareOfficeNaturalChat(store,env,
       {...data(60002,'/rapat selesai'),userId:'123456'},messenger),e=>e.status===403);
     assert.equal(store.officeGroupWorkspace().meeting.topic,'Rapat prioritas minggu depan');
+    now+=3000; // Honor the existing minimum 2-second owner message gap.
     const end=await prepareOfficeNaturalChat(store,env,
       data(60003,'/rapat selesai'),messenger);
     assert.equal(end.mode,'handled');
