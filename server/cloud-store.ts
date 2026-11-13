@@ -161,6 +161,21 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         return true;
       });
     },
+    async releaseOfficeGroupSignal(kind) {
+      if(!['daily-summary','queued-worker-silent','internal-event'].includes(kind))
+        throw new Fault(400,'Jenis notifikasi kantor tidak valid.');
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293112)',[],client);
+        const key='office_group_signals_v1';
+        const today=scheduledDraftDay(new Date(now()));
+        const checkpoint=await readSetting(key,{date:'',sent:[]},client);
+        if(checkpoint.date!==today)return false;
+        const sent=(checkpoint.sent||[]).filter(x=>x!==kind);
+        if(sent.length===(checkpoint.sent||[]).length)return false;
+        await writeSetting(key,{...checkpoint,sent},client);
+        return true;
+      });
+    },
     async claimOfficeGroupCheckin() {
       return transaction(async client => {
         await query('SELECT pg_advisory_xact_lock(17293110)',[],client);
