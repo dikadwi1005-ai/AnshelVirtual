@@ -253,7 +253,9 @@ export function cleanOfficeNaturalResponse(text,fallback,question='') {
     return fallback;
   return safe;
 }
-export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) {
+const defaultGroupPause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+export const groupReplyIntervalMs=2000;
+export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,pause=defaultGroupPause) {
   officeGroupConfig(env);
   const pending=await store.consumeOfficeGroupAI(String(input?.updateId??''),input?.ticket);
   const state=await store.state();
@@ -266,26 +268,26 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch) 
     const result=resolveOfficeCollectiveResponse(input?.output,recipients,pending.question,
       cleanOfficeNaturalResponse,state);
     const answers=result.answers;
-    // Normal all-hands calls stay parallel. A targeted two-person discussion
-    // is sent in order, with second worker replying to the first worker's message.
+    // Group calls arrive gradually, rather than all bot accounts in one second.
+    // Keep a soft 9s pacing budget: existing published n8n HTTP node times out
+    // after 12s, so excessive Telegram latency must not add more deliberate wait.
+    // Targeted discussions continue in a reply thread, all-hands remain unthreaded.
     const pair=!!requestedOfficeDiscussion(pending.question);
-    let attempts;
-    if(pair&&recipients.length===2) {
-      attempts=[];
-      let previous=null;
-      for(const id of recipients) {
-        try {
-          const messageId=await sendOfficeBotMessage(env,id,answers[id].text,
-            {...(previous?{replyTo:previous}:{}),fetchImpl});
-          attempts.push({status:'fulfilled',value:messageId});
-          previous=messageId;
-        }catch(error){
-          attempts.push({status:'rejected',reason:error});
-        }
+    const attempts=[];
+    const started=Date.now();
+    let previous=null;
+    for(let i=0;i<recipients.length;i++) {
+      const id=recipients[i];
+      if(i>0 && Date.now()-started+groupReplyIntervalMs<9000)
+        await pause(groupReplyIntervalMs);
+      try {
+        const messageId=await sendOfficeBotMessage(env,id,answers[id].text,
+          {...(pair&&previous?{replyTo:previous}:{}),fetchImpl});
+        attempts.push({status:'fulfilled',value:messageId});
+        if(pair)previous=messageId;
+      }catch(error){
+        attempts.push({status:'rejected',reason:error});
       }
-    }else{
-      attempts=await Promise.allSettled(recipients.map(id=>
-        sendOfficeBotMessage(env,id,answers[id].text,{fetchImpl})));
     }
     const successful=[];
     for(let i=0;i<recipients.length;i++) {
