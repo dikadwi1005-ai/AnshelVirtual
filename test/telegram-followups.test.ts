@@ -174,3 +174,22 @@ test('hasil draf punya review terpisah dari persetujuan antrean dan tidak membeb
     assert.equal(store.state().audit.filter(a=>a.action==='artifact_approved').length,1);
   }finally{store.close();}
 });
+
+test('uncertain reminder delivery is held for owner verification',async()=>{
+  let now=Date.parse('2026-11-13T02:00:00Z');
+  const store=createStore(':memory:',()=>now);
+  try {
+    store.applyOfficeGroupWorkspace({type:'reminder',date:'2026-11-13',
+      time:'10:00',text:'Konfirmasi rapat pagi'});
+    now+=3600_000;
+    const unreachable=async()=>{throw new Error('connection interrupted');};
+    await assert.rejects(dispatchOfficeGroupEvent(store,env,unreachable),e=>e.status===502);
+    const reminder=store.officeGroupWorkspace().reminders[0];
+    assert.equal(reminder.sent,false);
+    assert.equal(reminder.uncertain,true);
+    now+=3600_000;
+    assert.equal(store.claimDueOfficeReminder(),null);
+    const list=store.applyOfficeGroupWorkspace({type:'view',section:'pengingat'});
+    assert.match(list.text,/periksa pengiriman di Telegram/i);
+  }finally{store.close();}
+});
