@@ -244,7 +244,7 @@ test('workflow jadwal otomatis punya dua cron terpisah dan tidak mengganggu Tele
   assert.equal(workflow.nodes.filter(n=>n.type==='n8n-nodes-base.telegramTrigger').length,0);
   assert.equal(workflow.nodes.filter(n=>n.type==='n8n-nodes-base.scheduleTrigger').length,2);
   const nodes=Object.fromEntries(workflow.nodes.map(n=>[n.name,n]));
-  assert.equal(nodes['Cek hasil kerja tiap jam'].parameters.rule.interval[0].expression,'0 9-17 * * 1-5');
+  assert.equal(nodes['Cek hasil kerja tiap jam'].parameters.rule.interval[0].expression,'0 * * * *');
   assert.equal(nodes['Obrolan kantor virtual siang'].parameters.rule.interval[0].expression,'0 12 * * 1-5');
   assert.match(nodes['Kirim update kerja empat bot'].parameters.url,/office-group\/dispatch$/);
   assert.match(nodes['Dua bot ngobrol aktivitas virtual'].parameters.url,/office-group\/checkin$/);
