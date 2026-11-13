@@ -4,6 +4,8 @@ import { createActors } from './actors.js';
 import { createCharacter } from './character-mode.js';
 import { createCharacterCamera } from './character-camera.js';
 import { insideRoom, rooms, roomById, point } from './layout.js';
+import { furniture } from './furnishings.js';
+import { checkLayout } from './layout-editor.js';
 import { radialTexture } from './materials.js';
 import { navigation } from './navigation.js';
 import { createLipTimeline } from './office-lips.js';
@@ -37,6 +39,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   renderer.domElement.setAttribute('aria-label','Kantor 3D interaktif');
 
   const camera=new THREE.OrthographicCamera(-32,32,24,-24,.1,190);
+  const exportCamera=new THREE.OrthographicCamera(-32,32,24,-24,.1,190);
   const chase=createCharacterCamera();
   const controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true;
@@ -70,7 +73,14 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const temp=new THREE.Vector3(), offset=new THREE.Vector3(), ray=new THREE.Raycaster();
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
   let world, population, character, state=null, following=null, selected=null, cameraMove=null, drag=null;
-  let shared=null, leading=false;
+  let shared=null, leading=false, displayReturn=null, nav, meeting=null, replay=null, laidOut=false;
+  let simulationState, previousState, previousMeeting, previousLayout;
+  let nextRecording=0, chooseFurniture=null;
+  const preview=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial({
+    color:0x47ead0,transparent:true,opacity:.52,wireframe:true,depthWrite:false,
+  }));
+  preview.visible=false;
+  scene.add(preview);
   function restoreOffice(value) {
     if (!population) return;
     population.visible(value.leader || Boolean(value.snapshot));
@@ -81,9 +91,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   }
   const movement={x:0,y:0};
   const characterActive=()=>character?.root.visible===true;
-  const viewCamera=()=>characterActive()?chase.camera:camera;
-  const viewTarget=()=>characterActive()?chase.focus:controls.target;
-  const viewZoom=()=>characterActive()?6:camera.zoom;
+  const characterView=()=>characterActive() && !displayReturn;
+  const viewCamera=()=>characterView()?chase.camera:camera;
+  const viewTarget=()=>characterView()?chase.focus:controls.target;
+  const viewZoom=()=>characterView()?6:camera.zoom;
   let mode='auto', night=0, press=null, loaded=false, auditCursor=null, suspended=false;
   const roomLabels=[];
   const bubble=document.createElement('div');
@@ -163,7 +174,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   function focusRoom(id) {
     const room=roomById[id];
-    if (!room || characterActive()) return;
+    if (!room || characterActive() && !replay) return;
     following=null;
     focus(room.x,room.z,host.clientWidth<650?2.97:3.70);
   }
@@ -177,11 +188,22 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   function focusDisplay(room,type) {
     const view=world?.displays.focus(room,type);
-    if (!view || characterActive()) return;
+    if (!view) return;
+    displayReturn ??= {target:controls.target.clone(),position:camera.position.clone(),zoom:camera.zoom,following};
+    controls.enabled=false;
     following=null;
     const target=view.center;
     const direction=view.normal.setY(room==='gaming'?1.2:.66).normalize().multiplyScalar(16);
     cameraMove={target,position:target.clone().add(direction),zoom:host.clientWidth<650?40:33};
+  }
+
+  function closeDisplay() {
+    if (!displayReturn) return;
+    const previous=displayReturn;
+    displayReturn=null;
+    following=previous.following;
+    cameraMove=characterActive()?null:previous;
+    controls.enabled=!characterActive();
   }
 
   controls.addEventListener('start',()=>{cameraMove=null;following=null;});
@@ -326,11 +348,12 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     world.displays.sync(state);
     let storage;
     try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
-    const nav=navigation(world.obstacles);
-    population=await createActors(scene,nav,shadow,state,requestDialogue,storage);
+    nav=navigation(world.obstacles);
+    const liveNav={clear:(...args)=>nav.clear(...args),route:(...args)=>nav.route(...args)};
+    population=await createActors(scene,liveNav,shadow,state,requestDialogue,storage);
     if(shared) restoreOffice(shared);
     else if(state?.phase!=='paused') population.catchUp(42,{...state,dialogueEnabled:false});
-    try { character=await createCharacter(scene,nav,shadow); }
+    try { character=await createCharacter(scene,liveNav,shadow); }
     catch (error) { console.error('Avatar Dika gagal dimuat',error); }
     for (const room of rooms) {
       const element=document.createElement('button');
@@ -355,7 +378,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   }
 
   renderer.domElement.addEventListener('pointerdown',event=>{
-    if (event.button!==0 || (characterActive()?drag:!event.isPrimary)) return;
+    if (displayReturn || replay || event.button!==0 || (characterActive()?drag:!event.isPrimary)) return;
     press=[event.clientX,event.clientY];
     if (characterActive()) {
       drag={id:event.pointerId,x:event.clientX,y:event.clientY,moved:false};
@@ -389,6 +412,11 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     const bounds=host.getBoundingClientRect();
     pointer.set((event.clientX-bounds.left)/bounds.width*2-1,1-(event.clientY-bounds.top)/bounds.height*2);
     ray.setFromCamera(pointer,viewCamera());
+    if (chooseFurniture) {
+      const id=world?.pickFurniture(ray);
+      if (id) chooseFurniture(id);
+      return;
+    }
     const device=world?.displays.pick(ray,scene.children);
     if (device) { onDisplay(device); return; }
     const candidate=population?.actors.map(actor=>{
@@ -408,17 +436,40 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (suspended || document.hidden) return;
     const width=host.clientWidth, height=host.clientHeight;
     if (!width || !height) return;
-    if (population) {
+    if (population && replay) {
+      const {frames}=replay;
+      if (replay.playing) replay.time=Math.min(replay.end,replay.time+delta*replay.speed*1000);
+      if (replay.time>=replay.end) replay.playing=false;
+      while (replay.index<frames.length-2 && frames[replay.index+1].at<=replay.time) replay.index++;
+      while (replay.index>0 && frames[replay.index].at>replay.time) replay.index--;
+      const frame=frames[replay.index], next=frames[replay.index+1];
+      const fraction=THREE.MathUtils.clamp((replay.time-frame.at)/(next.at-frame.at),0,1);
+      population.replayPose(fraction===1?next:frame,next,fraction);
+      const current=fraction===1?next:frame;
+      replay.turn=current.turn;
+      world.displays.agenda(current.agenda ?? '');
+    } else if (population) {
+      if (state!==previousState || meeting!==previousMeeting || laidOut!==previousLayout) {
+        simulationState=meeting||laidOut?{...state,meeting,dialogueEnabled:false}:state;
+        previousState=state;
+        previousMeeting=meeting;
+        previousLayout=laidOut;
+      }
       const steps=Math.max(1,Math.ceil(delta/.05));
       const speechFocus=viewZoom()>2.15 ? viewTarget() : null;
       for (let step=0;step<steps;step++) {
-        if (characterActive()) character.update(delta/steps,movement,chase.forward,population.actors);
-        if (!shared || leading) population.update(delta/steps,state,speechFocus,viewZoom()<1.6,characterActive()?character.root:null);
+        if (characterView()) character.update(delta/steps,movement,chase.forward,population.actors);
+        if (!shared || leading) population.update(delta/steps,simulationState,
+          speechFocus,viewZoom()<1.6,characterActive()?character.root:null);
         else population.followSnapshot(delta/steps);
       }
       world?.showDockedControllers(population.game.players);
+      if (population.actors.length===12 && population.actors[0].root.visible && now>=nextRecording) {
+        nextRecording=now+400;
+        host.dispatchEvent(new CustomEvent('office-frame',{detail:{...population.replayFrame(),agenda:meeting?.agenda}}));
+      }
     }
-    if (characterActive()) chase.update(character.root,delta,width<650);
+    if (characterView()) chase.update(character.root,delta,width<650);
     else {
       updateCamera(delta);
       camera.updateMatrixWorld();
@@ -428,10 +479,20 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     const lounge=roomById.gaming;
     const gameVisible=zoom>=2 && Math.hypot(target.x-lounge.x,target.z-lounge.z)<10;
     world?.displays.update(now,zoom,population?.game,gameVisible);
-    updateSpeech(width,height);
-    if (population && zoom>2.15 && state?.phase!=='paused') sound.update(population.actors,target,view.position);
+    if (!replay) updateSpeech(width,height);
+    if (!replay && population && zoom>2.15 && state?.phase!=='paused') sound.update(population.actors,target,view.position);
     else sound.clear();
-    renderer.render(scene,view);
+    if (replay?.exportAspect) {
+      exportCamera.copy(camera);
+      const horizontal=Math.max(camera.right,camera.top*replay.exportAspect);
+      Object.assign(exportCamera,{left:-horizontal,right:horizontal,top:horizontal/replay.exportAspect,bottom:-horizontal/replay.exportAspect});
+      exportCamera.updateProjectionMatrix();
+      renderer.render(scene,exportCamera);
+      replay.onFrame?.(renderer.domElement,replay.turn,replay.time,replay.playing);
+    } else {
+      renderer.render(scene,view);
+      replay?.onFrame?.(renderer.domElement,replay.turn,replay.time,replay.playing);
+    }
     if (now-lastLabelUpdate>=45) {
       updateLabels(width,height);
       lastLabelUpdate=now;
@@ -439,7 +500,78 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   });
 
   return {
-    load,reset,focusRoom,focusEmployee,focusDisplay,
+    load,reset,focusRoom,focusEmployee,focusDisplay,closeDisplay,
+    meeting(value) {
+      if (value && (!loaded || replay || state?.phase==='paused')) return false;
+      meeting=value;
+      world?.displays.agenda(value?.agenda ?? '');
+      if (value) {
+        shared=null;
+        leading=false;
+      }
+      return true;
+    },
+    chooseFurniture(callback) { chooseFurniture=callback; },
+    previewLayout(prop) {
+      preview.visible=Boolean(prop);
+      if (!prop) return;
+      const [width,depth,height]=prop.size ?? furniture[prop.type].slice(1);
+      preview.scale.set(width,height,depth);
+      preview.position.set(prop.at[0],height/2+.03,prop.at[1]);
+      preview.rotation.y=prop.angle;
+    },
+    layout(edits) {
+      if (!loaded || replay || characterActive() || meeting) return false;
+      const result=checkLayout(edits);
+      if (!result) return false;
+      for (const actor of population.actors) {
+        let from=[actor.root.position.x,actor.root.position.z];
+        const support=actor.anchor.support;
+        if (nav.clear(from,from,support,.1) && !result.nav.clear(from,from,support,.1)) return false;
+        for (const to of actor.path) {
+          if (nav.clear(from,to) && !result.nav.clear(from,to)) return false;
+          from=to;
+        }
+      }
+      world.layout(result.props);
+      nav=result.nav;
+      laidOut=result.props.size>0;
+      if (laidOut) {
+        shared=null;
+        leading=false;
+      }
+      renderer.shadowMap.needsUpdate=true;
+      return true;
+    },
+    layoutActive() { return laidOut; },
+    meetingActive() { return Boolean(meeting); },
+    startReplay(frames) {
+      if (!loaded || frames.length<2 || replay || meeting) return false;
+      closeDisplay();
+      const saved=population.replayFrame();
+      const visible=population.actors[0].root.visible;
+      population.visible(true);
+      const playerVisible=characterActive();
+      if (playerVisible) character.root.visible=false;
+      replay={frames,time:frames[0].at,end:frames.at(-1).at,index:0,speed:1,playing:false,saved,visible,playerVisible,
+        camera:{position:camera.position.clone(),target:controls.target.clone(),zoom:camera.zoom},following};
+      following=null;
+      voice.show(null);
+      clearMouth();
+      bubble.hidden=true;
+      return true;
+    },
+    replayOptions(values) { if (replay) Object.assign(replay,values); },
+    stopReplay() {
+      if (!replay) return;
+      population.replayPose(replay.saved,replay.saved,0);
+      population.visible(replay.visible);
+      if (replay.playerVisible) character.root.visible=true;
+      following=replay.following;
+      cameraMove=replay.camera;
+      world.displays.agenda(meeting?.agenda ?? '');
+      replay=null;
+    },
     dispose() {
       save();
       voice.stop();
@@ -453,6 +585,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       resizeObserver.disconnect();
       controls.dispose();
       renderer.dispose();
+      preview.geometry.dispose();
+      preview.material.dispose();
       renderer.forceContextLoss();
       renderer.domElement.remove();
       bubble.remove();
@@ -464,9 +598,9 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       if(shared && !leading) return shared.snapshot?.actors.find(actor=>actor.id===id)?.life;
       return population?.living.snapshot(id);
     },
-    sharedSnapshot() { return leading && population?.actors.length===12?population.capture():undefined; },
+    sharedSnapshot() { return !replay && leading && population?.actors.length===12?population.capture():undefined; },
     sharedOffice(value) {
-      if(!value)return;
+      if(!value || replay || laidOut || meeting)return;
       if(!value.leader || !leading || value.resume) restoreOffice(value);
       leading=value.leader;
       shared=value;
@@ -500,6 +634,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       character?.setPartner(actor?.figure.getObjectByName('body-mesh') ?? null);
     },
     characterMode(enabled) {
+      if (replay) return replay.playerVisible;
+      closeDisplay();
       if (!character || enabled===characterActive()) return characterActive();
       if (enabled) {
         if (!character.enable(true,population.actors)) return false;
@@ -533,7 +669,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     },
     state(value) {
       if (!value) return;
-      if (auditCursor!==null) {
+      if (!replay && auditCursor!==null) {
         for (const entry of value.audit) {
           if (entry.id<=auditCursor || entry.action!=='completed') continue;
           const task=value.tasks.find(item=>item.id===entry.task);

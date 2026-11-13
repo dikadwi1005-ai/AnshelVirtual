@@ -189,12 +189,14 @@ export function createDisplays() {
   const center=new THREE.Vector3();
   const normal=new THREE.Vector3();
   const normalMatrix=new THREE.Matrix3();
+  let agenda='';
   return {
     attach(mesh,original,prop,room) {
       if (!supported.has(prop.type) || original.name!=='metal') return false;
       const profile=profiles[room.id] ?? shared;
       const game=room.id==='gaming' && prop.type==='tv';
-      const key=room.person || game ? room.id : 'shared';
+      const presentation=room.id==='meeting' && prop.type==='tv';
+      const key=presentation?'meeting-tv':room.person || game ? room.id : 'shared';
       let screen=screens.get(key);
       if (!screen) {
         const canvas=document.createElement('canvas');
@@ -203,7 +205,7 @@ export function createDisplays() {
         const texture=new THREE.CanvasTexture(canvas);
         texture.colorSpace=THREE.SRGBColorSpace;
         const material=new THREE.MeshBasicMaterial({map:texture,toneMapped:false});
-        screen={context:canvas.getContext('2d'),texture,material,profile,game,accent:room.accent,division:room.person?.id,stamp:'',
+        screen={context:canvas.getContext('2d'),texture,material,profile,game,presentation,accent:room.accent,division:room.person?.id,stamp:'',
           snapshot:displayState(null,room.person?.id)};
         screens.set(key,screen);
         if (game) drawLoungeGame(screen.context,0,0);
@@ -218,9 +220,22 @@ export function createDisplays() {
     sync(office) {
       for (const screen of screens.values()) screen.snapshot=displayState(office,screen.division);
     },
+    agenda(value) { agenda=value; },
     update(now,zoom,game,gameVisible) {
       const step=zoom>=2 ? Math.floor(now/180):0;
       for(const screen of screens.values()) {
+        if (screen.presentation && agenda) {
+          const stamp='agenda:'+agenda;
+          if (screen.stamp!==stamp) {
+            screen.stamp=stamp;
+            fill(screen.context,0,0,480,270,dark);
+            fill(screen.context,24,38,5,172,screen.accent);
+            putText(screen.context,'POD RAPAT',45,75,22,muted,400);
+            putText(screen.context,agenda,45,140,30,accentText,398);
+            screen.texture.needsUpdate=true;
+          }
+          continue;
+        }
         if (screen.game) {
           const players=game?.players.size ?? 0;
           const time=players ? game.elapsed : now/1000;

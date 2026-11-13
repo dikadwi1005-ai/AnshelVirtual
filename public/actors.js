@@ -279,11 +279,13 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     if (actor.invitation && (plan?.taskLock || (actor.invitation.remaining-=delta)<=0)) actor.invitation=null;
     if (actor.directTurn && (actor.directTurn.remaining-=delta)<=0) actor.directTurn=null;
     const reacting=actor.reaction>0 && !plan?.taskLock;
-    const requested=actor.invitation?'meet-dika':reacting && actor.activity!=='meet-dika'?actor.activity:plan?.activity ?? 'desk';
+    const attending=state?.meeting?.participants.includes(actor.person.id) && !plan?.taskLock;
+    const requested=attending?'meeting':actor.invitation?'meet-dika':reacting && actor.activity!=='meet-dika'?actor.activity:plan?.activity ?? 'desk';
+    const room=attending?'meeting':plan?.room;
     actor.retry=Math.max(0,actor.retry-delta);
     const chatting=actor.directTurn && ['seated','arrived'].includes(actor.stage);
-    if (!chatting && (requested!==actor.activity || plan?.room!==actor.requestedRoom ||
-        (!actor.retry && (requested!==actor.actual || actor.stage==='waiting') && !actor.pending))) request(actor,requested,plan?.room);
+    if (!chatting && (requested!==actor.activity || room!==actor.requestedRoom ||
+        (!actor.retry && (requested!==actor.actual || actor.stage==='waiting') && !actor.pending))) request(actor,requested,room);
     if (actor.stage==='departing' || actor.stage==='sitting') seat(actor,delta,actor.stage==='departing');
     else if (actor.stage==='walking' && actor.path.length) step(actor,delta);
     else if (actor.stage==='aligning') {
@@ -384,6 +386,40 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     })),turn:turn?{id:turn.speaker.person.id,text:turn.text}:null};
   }
 
+  function replayFrame() {
+    const turn=sharedTurn ?? actors.find(actor=>actor.directTurn)?.directTurn ??
+      conversations.turns.get('meeting') ?? conversations.turns.values().next().value ?? solo;
+    return {
+      actors:actors.map(actor=>({
+        position:location(actor),y:actor.root.position.y,angle:actor.root.rotation.y,
+        animation:actor.animation,stage:actor.stage,clipTime:actor.action?.time ?? 0,
+      })),
+      turn:turn?{id:turn.speaker.person.id,text:turn.text}:null,
+    };
+  }
+
+  function replayPose(frame,next,fraction) {
+    const blend=THREE.MathUtils.lerp;
+    for (const [index,actor] of actors.entries()) {
+      const value=frame.actors[index], end=next.actors[index];
+      actor.root.position.set(blend(value.position[0],end.position[0],fraction),
+        blend(value.y,end.y,fraction),blend(value.position[1],end.position[1],fraction));
+      actor.root.rotation.y=value.angle+angleDifference(end.angle,value.angle)*fraction;
+      actor.shadowMesh.position.x=actor.root.position.x;
+      actor.shadowMesh.position.z=actor.root.position.z;
+      actor.cup.visible=value.animation==='drink';
+      actor.book.visible=value.animation==='read';
+      play(actor,value.animation,0);
+      if (actor.action) {
+        const length=actor.action.getClip().duration;
+        const difference=end.clipTime-value.clipTime;
+        const progress=value.animation!==end.animation?0:difference>=0?difference:difference+length;
+        actor.action.time=(value.clipTime+progress*fraction)%length;
+      }
+      actor.mixer.update(0);
+    }
+  }
+
   function apply(snapshot,resume=false) {
     if (!snapshot) return;
     reservations.clear();
@@ -460,7 +496,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
 
   return {
     errors,actors,turns:conversations.turns,game,living,
-    capture,apply,followSnapshot,
+    capture,apply,followSnapshot,replayFrame,replayPose,
     visible(value) {
       for(const actor of actors) actor.root.visible=actor.shadowMesh.visible=value;
     },
@@ -517,8 +553,10 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       for (const actor of actors) {
         const plan=people[actor.person.id];
         const group=actor.anchor.conversation;
+        if (state?.meeting && group==='meeting' && !state.meeting.participants.includes(actor.person.id)) continue;
+        const attending=group==='meeting' && state?.meeting?.participants.includes(actor.person.id);
         if (!group || actor.invitation || actor.directTurn || !['arrived','seated'].includes(actor.stage) ||
-            plan?.room!==group || plan.taskLock) continue;
+            (!attending && plan?.room!==group) || plan?.taskLock) continue;
         if (!groups.has(group)) groups.set(group,[]);
         groups.get(group).push(actor);
       }

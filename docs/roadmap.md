@@ -164,3 +164,7 @@ Mode pengamat dan **Main sebagai Dika** dapat ditukar dari kontrol kamera. Kamer
 **Kontrol ponsel.** Joystick kiri mengatur arah dan kecepatan. Jari kedua bisa memutar kamera sambil berjalan. Build, 165 tes, dan uji multisentuh Chrome 390 × 844 lulus. Untuk rilis akhir, jalur iPhone adalah web app dari Safari melalui **Bagikan → Tambahkan ke Layar Utama → Buka sebagai App Web**. Manifest sudah memakai mode standalone dan ikon layar utama tersedia. Uji pemasangan dan performa di perangkat iPhone fisik masih menjadi bagian verifikasi rilis. [Panduan Apple](https://support.apple.com/en-lamr/guide/iphone/iphea86e5236/ios).
 
 **Interaksi pegawai.** Di mode Dika, tekan **E** atau **Interaksi** di dekat pegawai untuk membuka panel aktivitas. Pilih **Ajak ngobrol** untuk bubble dan riwayat lokal. **Panggil ke Atrium** memesan titik temu yang bisa dijangkau untuk satu pegawai. Pegawai dengan tugas aktif tetap menangani tugasnya. Chrome menguji pemanggilan, kedatangan, pembukaan bubble pada simulasi, pencatatan riwayat, dan respons saat simulasi dijeda.
+
+## Checkpoint Phase 5–7 · Studio kantor
+
+Monitor interaktif, editor tata letak, rapat, riwayat, replay, ekspor video, storyboard, pengingat WIB dan kontrak Nation City dijelaskan dalam [checkpoint Studio](phase-5-7-studio.md).

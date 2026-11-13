@@ -3,6 +3,7 @@ import { createCharacterStick } from './character-input.js';
 import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
 import { rooms, roomById, wings } from './layout.js';
+import { officeStudio } from './office-studio.js';
 import { loadSceneModule, lowGraphics, SceneModuleError, sceneFailureMessage } from './scene-support.js';
 
 const $ = id => document.getElementById(id);
@@ -48,7 +49,7 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 async function syncPresence() {
-  if (!scene || presenceBusy || document.hidden || $('workspace').hidden) return;
+  if (!scene || presenceBusy || studio.replaying || scene.layoutActive() || scene.meetingActive() || document.hidden || $('workspace').hidden) return;
   presenceBusy=true;
   const takeOver=claimPresence;
   claimPresence=false;
@@ -137,6 +138,8 @@ function showLogin() {
   clearInterval(poller);
   clearInterval(presenceTimer);
   claimPresence=false;
+  $('workspace').hidden = true;
+  studio.signOut();
   setCharacterMode(false);
   scene?.suspend(true);
   $('workspace').hidden = true;
@@ -233,13 +236,18 @@ async function refresh(force = false) {
 }
 
 function setPanel(name) {
+  if (panel==='studio' && name!=='studio') studio.close();
+  if (panel==='workstation' && name!=='workstation') scene?.closeDisplay();
   panel = name;
   document.querySelector('.inspector').hidden=!name;
   buttons('[data-panel]').forEach(button=>{
     button.classList.toggle('active',button.dataset.panel===name);
     button.setAttribute('aria-pressed',String(button.dataset.panel===name));
   });
-  render();
+  if (name==='studio') {
+    title('Anshel Virtual Tech','Studio kantor');
+    studio.open();
+  } else render();
 }
 
 function select(id,room = null) {
@@ -251,9 +259,10 @@ function select(id,room = null) {
 }
 
 function openWorkstation({room,type}) {
-  workstation={room,type};
+  workstation={room,type:type ?? scene?.displayTypes(room)[0]};
   workstationPreview=null;
   setPanel('workstation');
+  if (type) scene?.focusDisplay(room,type);
 }
 
 function title(kicker,title) {
@@ -342,14 +351,23 @@ function renderWorkstation() {
   title(room.label,id==='gaming'?'Anshel Circuit':'Layar workstation');
   const focusButtons=(scene?.displayTypes(id) ?? []).map(device=>
     '<button type="button" data-focus-display="'+device+'" aria-pressed="'+(device===type)+'">Fokus '+deviceLabels[device]+'</button>');
-  const controls='<div class="context-actions">'+focusButtons.join('')+'</div>';
+  const controls='<div class="context-actions">'+focusButtons.join('')+
+    '<button type="button" id="minimize-display">Kecilkan layar</button></div>';
   const content=$('panel-content');
   if (id==='gaming') {
     content.innerHTML=controls+'<dl class="stats"><div><dt>Permainan</dt><dd id="game-status">'+gameLabel()+'</dd></div></dl>';
     return;
   }
+  const related=office.tasks.filter(item=>item.division===id);
+  const queued=related.filter(item=>item.status==='queued');
+  const completed=related.filter(item=>item.status==='completed');
+  const person=team(id);
+  const context=stats([['Pegawai',person?.employee ?? 'Area bersama'],['Antrean',queued.length],
+    ['Proyek',[...new Set(related.map(item=>item.project).filter(Boolean))].join(', ') || '—']])+
+    '<p class="section-label">Antrean</p>'+renderTasks(queued,false)+
+    '<p class="section-label">Hasil terbaru</p>'+renderTasks(completed.slice(0,5),false);
   if (!task) {
-    content.innerHTML=controls+stats([['Layar',displayModes[snapshot.mode]]])+'<p class="status-text">Belum ada tugas untuk area ini.</p>';
+    content.innerHTML=controls+stats([['Layar',displayModes[snapshot.mode]]])+context;
     return;
   }
   const logs=office.audit.filter(event=>event.task===task.id).slice(0,8);
@@ -367,7 +385,7 @@ function renderWorkstation() {
     (task.project?'<small>'+escape(task.project)+'</small>':'')+stats(rows)+
     (task.error?'<p class="error">'+escape(task.error)+'</p>':'')+
     (task.sha256?'<small class="hash">SHA-256 '+escape(task.sha256)+'</small>':'')+result+'</article>'+
-    '<p class="section-label">Log terbaru</p>'+renderAudit(logs);
+    '<p class="section-label">Log terbaru</p>'+renderAudit(logs)+context;
 }
 
 function renderAudit(items) {
@@ -446,6 +464,7 @@ function renderMonitoring() {
 }
 function render() {
   if (!office || !panel) return;
+  if (panel==='studio') return;
   if (panel==='office') return renderOffice();
   if (panel==='monitor') return renderMonitoring();
   if (panel==='workstation') return renderWorkstation();
@@ -480,6 +499,7 @@ function render() {
 $('panel-content').addEventListener('click',async event=>{
   const button=event.target.closest('button');
   if (!button) return;
+  if (button.id==='minimize-display') return scene?.closeDisplay();
   if (button.dataset.workstation) return openWorkstation({room:button.dataset.workstation});
   if (button.dataset.focusDisplay) {
     workstation.type=button.dataset.focusDisplay;
@@ -679,14 +699,20 @@ buttons('[data-camera]').forEach(button=>{
   });
 });
 
-$('new-task').addEventListener('click',()=>{
+function openTask(description='',project='') {
   const form=$('task-form');
   form.reset();
   form.elements.division.innerHTML=teamOptions(selected ?? 'operations');
+  form.elements.description.value=description.slice(0,2000);
+  form.elements.project.value=project.slice(0,80);
+  if (project==='Storyboard Anshel') form.elements.kind.value='draft';
   $('task-error').textContent='';
   taskKey=crypto.randomUUID();
   $('task-dialog').showModal();
-});
+}
+const studio=officeStudio({host:$('scene'),content:$('panel-content'),scene:()=>scene,office:()=>office,
+  escape,notice,release:releasePresence,connect:syncPresence,newTask:openTask});
+$('new-task').addEventListener('click',()=>openTask());
 buttons('[data-close]').forEach(button=>button.addEventListener('click',()=>$('task-dialog').close()));
 $('task-form').addEventListener('submit',async event=>{
   event.preventDefault();
@@ -719,6 +745,7 @@ $('login-form').addEventListener('submit',async event=>{
 const clock = () => {
   $('clock').textContent=clockFormat.format(Date.now()+clockOffset).replace('.',':');
   syncLightingControl();
+  if (!$('workspace').hidden) studio.tick(Date.now()+clockOffset);
 };
 clock();
 setInterval(clock,1000);

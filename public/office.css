@@ -50,6 +50,15 @@ h1,h2,h3,.brand,.clock{font-family:'Space Grotesk',sans-serif}
 .worker-status i{flex:none}
 .actions{bottom:20px;left:50%;transform:translateX(-50%);padding:4px;gap:3px}
 .nav-button{display:flex;align-items:center;justify-content:center;gap:7px;padding:9px 12px;font-weight:700;white-space:nowrap}
+.studio-tabs{padding-bottom:10px;border-bottom:1px solid #3d5268}
+#studio-body{padding-top:14px}
+#studio-body h3{margin:12px 0 8px;font-size:1rem}
+#studio-body form>button,#studio-body form .context-actions>button{border:1px solid #4b6279;border-radius:6px;background:#344d65;color:#f6f7fa;padding:8px 10px;font-weight:700}
+#studio-body form>button[type=submit],#studio-body form .context-actions>button[type=submit]{background:#8be4d2;border-color:#8be4d2;color:#152b31}
+#studio-body label{min-width:0}
+#studio-body input,#studio-body select,#studio-body textarea{min-width:0;max-width:100%}
+#studio-body progress,#studio-output video{display:block;width:100%;margin:8px 0}
+#replay-subtitle{min-height:2em;color:#e7ebf2}
 #queue-badge{font-size:10px;color:#0c2630;background:var(--accent);min-width:16px;border-radius:8px;padding:1px 4px;text-align:center}
 .primary{background:#7ee0cb;color:#132e38;border:1px solid #9de9d8;border-radius:9px;padding:9px 13px;font-weight:850;white-space:nowrap}
 .primary:hover{background:#a3eedc}

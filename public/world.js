@@ -5,6 +5,7 @@ import { doorway, entrance, footprint, point, roomOutline, rooms } from './layou
 import { createDisplays } from './displays.js';
 import { furniture, obstaclesFor, partitions, propsFor } from './furnishings.js';
 import { addLounge } from './lounge.js';
+import { layoutItems } from './layout-editor.js';
 import { emission, finish, floorMaterial, objectMaterial, radialTexture } from './materials.js';
 
 const loader = new GLTFLoader();
@@ -133,6 +134,7 @@ async function placeProp(parent,prop,room,displays) {
   });
   group.add(copy);
   parent.add(group);
+  return group;
 }
 
 function batchStatic(group) {
@@ -173,15 +175,19 @@ function contactShadows(parent,props,map) {
   const material=new THREE.MeshBasicMaterial({map,transparent:true,depthWrite:false,opacity:.56,toneMapped:false});
   const instances=new THREE.InstancedMesh(flat,material,grounded.length);
   const matrix=new THREE.Object3D();
-  for (const [i,prop] of grounded.entries()) {
+  const set=(i,prop)=>{
     const [width,depth]=prop.size ?? furniture[prop.type].slice(1);
     matrix.position.set(prop.at[0],.027,prop.at[1]);
     matrix.scale.set(width*1.55,1,depth*1.7);
     matrix.rotation.y=prop.angle;
     matrix.updateMatrix();
     instances.setMatrixAt(i,matrix.matrix);
-  }
+    instances.instanceMatrix.needsUpdate=true;
+  };
+  for (const [i,prop] of grounded.entries()) set(i,prop);
+  instances.computeBoundingSphere();
   parent.add(instances);
+  return (original,next)=>set(grounded.indexOf(original),next);
 }
 
 export async function buildWorld(scene,shadowTexture) {
@@ -202,6 +208,9 @@ export async function buildWorld(scene,shadowTexture) {
     map:warmMap,transparent:true,depthWrite:false,toneMapped:false,opacity:.21,blending:THREE.AdditiveBlending,
   });
   const propLists=new Map(rooms.map(room=>[room.id,propsFor(room)]));
+  const furnitureGroups=new Map(), movable=new THREE.Group();
+  const editable=new Set(layoutItems.map(item=>item.id));
+  scene.add(movable);
   const wings=new Map();
   const jobs=[];
   for (const room of rooms) {
@@ -214,7 +223,12 @@ export async function buildWorld(scene,shadowTexture) {
     const wing=wings.get(room.wing);
     architecture(wing,room);
     const props=propLists.get(room.id);
-    jobs.push(...props.map(prop=>placeProp(wing,prop,room,displays)));
+    jobs.push(...props.map(async (prop,index)=>{
+      const id=room.id+':'+index;
+      const canMove=editable.has(id);
+      const group=await placeProp(canMove?movable:wing,prop,room,displays);
+      if (canMove) furnitureGroups.set(id,{group,prop});
+    }));
     const at=point(room,0,-.32);
     flatMesh(core,5.2,3.9,at,.024,warmGlow);
   }
@@ -226,7 +240,23 @@ export async function buildWorld(scene,shadowTexture) {
   const errors=results.filter(result=>result.status==='rejected').map(result=>result.reason);
   for (const group of wings.values()) batchStatic(group);
   batchStatic(core);
-  contactShadows(core,[...propLists.values()].flat(),shadowTexture);
+  const moveShadow=contactShadows(core,[...propLists.values()].flat(),shadowTexture);
   const obstacles=rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)));
-  return {errors,warmGlow,obstacles,displays,showDockedControllers:addLounge(scene)};
+  return {errors,warmGlow,obstacles,displays,showDockedControllers:addLounge(scene),
+    pickFurniture(ray) {
+      const hit=ray.intersectObjects(movable.children,true)[0];
+      if (!hit || ray.intersectObjects(scene.children,true).some(other=>
+        other.distance<hit.distance-.01 && other.object.material?.transparent===false)) return null;
+      let group=hit.object;
+      while (group.parent && group.parent!==movable) group=group.parent;
+      return [...furnitureGroups].find(([,entry])=>entry.group===group)?.[0] ?? null;
+    },
+    layout(changes) {
+      for (const [id,{group,prop}] of furnitureGroups) {
+        const next=changes.get(id) ?? prop;
+        group.position.set(next.at[0],next.y+.016,next.at[1]);
+        group.rotation.y=next.angle;
+        moveShadow(prop,next);
+      }
+    }};
 }

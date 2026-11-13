@@ -43,7 +43,7 @@ export function chooseConversationAnchor(actor,reservations,isAvailable,room) {
 
 function line(room,round,index,other,office) {
   if (room==='meeting') return [
-    other.employee+', '+prompts.meeting[round%2],
+    office?.meeting?.agenda ? 'Agenda kita: '+office.meeting.agenda : other.employee+', '+prompts.meeting[round%2],
     'Boleh. Aku urutkan dulu hal yang perlu kita bahas.',
     'Oke, sisanya kita cek lagi setelah kembali ke meja.',
   ][index];
