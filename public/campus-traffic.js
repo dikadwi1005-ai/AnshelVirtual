@@ -17,13 +17,34 @@ const busy=(state,id)=>{
   const person=state.people?.[id];
   return person?.executing || (person?.task?.status==='queued' && state.worker && state.capabilities?.includes(person.task.kind));
 };
+const mealCooldown=20*60_000;
+const mealPreference=['Gado-gado','Nasi ayam','Nasi uduk','Gado-gado','Nasi ayam','Gado-gado',
+  'Nasi uduk','Nasi uduk','Gado-gado','Nasi uduk','Nasi ayam','Nasi ayam'];
+
+export function chooseFoodOrder(state,employees,needsFor,cooldowns,random=Math.random) {
+  if (state?.phase!=='lunch') return null;
+  for (const employee of employees) {
+    const {id,index}=employee.person;
+    if (!['seated','arrived'].includes(employee.stage) || state.now-(cooldowns[id] ?? -Infinity)<mealCooldown) continue;
+    if (['home','home-sleep','pickup'].includes(employee.actual) || employee.foodTime>0) continue;
+    const needs=needsFor(id);
+    if (!needs || needs.energy>=60 || busy(state,id)) continue;
+    const preferred=mealPreference[index];
+    const chance=.012+(60-needs.energy)*.0014+(employee.actual==='snack'?.025:0);
+    if (random()>=chance) continue;
+    const food=foodMenu.includes(preferred)?preferred:foodMenu[0];
+    const order=createFoodOrder(employee,food,state,false);
+    if (order) return order;
+  }
+  return null;
+}
 
 export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) {
   const geometry=new THREE.BoxGeometry(), material=new THREE.MeshStandardMaterial({roughness:.78});
   const car=new THREE.Group(), guest=new THREE.Group(), scooter=new THREE.Group(), rider=new THREE.Group();
-  const roadCar=new THREE.Group();
+  const roadCar=new THREE.Group(), opposingCar=new THREE.Group();
   scene.add(car,guest);
-  scene.add(scooter,roadCar);
+  scene.add(scooter,roadCar,opposingCar);
   function block(parent,color,x,y,z,w,h,d) {
     const mesh=new THREE.Mesh(geometry,material.clone());
     mesh.material.color.set(color);
@@ -83,7 +104,8 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
   roadVariants.push(null);
   block(scooter,'#dc9050',0,.98,-.76,.51,.49,.45);
   scooter.add(rider);
-  let mixer,idle,walk,action,figure,drive,helmet,body,originalMaterial;
+  let mixer,idle,walk,action,figure,drive,reach,helmet,body,originalMaterial;
+  let courierHand;
   try {
     const asset=await loadModel('people/character-male-e');
     figure=characterFigure(asset,{asset:'male-e',stature:1.59});
@@ -96,6 +118,16 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
     helmet=new THREE.Mesh(helmetGeometry,new THREE.MeshStandardMaterial({color:'#276259'}));
     helmet.scale.set(1.12,.87,1.06);
     body=figure.getObjectByName('body-mesh');
+    courierHand=body.skeleton.getBoneByName('arm-right');
+    const armTrack=idle.getClip().tracks.find(track=>track.name==='arm-right.quaternion');
+    if (armTrack) {
+      const axis=new THREE.Vector3(1,0,0), flex=new THREE.Quaternion();
+      const rest=new THREE.Quaternion().fromArray(armTrack.values);
+      const values=[-.42,-1.05,-1.05,-.42].flatMap(angle=>flex.setFromAxisAngle(axis,angle).multiply(rest).toArray());
+      reach=mixer.clipAction(new THREE.AnimationClip('courier-reach',1.1,[
+        new THREE.QuaternionKeyframeTrack(armTrack.name,[0,.31,.78,1.1],values),
+      ]));
+    }
     const head=body.skeleton.getBoneByName('head');
     if (head) {
       const unit=asset.size.y/1.59;
@@ -125,9 +157,18 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
     }
   } catch { /* Remaining road vehicles are still available. */ }
   roadScooter.visible=false;
+  const opposingVariants=roadVariants.map(variant=>{
+    if (!variant || variant===roadScooter) return null;
+    const copy=variant.clone();
+    opposingCar.add(copy);
+    return copy;
+  });
+  const trafficLanes=[{root:roadCar,variants:roadVariants,slot:null,trip:null},
+    {root:opposingCar,variants:opposingVariants,slot:null,trip:null}];
+  const roots=[car,guest,scooter,roadCar,opposingCar];
   let cycle='', vehicle=null, pedestrian=null, lastTime=0, order=null, lastOrder='', scooterTrip=null, requested=null;
   let following=false, remoteActive=false;
-  let roadTrip=null, roadCycle=-1;
+  let decisionTime=12, cooldowns={};
   const hand=new THREE.Vector3(), targetHand=new THREE.Vector3();
   function play(next) {
     if (next===action) return;
@@ -140,6 +181,11 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
     helmet.visible=false;
     guest.add(figure);
     figure.position.set(0,0,0);
+  }
+  function dressCourier() {
+    if (!body || !originalMaterial || Array.isArray(originalMaterial) || body.material!==originalMaterial) return;
+    body.material=originalMaterial.clone();
+    body.material.color?.set('#39816b');
   }
   const jam=(people,x,z,radius)=>people.some(root=>root.visible && Math.hypot(root.position.x-x,root.position.z-z)<radius);
   function begin(root,route) {
@@ -162,18 +208,22 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
     root.position.x=x; root.position.z=z;
     return true;
   }
-  car.visible=guest.visible=scooter.visible=roadCar.visible=false;
+  for (const root of roots) root.visible=false;
   return {
-    roots:[car,guest,scooter,roadCar],
-    obstacles:[{root:car,radius:2.1},{root:guest,radius:.72},{root:scooter,radius:1.12},{root:roadCar,radius:2.1}],
+    roots,
+    obstacles:[{root:car,radius:2.1},{root:guest,radius:.72},{root:scooter,radius:1.12},
+      {root:roadCar,radius:2.1},{root:opposingCar,radius:2.1}],
     pickup() { return order?.status==='Menunggu pengambilan'?order.id:null; },
     handingOff() { return order?.status==='Menunggu pengambilan' && order.handoff>0; },
     courierActive() { return Boolean(order) || remoteActive; },
     snapshot() {
       return {status:this.status(),active:Boolean(order),mounted:figure?.parent===rider,
-        poses:[car,guest,scooter,roadCar].map(root=>[root.visible,root.position.x,root.position.z,
+        poses:roots.map(root=>[root.visible,root.position.x,root.position.z,
           Math.atan2(Math.sin(root.rotation.y),Math.cos(root.rotation.y))]),parcel:box.visible,
-        variant:carVariants.findIndex(item=>item?.visible),roadVariant:roadVariants.findIndex(item=>item?.visible)};
+        variant:carVariants.findIndex(item=>item?.visible),roadVariant:roadVariants.findIndex(item=>item?.visible),
+        opposingVariant:opposingVariants.findIndex(item=>item?.visible),
+        delivery:{order,requested,lastOrder,cooldowns,decisionTime,elapsed:order?lastTime:0,
+          drive:order?scooterTrip:null,walk:order?pedestrian:null,parcelPosition:box.position.toArray()}};
     },
     follow(value,delta) {
       following=true;
@@ -181,31 +231,55 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
       requested=vehicle=pedestrian=null;
       remoteActive=Boolean(value?.active);
       if (!value) {
-        car.visible=guest.visible=scooter.visible=roadCar.visible=box.visible=false;
+        for (const root of roots) root.visible=false;
+        box.visible=false;
         return;
       }
       lastOrder=value.status;
-      [car,guest,scooter,roadCar].forEach((root,index)=>{
+      roots.forEach((root,index)=>{
         if (!value.poses[index]) { root.visible=false; return; }
         const [visible,x,z,angle]=value.poses[index];
+        const blend=delta<=0 || !root.visible || Math.hypot(root.position.x-x,root.position.z-z)>14?1:1-Math.exp(-delta*3);
         root.visible=visible;
-        root.position.x=x;
-        root.position.z=z;
-        root.rotation.y=angle;
+        root.position.x=THREE.MathUtils.lerp(root.position.x,x,blend);
+        root.position.z=THREE.MathUtils.lerp(root.position.z,z,blend);
+        const heading=angle-root.rotation.y;
+        root.rotation.y+=Math.atan2(Math.sin(heading),Math.cos(heading))*blend;
       });
       for(const [index,variant] of carVariants.entries()) if(variant) variant.visible=index===value.variant;
       carFallback.visible=!carVariants[value.variant];
       for(const [index,variant] of roadVariants.entries()) if(variant) variant.visible=index===value.roadVariant;
+      for(const [index,variant] of opposingVariants.entries()) if(variant) variant.visible=index===value.opposingVariant;
       box.visible=value.parcel;
       if (figure) {
         const parent=value.mounted?rider:guest;
         if (figure.parent!==parent) parent.add(figure);
         figure.position.set(0,value.mounted?.72:0,value.mounted?-.13:0);
+        const mount=value.delivery?.order?.mount;
+        if (mount) poseMount(mount);
         helmet.visible=value.active;
-        play(value.mounted?drive:guest.visible?walk:idle);
+        if (value.active) dressCourier();
+        else if (body && body.material!==originalMaterial) { body.material.dispose(); body.material=originalMaterial; }
+        if (value.delivery) box.position.fromArray(value.delivery.parcelPosition);
+        play(mount?(mount.entering?idle:reach ?? idle):value.mounted?drive:
+          value.delivery?.order?.handoff>0 && reach?reach:guest.visible?walk:idle);
         mixer.update(delta);
       }
       if (roadScooter.visible) roadRiderMixer?.update(delta);
+    },
+    resume(value) {
+      if (!value) return;
+      this.follow(value,0);
+      following=remoteActive=false;
+      for (const lane of trafficLanes) { lane.trip=null; lane.root.visible=false; }
+      car.visible=false;
+      const delivery=value.delivery;
+      if (!delivery || !mixer) { scooter.visible=guest.visible=box.visible=false; return; }
+      ({order,requested,lastOrder,cooldowns,decisionTime}=structuredClone(delivery));
+      scooterTrip=delivery.drive && structuredClone(delivery.drive);
+      pedestrian=delivery.walk && structuredClone(delivery.walk);
+      lastTime=delivery.elapsed;
+      if (!order) guest.visible=scooter.visible=box.visible=false;
     },
     status() {
       const active=order ?? requested;
@@ -217,42 +291,53 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
       const employee=employees.find(actor=>actor.person.id===id);
       requested=createFoodOrder(employee,food,state,order || requested);
       if (!requested) return 'Pilih makanan dan pegawai yang tersedia.';
+      cooldowns[id]=requested.created;
       return null;
     },
-    update(delta,state,people,employees) {
+    update(delta,state,people,employees,needsFor) {
       if (!state || state.phase==='paused') return;
       if (following) {
-        if (remoteActive) lastOrder='Perjalanan dihentikan setelah berpindah sesi.';
         following=remoteActive=false;
-        roadTrip=null;
-        car.visible=guest.visible=scooter.visible=box.visible=roadCar.visible=false;
+        for (const lane of trafficLanes) lane.trip=null;
+        for (const root of roots) root.visible=false;
+        box.visible=false;
       }
       const now=state.now ?? Date.now();
-      const hour=new Date(now+7*3600000).getUTCHours();
-      const trafficPeriod=hour>=21 || hour<6?240000:hour===8 || hour===17?42000:90000;
-      const roadSlot=Math.floor(now/trafficPeriod);
-      if (!roadTrip && roadSlot!==roadCycle && (hour>=6 && hour<21 || roadSlot%3===0)) {
-        roadCycle=roadSlot;
-        const [start,end]=roadRoutes[roadSlot%2];
-        if (roadVariants.some(Boolean)) {
-          const selected=roadVariants[roadSlot%roadVariants.length] ?? roadVariants.find(Boolean);
-          roadVariants.forEach(variant=>{if (variant) variant.visible=variant===selected;});
-          roadTrip=begin(roadCar,[start,end]);
-          roadTrip.radius=selected===roadScooter?1.1:2.3;
-          roadCar.rotation.y=start[0]<end[0]?Math.PI/2:-Math.PI/2;
-        }
+      if (mixer && needsFor && !requested && !order && state.phase==='lunch' && (decisionTime-=delta)<=0) {
+        decisionTime=24+Math.random()*22;
+        requested=chooseFoodOrder({...state,now},employees,needsFor,cooldowns);
+        if (requested) cooldowns[requested.id]=now;
       }
-      if (roadTrip) {
-        move(roadCar,roadTrip,delta,6.2,roadTrip.radius,[...people,car,scooter]);
-        if (roadScooter.visible) roadRiderMixer.update(delta);
-        if (roadTrip.index>=roadTrip.route.length) { roadTrip=null; roadCar.visible=false; }
+      const hour=new Date(now+7*3600000).getUTCHours();
+      const quiet=hour>=21 || hour<6;
+      const rush=(hour>=7 && hour<9) || (hour>=16 && hour<18);
+      for (const [index,lane] of trafficLanes.entries()) {
+        const period=quiet?240000:rush?32000:65000;
+        const slot=Math.floor((now+index*period*.27)/period);
+        const [start,end]=roadRoutes[index];
+        if (!lane.trip && slot!==lane.slot && (!quiet || (slot+index)%3===0) && !jam(people,...start,2.3)) {
+          lane.slot=slot;
+          const choices=lane.variants.filter(Boolean);
+          const selected=choices[slot%choices.length];
+          if (selected) {
+            lane.variants.forEach(variant=>{if (variant) variant.visible=variant===selected;});
+            lane.trip=begin(lane.root,[start,end]);
+            lane.trip.radius=selected===roadScooter?1.1:2.3;
+            lane.root.rotation.y=index?-Math.PI/2:Math.PI/2;
+          }
+        }
+        if (!lane.trip) continue;
+        const moving=move(lane.root,lane.trip,delta,index?5.5:6.2,lane.trip.radius,[...people,car,scooter]);
+        lane.trip.wait=moving?0:lane.trip.wait+delta;
+        if (lane.root===roadCar && roadScooter.visible) roadRiderMixer?.update(delta);
+        if (lane.trip.index>=lane.trip.route.length || lane.trip.wait>30) { lane.trip=null; lane.root.visible=false; }
       }
       const key=Math.floor((now+7*3600000)/180000)+':'+state.phase;
       if (requested && (state.phase!=='lunch' || busy(state,requested.id) || now-requested.created>180000)) {
         lastOrder=requested.food+' · Pesanan dibatalkan karena jadwal atau tugas';
         requested=null;
       }
-      if (requested && !order && !vehicle && !pedestrian && !jam(people,...vehicleRoute[0],1.5)) {
+      if (requested && !order && !vehicle && !pedestrian && !jam([...people,roadCar,opposingCar],...vehicleRoute[0],1.5)) {
           cycle=key;
           order={...requested,status:'Kurir Saji Kampung menuju kantor'};
           requested=null;
@@ -261,10 +346,7 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
           rider.add(figure);
           figure.position.set(0,.72,-.13);
           helmet.visible=true;
-          if (body && originalMaterial && !Array.isArray(originalMaterial)) {
-            body.material=originalMaterial.clone();
-            body.material.color?.set('#39816b');
-          }
+          dressCourier();
           play(drive);
           lastTime=0;
       }
@@ -275,8 +357,34 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
           return;
         }
         const park=vehicleRoute.at(-1);
+        if (order.mount) {
+          const {entering}=order.mount;
+          order.mount.time=Math.min(.9,order.mount.time+delta);
+          const amount=poseMount(order.mount);
+          if (!entering && amount>.62) {
+            box.visible=true;
+            scooter.localToWorld(hand.set(0,.98,-.76));
+            guest.worldToLocal(hand);
+            box.position.copy(hand.lerp(targetHand.set(.26,.91,.36),(amount-.62)/.38));
+          }
+          if (amount===1) {
+            delete order.mount;
+            if (entering) {
+              play(drive);
+              scooterTrip={route:vehicleRoute.slice().reverse(),index:1,wait:0,returning:true};
+            } else {
+              guest.add(figure);
+              figure.position.set(0,0,0);
+              scooterTrip=null;
+              order.status='Kurir berjalan ke teras';
+              play(walk);
+            }
+          }
+          mixer.update(delta);
+          return;
+        }
         if (scooterTrip) {
-          move(scooter,scooterTrip,delta,3.5,1.08,[...people,roadCar]);
+          move(scooter,scooterTrip,delta,3.5,1.08,[...people,roadCar,opposingCar]);
           if (scooterTrip.index>=scooterTrip.route.length) {
             if (scooterTrip.returning) {
               endOrder();
@@ -285,25 +393,28 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
               const dismount=[park[0],park[1]-.95];
               const path=nav.route(dismount,guestStops.delivery);
               if (path) {
-                guest.add(figure); figure.position.set(0,0,0);
                 pedestrian=begin(guest,[dismount,...path]);
-                box.visible=true;
-                order.status='Kurir berjalan ke teras';
+                guest.rotation.y=scooter.rotation.y;
+                order.status='Kurir turun dan mengambil paket';
+                order.mount={entering:false,time:0};
+                play(reach ?? idle);
               } else {
                 lastOrder=order.food+' · Jalur teras tidak tersedia';
-                scooterTrip={route:vehicleRoute.slice().reverse(),index:1,returning:true};
+                order.status='Jalur teras tidak tersedia';
+                scooterTrip={route:vehicleRoute.slice().reverse(),index:1,wait:0,returning:true};
               }
             }
           }
         } else if (pedestrian) {
           const walking=move(guest,pedestrian,delta,1.70,.64,people);
-          play(walking?walk:idle);
+          if (walking || !order.handoff) play(walking?walk:idle);
           if (pedestrian.index>=pedestrian.route.length) {
             if (pedestrian.returning) {
               guest.visible=false; box.visible=false; pedestrian=null;
-              rider.add(figure); figure.position.set(0,.72,-.13);
-              play(drive);
-              scooterTrip={route:vehicleRoute.slice().reverse(),index:1,returning:true};
+              rider.add(figure); figure.position.set(.95,0,0);
+              if (!order.delivered) order.status='Pengambilan terlewat · Kurir kembali';
+              order.mount={entering:true,time:0};
+              play(idle);
             } else {
               order.status='Menunggu pengambilan';
               pedestrian.wait+=delta;
@@ -312,9 +423,11 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
                 Math.hypot(receiver.root.position.x-foodStop[0],receiver.root.position.z-foodStop[1])<.25;
               order.handoff=received && !busy(state,order.id)?(order.handoff ?? 0)+delta:0;
               if (order.handoff>0) {
+                if (reach) play(reach);
                 guest.rotation.y=Math.atan2(receiver.root.position.x-guest.position.x,receiver.root.position.z-guest.position.z);
                 guest.updateMatrixWorld();
-                guest.localToWorld(hand.set(.26,.91,.36));
+                if (courierHand) courierHand.localToWorld(hand.set(-.13,-.075,.04));
+                else guest.localToWorld(hand.set(.26,.91,.36));
                 if (receiver.hands?.[0]) receiver.hands[0].localToWorld(targetHand.set(.13,-.07,.03));
                 else receiver.root.localToWorld(targetHand.set(-.22,.9,.36));
                 guest.worldToLocal(hand.lerp(targetHand,Math.min(1,order.handoff/.65)));
@@ -329,6 +442,10 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
                 pedestrian={...pedestrian,index:1,route:pedestrian.route.slice().reverse(),returning:true};
               }
             }
+          }
+          if (walking && box.visible && courierHand) {
+            courierHand.localToWorld(hand.set(-.13,-.075,.04));
+            box.position.copy(guest.worldToLocal(hand));
           }
         }
         mixer.update(delta);
@@ -352,7 +469,7 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
       }
       lastTime+=delta;
       if (vehicle) {
-        move(car,vehicle,delta,vehicle.returning?1.9:2.7,2.3,[...people,guest,roadCar]);
+        move(car,vehicle,delta,vehicle.returning?1.9:2.7,2.3,[...people,guest,roadCar,opposingCar]);
         if (vehicle.index>=vehicle.route.length) {
           if (vehicle.returning) { car.visible=false; vehicle=null; }
           else if ((vehicle.wait+=delta)>8) vehicle={...vehicle,route:vehicle.route.slice().reverse(),index:1,returning:true};
@@ -376,11 +493,17 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
     dispose() {
       mixer?.stopAllAction();
       roadRiderMixer?.stopAllAction();
-      for (const root of [car,guest,scooter,roadCar]) root.removeFromParent();
+      for (const root of roots) root.removeFromParent();
       for (const root of [car,guest,scooter]) root.traverse(mesh=>{
         if ([geometry,wheel,helmetGeometry].includes(mesh.geometry)) mesh.material.dispose();
       });
       geometry.dispose(); wheel.dispose(); helmetGeometry.dispose(); material.dispose();
     },
   };
+  function poseMount(mount) {
+    const amount=THREE.MathUtils.smoothstep(mount.time,0,.9);
+    const offset=mount.entering?1-amount:amount;
+    figure.position.set(.95*offset,.72*(1-offset),-.13*(1-offset));
+    return amount;
+  }
 }

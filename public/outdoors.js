@@ -35,9 +35,9 @@ export function addOutdoors(scene,loadModel) {
       piece(i%2?'#798b52':'#54734a',x1+(x2-x1)*t,.26,z1+.65+Math.sin(i*2)*.29,.40,.30,.38,i,crown);
     }
   }
-  for(const [x,z,w,d,angle] of [[-49,-35,18,8,.15],[39,-46,26,12,-.14],[-44,19,8,15,.12],
-    [47,16,12,22,-.15],[-29,46,18,8,-.08],[31,49,27,10,.13]]) {
-    piece('#657b5c',x,-.66,z,w,1.15,d,angle,crown);
+  for(const [x,z,w,d,angle] of [[-64,-38,13,8,.15],[59,-49,12,9,-.14],[-63,18,13,14,.12],
+    [64,17,13,16,-.15],[-37,51,14,7,-.08],[40,52,16,8,.13]]) {
+    piece('#657b5c',x,-.66,z,w*.5,1.15,d*.5,angle,crown);
     for(let i=0;i<3;i++) {
       const tx=x+(i-1)*w*.42,tz=z+Math.sin(x+i*4)*d*.42,h=1.8+(i%2)*.6;
       piece('#566e58',tx,h*.6,tz,h*.65,h,h*.5,angle+i,crown);

@@ -16,6 +16,7 @@ import { fittedModel } from './district-models.js';
 const speed=1.72;
 const personalSpace=.70;
 const sitBlend=.42;
+const genrePreferences=[2,0,2,1,0,2,1,0,2,1,2,0];
 const angleDifference=(target,current)=>Math.atan2(Math.sin(target-current),Math.cos(target-current));
 
 function seatedClip(sit, arms, name, leftOffsets, rightOffsets) {
@@ -76,11 +77,13 @@ function location(actor) { return [actor.root.position.x,actor.root.position.z];
 
 export async function createActors(scene,nav,shadowMap,initial,requestDialogue,storage) {
   const shadow=new THREE.MeshBasicMaterial({map:shadowMap,transparent:true,depthWrite:false,opacity:.70,toneMapped:false});
+  const parcelModel=model('district/cardboardboxclosed').catch(()=>null);
   const settled=await Promise.allSettled(divisions.map(async person=>{
     const profile=employeeProfile(person.id);
     const asset=await model('people/character-'+profile.asset);
     return {figure:employeeFigure(asset,person.id),animations:asset.animations,profile};
   }));
+  const foodAsset=await parcelModel;
   const reservations=new Map();
   const living=createLivingOffice({storage});
   const conversations=createConversations(living.record);
@@ -93,6 +96,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   const paperGeometry=new THREE.BoxGeometry(.214,.018,.15);
   const coverMaterial=new THREE.MeshStandardMaterial({color:0x39788c,roughness:.85});
   const paperMaterial=new THREE.MeshStandardMaterial({color:0xf1e8cf,roughness:.88});
+  const biteGeometry=new THREE.BoxGeometry(.09,.049,.073);
+  const biteMaterial=new THREE.MeshStandardMaterial({color:'#d59452',roughness:.84});
   const gripLeft=new THREE.Vector3(), gripRight=new THREE.Vector3();
   let solo=null, replanCooldown=0, office=null, lastState, lastPlans, player=null;
   let sharedTurn=null;
@@ -132,7 +137,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       clips.set('read',mixer.clipAction(gestureClip(sit,'read',4.4,
         {head:[.18,.23,.28,.18],'arm-left':[-.82,-.86,-.82,-.82],'arm-right':[-.82,-.82,-.69,-.82]})));
       clips.set('desk-nap',mixer.clipAction(gestureClip(sit,'desk-nap',6,
-        {head:[.42,.56,.53,.42],'arm-left':[-.66,-.82,-.82,-.66],'arm-right':[-.76,-.91,-.90,-.76]})));
+        {head:[0,.52,.53,.25],'arm-left':[0,-.82,-.82,-.56],'arm-right':[0,-.91,-.90,-.64]})));
       clips.set('phone',mixer.clipAction(gestureClip(sit,'phone',3.2,
         {head:[.23,.29,.24,.23],'arm-right':[-.93,-1.03,-.98,-.93]})));
       clips.set('stretch',mixer.clipAction(gestureClip(sit,'stretch',3.3,
@@ -145,6 +150,9 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       stage:'idle',seatProgress:0,activity:plan?.executing?'work':['arrival','closed'].includes(initial?.phase)?'home':'desk',
       reaction:0,wait:0,retry:0,animationDelta:0};
     actor.cup=new THREE.Mesh(cupGeometry,cupMaterial);
+    actor.bite=new THREE.Mesh(biteGeometry,biteMaterial);
+    actor.bite.visible=false;
+    root.add(actor.bite);
     actor.book=new THREE.Group();
     const cover=new THREE.Mesh(coverGeometry,coverMaterial), pages=new THREE.Mesh(paperGeometry,paperMaterial);
     pages.position.y=.015;
@@ -209,16 +217,46 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   }
 
   let campus=[], pickup=null, handingOff=false;
-  function receiveFood(id,asset) {
-    const actor=actors.find(item=>item.person.id===id);
-    if (!actor) return;
+  function foodParcel(actor,asset=foodAsset) {
     if (asset && !actor.parcel) {
       actor.parcel=fittedModel(asset,[.29,.24,.27]);
       actor.parcel.position.set(-.23,.77,.35);
       actor.root.add(actor.parcel);
     }
+  }
+  function receiveFood(id,asset) {
+    const actor=actors.find(item=>item.person.id===id);
+    if (!actor) return;
+    foodParcel(actor,asset);
     actor.foodTime=28;
     actor.retry=0;
+  }
+  function poseProps(actor,animation) {
+    actor.cup.visible=animation==='drink' || animation==='brew';
+    actor.book.visible=animation==='read';
+    actor.phone.visible=animation==='phone';
+    actor.bite.visible=animation==='snack';
+    if (actor.parcel) {
+      actor.parcel.visible=actor.foodTime>0 && animation!=='snack';
+      if (actor.parcel.visible) hold(actor.parcel,actor,0,[.13,-.075,.04]);
+    }
+    if (actor.phone.visible) {
+      hold(actor.phone,actor,1,[-.12,-.075,.06]);
+      actor.phone.rotation.x=.46;
+    }
+    if (actor.cup.visible) hold(actor.cup,actor,1,[-.138,-.075,.030]);
+    if (actor.bite.visible) hold(actor.bite,actor,1,[-.138,-.075,.03]);
+    if (actor.book.visible) {
+      actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.025));
+      actor.hands[1].localToWorld(gripRight.set(-.138,-.080,.025));
+      actor.book.position.copy(actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5)));
+      actor.book.position.y+=.032;
+      actor.book.rotation.x=.32;
+    }
+  }
+  function hold(prop,actor,hand,offset) {
+    actor.hands[hand].localToWorld(gripRight.set(...offset));
+    prop.position.copy(actor.root.worldToLocal(gripRight));
   }
   function occupied(actor,point,from) {
     for (const {root,radius} of campus) {
@@ -266,7 +304,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         for(const {root} of campus)
           if(root.visible && root.position.distanceToSquared(actor.root.position)<25)
             blockers.push([root.position.x,root.position.z]);
-        const commuting=actor.actual==='home' || Math.abs(here[0])>=34 || Math.abs(here[1])>=29;
+        const commuting=['home','home-sleep'].includes(actor.actual) || Math.abs(here[0])>=34 || Math.abs(here[1])>=29;
         const localGoal=commuting?actor.path[0]:actor.anchor.approach;
         const detour=nav.route(here,localGoal,blockers);
         if (detour) {
@@ -330,7 +368,6 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     const reacting=actor.reaction>0 && !plan?.taskLock;
     const attending=state?.meeting?.participants.includes(actor.person.id) && !plan?.taskLock;
     actor.foodTime=plan?.taskLock?0:Math.max(0,(actor.foodTime ?? 0)-delta);
-    if (actor.parcel) actor.parcel.visible=actor.foodTime>0;
     const requested=attending?'meeting':pickup===actor.person.id && !plan?.taskLock && state?.phase==='lunch'?'pickup':
       actor.foodTime>0?'snack':
       actor.invitation?'meet-dika':reacting && actor.activity!=='meet-dika'?actor.activity:plan?.activity ?? 'desk';
@@ -366,42 +403,30 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         actor.root.rotation.y+=THREE.MathUtils.clamp(turnAngle,-delta*3,delta*3);
       }
       const gaming=seated && actor.actual==='game';
+      const watching=seated && actor.actual==='tv' && game.players.size>0;
+      const reacts=isGameReaction(game.elapsed+actor.person.index%4*.17);
       const receiving=handingOff && pickup===actor.person.id && actor.stage==='arrived' && actor.actual==='pickup';
+      const waking=actor.wake>0 && !plan?.taskLock && seated && !gaming;
       const clip=receiving?'take-parcel':(speaking || chatting) && seated ? 'seated-speak' : speaking || chatting || speakingAlone ? 'speak' :
-        gaming ? (isGameReaction(game.elapsed+actor.person.index%3*.25)?'game-react':'game-play') :
-          reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.stage==='waiting'?'idle':actor.anchor.clip;
+        gaming ? (reacts?'game-react':'game-play') : watching && reacts?'desk-cheer':
+          waking?'stretch':reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.stage==='waiting'?'idle':actor.anchor.clip;
+      if (clip==='desk-nap') actor.slept=true;
+      else if (actor.slept) { actor.slept=false; actor.wake=2; }
+      actor.wake=Math.max(0,(actor.wake ?? 0)-delta);
       play(actor,clip);
       actor.reaction=Math.max(0,actor.reaction-delta);
     }
     actor.animationDelta+=delta;
     const sleeping=actor.actual==='home-sleep' && ['seated','sitting','departing'].includes(actor.stage);
     actor.figure.rotation.x=sleeping?-Math.PI/2*actor.seatProgress:0;
-    const propActive=['drink','read','phone','brew'].includes(actor.animation);
+    const propActive=actor.foodTime>0 || ['drink','read','phone','brew','snack'].includes(actor.animation);
     const interval=actor.stage==='walking'||actor.stage==='sitting'||actor.stage==='departing' ? 1/30 : 1/12;
     if (animate || actor.animationDelta>=interval || propActive) {
       if (actor.headYaw) actor.head.rotateY(-actor.headYaw);
       actor.mixer.update(actor.animationDelta);
       actor.animationDelta=0;
       actor.headYaw=0;
-      actor.cup.visible=['drink','brew'].includes(actor.animation);
-      actor.book.visible=actor.animation==='read';
-      actor.phone.visible=actor.animation==='phone';
-      if (actor.phone.visible) {
-        actor.hands[1].localToWorld(gripRight.set(-.12,-.075,.06));
-        actor.phone.position.copy(actor.root.worldToLocal(gripRight));
-        actor.phone.rotation.x=.46;
-      }
-      if (actor.cup.visible) {
-        actor.hands[1].localToWorld(gripRight.set(-.138,-.075,.030));
-        actor.cup.position.copy(actor.root.worldToLocal(gripRight));
-      }
-      if (actor.book.visible) {
-        actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.025));
-        actor.hands[1].localToWorld(gripRight.set(-.138,-.080,.025));
-        actor.book.position.copy(actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5)));
-        actor.book.position.y+=.032;
-        actor.book.rotation.x=.32;
-      }
+      poseProps(actor,actor.animation);
       if (actor.stage==='seated' && actor.anchor.conversation==='meeting') {
         const turn=conversations.turns.get('meeting');
         const partner=turn && (turn.speaker===actor?turn.other:turn.speaker);
@@ -426,7 +451,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       const slot=actor.anchor.controller;
       const pad=pads[slot];
       if (!pad) continue;
-      if (!wasPlaying && !game.players.size) game.genre=actor.person.index%3;
+      if (!wasPlaying && !game.players.size) game.genre=genrePreferences[actor.person.index];
       game.players.add(slot);
       if (pad.parent!==actor.root) actor.root.add(pad);
       actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.019));
@@ -447,6 +472,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       anchor:actor.anchor.id,pending:actor.pending?.id,pendingActivity:actor.pendingActivity,room:actor.requestedRoom,
       animation:actor.animation,seat:actor.seatProgress,path:actor.path,
       life:living.snapshot(actor.person.id),
+      foodTime:actor.foodTime || undefined,
     })),turn:turn?{id:turn.speaker.person.id,text:turn.text}:null};
   }
 
@@ -472,8 +498,6 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       actor.shadowMesh.position.x=actor.root.position.x;
       actor.shadowMesh.position.z=actor.root.position.z;
       actor.figure.rotation.x=value.animation==='home-sleep'?-Math.PI/2:0;
-      actor.cup.visible=value.animation==='drink';
-      actor.book.visible=value.animation==='read';
       play(actor,value.animation,0);
       if (actor.action) {
         const length=actor.action.getClip().duration;
@@ -482,6 +506,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         actor.action.time=(value.clipTime+progress*fraction)%length;
       }
       actor.mixer.update(0);
+      poseProps(actor,value.animation);
     }
   }
 
@@ -510,6 +535,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       reservations.set(anchor.id,actor);
       if (pending) reservations.set(pending.id,actor);
       actor.remote=value;
+      actor.foodTime=value.foodTime ?? 0;
+      if (actor.foodTime) foodParcel(actor);
       if (resume || !actor.sharedPosition) {
         actor.root.position.set(value.position[0],value.y,value.position[1]);
         actor.root.rotation.y=value.angle;
@@ -544,24 +571,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         -Math.PI/2*actor.seatProgress:0;
       actor.shadowMesh.position.x=actor.root.position.x;
       actor.shadowMesh.position.z=actor.root.position.z;
-      actor.cup.visible=actor.animation==='drink';
-      actor.book.visible=actor.animation==='read';
-      actor.phone.visible=actor.animation==='phone';
-      if (actor.phone.visible) {
-        actor.hands[1].localToWorld(gripRight.set(-.12,-.075,.06));
-        actor.phone.position.copy(actor.root.worldToLocal(gripRight));
-      }
-      if(actor.cup.visible) {
-        actor.hands[1].localToWorld(gripRight.set(-.138,-.075,.030));
-        actor.cup.position.copy(actor.root.worldToLocal(gripRight));
-      }
-      if(actor.book.visible) {
-        actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.025));
-        actor.hands[1].localToWorld(gripRight.set(-.138,-.080,.025));
-        actor.book.position.copy(actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5)));
-        actor.book.position.y+=.032;
-        actor.book.rotation.x=.32;
-      }
+      poseProps(actor,actor.animation);
     }
     updateGame(delta);
   }

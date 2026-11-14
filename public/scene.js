@@ -87,8 +87,12 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (!population) return;
     population.visible(value.leader || Boolean(value.snapshot));
     population.apply(value.snapshot,value.leader);
+    if (value.leader) {
+      traffic?.resume(value.snapshot?.traffic);
+      population.pickup(traffic?.pickup(),traffic?.handingOff());
+    }
     if (!value.leader || state?.phase==='paused') return;
-    const seconds=value.snapshot?Math.min(75,(value.age??0)/1000):
+    const seconds=value.snapshot?.traffic?.active?0:value.snapshot?Math.min(75,(value.age??0)/1000):
       state?.phase==='arrival'?0:36+(Math.floor((state?.now??Date.now())/1000)%24);
     population.catchUp(seconds,{...state,dialogueEnabled:false});
   }
@@ -491,7 +495,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       }
       world?.showDockedControllers(population.game.players);
       if (!shared || leading) traffic?.update(Math.min(delta,.06),state,
-        [...population.actors.map(actor=>actor.root),...(character?[character.root]:[])],population.actors);
+        [...population.actors.map(actor=>actor.root),...(character?[character.root]:[])],population.actors,
+        id=>population.living.needs(id));
       else traffic?.follow(shared.snapshot?.traffic,delta);
       population.pickup(traffic?.pickup(),traffic?.handingOff());
       if (traffic) {

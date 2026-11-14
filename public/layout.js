@@ -72,7 +72,14 @@ export const homeObstacles=homes.flatMap(home=>{
   });
   return [...walls,...furniture];
 });
-export const districtObstacles=[...outdoorObstacles,...officeEnvelope,...homeObstacles];
+export const districtServices=[
+  {name:'Kios lingkungan',model:'building-type-b',x:-17.5,z:46.5,width:8.6,depth:6.5,height:4.7},
+  {name:'Pos layanan',model:'building-type-c',x:17,z:46.5,width:8.2,depth:6.5,height:4.2},
+];
+export const districtObstacles=[...outdoorObstacles,...officeEnvelope,...homeObstacles,...districtServices.map(service=>({
+  id:service.model,height:service.height,
+  box:[service.x-service.width/2,service.z-service.depth/2,service.x+service.width/2,service.z+service.depth/2],
+}))];
 export const pedestrianGate=[-1.8,29];
 export const vestibule=[-1.8,21.65];
 export const foodStop=[-.95,22.85];

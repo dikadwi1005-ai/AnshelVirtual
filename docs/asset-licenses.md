@@ -19,3 +19,5 @@ Phase 9 memakai ulang tiga model Nature Kit yang sudah ada di repo. Skala dan lo
 | [Kenney Car Kit](https://kenney.nl/assets/car-kit) | `sedan.glb`, `van.glb`, `delivery.glb`, `garbage-truck.glb` | CC0 1.0 |
 
 Salinan GLB mandiri berasal dari [repositori distribusi tge-assets](https://github.com/Hidencod/tge-assets). Tiga belas berkas disimpan di `public/models/district`, dengan SHA-256 di manifest. Render tidak mengunduh dari sumber luar. Kurir memakai varian rig `character-male-e` dengan helm dan warna jaket simulasi.
+
+Lanjutan Phase 10 memakai `building-type-b.glb` dan `building-type-c.glb` untuk kios serta pos layanan. `lampsquareceiling.glb`, `lampwall.glb`, `books.glb`, dan `pillowblue.glb` dipasang pada kantor dan rumah. Keenam berkas memakai CC0 dan dicatat di manifest yang sama. Bagian lampu yang memancarkan cahaya tetap memakai geometri sederhana agar intensitas dapat diatur per mode pencahayaan. Cangkir, ponsel, makanan, helm dan skuter memakai geometri lokal yang mengikuti ukuran dan rig chibi saat berinteraksi.

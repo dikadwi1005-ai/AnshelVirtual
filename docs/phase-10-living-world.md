@@ -6,38 +6,39 @@
 | --- | --- | --- |
 | Geometri kantor dan collision | Sebagian | Denah dan collision dipakai kembali. Lampu ruang mengikuti mode malam. |
 | Eksterior dan perabot rumah | Sebagian | Empat GLB rumah serta perabot GLB dipasang dalam kelompok instancing. |
-| Kurir tanpa pesanan | Rusak | Hanya pesanan manual valid yang dapat memulai pengantaran. Pengunjung biasa berjalan tanpa paket. |
+| Kurir tanpa pesanan | Rusak | Pesanan valid dari panel atau keputusan pegawai memulai pengantaran. Pengunjung biasa berjalan tanpa paket. |
 | Aktivitas rumah dan kantor | Sebagian | Tambah aktivitas dengan kebutuhan, jadwal, pose, dan prop. |
 | Lounge | Sebagian | Kursi penonton, genre balapan, sepak bola, dan puzzle. |
 | Snapshot pegawai | Sudah benar | Perluasan opsional untuk pose kendaraan, tamu, dan kurir. |
-| Lalu lintas umum | Belum ada | Satu lajur utama aktif per giliran dengan tipe kendaraan dan jam sibuk. |
+| Lalu lintas umum | Belum ada | Dua lajur berlawanan, kendaraan bervariasi dan frekuensi mengikuti jam sibuk. |
 | Studio, pekerjaan, integrasi dan backup | Sudah benar | Regresi memakai server lokal. |
 
 ## Hasil dan batasan
 
 - Empat rumah Kenney memakai fondasi dan denah collision lama. Saat cutaway, sofa, meja, tempat tidur, kabinet, toilet, lampu dan bingkai pintu terlihat. Render menggunakan aset lokal. [Lisensi aset](asset-licenses.md)
 - Aktivitas mencakup membuat kopi, makan, ponsel, catatan, peregangan, tidur meja dan tidur rumah. Dialog lokal memperoleh tambahan skenario. Pemilihan tetap mendahulukan tugas aktif.
-- TV memutar tiga simulasi orisinal dengan preferensi genre yang beragam menggunakan indeks tetap tiap pegawai. Pemain memakai dua slot controller. Kursi penonton dipindah ke sisi layar yang bisa dilihat setelah pemeriksaan Chrome menemukan posisi awal berada di belakang TV.
-- Kurir memiliki ID pesanan, memakai rig berbeda dari Dika dan membawa paket. Saat pemesan tiba, paket bergerak ke tangan dan ikut dibawa ke pantri. Pesanan kosong tidak memunculkan kurir. Jika pemegang sesi berganti saat perjalanan, simulasi menutup perjalanan yang tidak dapat dilanjutkan.
-- Mobil pribadi, van dan skuter lewat di jalan utama. Mobil, van, kendaraan pengiriman dan kendaraan layanan bergiliran memakai rute parkir. Jalur diuji dengan clearance kendaraan terhadap penghalang statis.
+- TV memutar tiga simulasi orisinal dengan preferensi genre per pegawai. Pemain memakai dua controller dan penonton dapat bereaksi di kursi sendiri. Kursi penonton berada di sisi yang menghadap layar.
+- Kurir memiliki ID pesanan dan memakai rig berbeda dari Dika. Kondisi pesanan, cooldown, waypoint, status serah terima dan timer dibawa lewat snapshot yang sudah ada. Sesi baru melanjutkan ID yang sama. Pegawai membawa paket di tangan menuju pantri. Peluang memesan mengikuti jam makan, energi, status pekerjaan, menu favorit, cooldown 20 menit, dan hasil acak. Pengujian nol pesanan tetap mencakup satu hari penuh.
+- Mobil pribadi, van dan skuter lewat dari dua arah. Mobil, van, kendaraan pengiriman dan kendaraan layanan bergiliran memakai rute parkir. Jalur diuji terhadap penghalang statis dan kendaraan memberi jalan kepada pejalan kaki. Kios dan pos layanan menempati kavling di selatan jalan utama.
+- Pemeriksaan 12 interior memperlihatkan vegetasi dan bukit menembus hunian barat dan timur. Bukit dipindah ke luar kawasan hunian serta diperkecil. Lampu dinding cutaway diturunkan agar menempel pada dinding yang terlihat.
 
 ## Pengujian lokal
 
 | Pemeriksaan | Hasil |
 | --- | --- |
-| `npm.cmd test` | 193 lulus, 0 gagal dengan koneksi loopback untuk tes HTTP dan worker lokal |
+| `npm.cmd test` | 196 lulus, 0 gagal dengan koneksi loopback untuk tes HTTP dan worker lokal |
 | `npm.cmd run build` | Lulus |
-| Kurir | Satu hari simulasi tanpa pesanan menghasilkan nol kurir. Tes mencakup pesanan duplikat, pemesan sibuk, batas tunggu, satu kali serah terima dan keluar kawasan. Chrome merekam perjalanan pesanan Jihan hingga kurir keluar dan memverifikasi status aktif yang sama pada sesi browser kedua. |
+| Kurir | Satu hari simulasi tanpa pesanan menghasilkan nol kurir. Tes mencakup pesanan duplikat, pemesan sibuk, batas tunggu, satu kali serah terima dan keluar kawasan. Chrome merekam pengambilalihan pesanan Jihan oleh browser kedua, kelanjutan memakai UUID yang sama, serah terima, serta kurir keluar. |
 | Navigasi | 21 ruang kantor, 12 workstation, titik aktivitas dan jejak furnitur utama. Rute parkir dan dua lajur umum lolos pengecekan terhadap penghalang statis. |
 | Studio | Chrome mencakup rapat empat pegawai, penyimpanan notulen setelah refresh, replay, penyimpanan melalui API lokal serta ekspor WebM dan MP4. |
-| Tampilan | Chrome 1440 × 900 dan emulasi sentuh 390 × 844. Tangkapan layar meliputi 21 ruang kantor, kawasan, gedung, variasi rumah terpilih, siang/malam, lounge dan pengantaran. |
-| Performa | Chrome lokal dengan 12 pegawai. Interval median frame 11,1 ms. P95 overview desktop 22,2 ms dan emulasi mobile 11,2 ms. Overview 466 draw call desktop dan 460 mobile. Tidak ada error JavaScript browser pada skenario itu. |
+| Tampilan | Chrome 1440 × 900 dan emulasi sentuh 390 × 844. Tangkapan layar meliputi 21 ruang kantor, 12 rumah, kawasan, gedung siang/malam, lounge dan pengantaran. |
+| Performa | Chrome lokal dengan 12 pegawai. Interval median frame 11,1 ms dan P95 11,2 ms pada overview desktop serta emulasi mobile. Overview 479 draw call desktop dan 470 mobile. Tidak ada error JavaScript atau penolakan snapshot pada pengujian Chrome penuh terakhir. |
 
 ## Verifikasi yang masih terbuka
 
-- Gambar 21 ruang menunjukkan orientasi furnitur dan sumber cahaya. Pemeriksaan clipping dari semua sudut dan detail semua interior rumah masih perlu dilakukan. Pintu cutaway memakai bingkai GLB dan collision yang ada. Panel plafon kantor masih dibuat dari geometri lokal.
-- Pose tidur rumah, tidur meja, ponsel, membaca, dan transisi bangun sudah terpasang. Bukti visual urutan lengkap untuk masing-masing aktivitas masih terbuka. Genre permainan diuji sebagai simulasi, dengan pemain dan controller terlihat di Chrome.
-- Lalu lintas umum menempati satu lajur aktif per giliran. Persimpangan multi-kendaraan serta bangunan pendukung di luar rumah dan kantor masih terbuka. Pemeriksaan collision bergerak jangka panjang masih diperlukan.
-- Sinkronisasi pose melalui endpoint presence yang sudah ada dan tetap menerima snapshot lama. Saat pengendali sesi berpindah, pengantaran aktif dibatalkan. Pesanan dibuat dari panel pemilik.
+- Gambar 21 ruang dan 12 rumah menunjukkan orientasi furnitur dan sumber cahaya dari kamera pengamat. Pemeriksaan kontak prop, pintu dan furnitur pada setiap sudut kamera atau setiap ukuran rig masih terbuka. Lampu plafon memakai housing Kenney dan strip emisi lokal.
+- Rekaman skenario terkendali mencakup tidur di meja dan di rumah, ponsel, kopi, membaca, makan, peregangan, game, dan percakapan. Alur terkendali juga membuktikan tugas aktif mengakhiri tidur meja dan pegawai meninggalkan tempat tidur. Pemeriksaan semua transisi aktivitas otonom dari awal hingga akhir masih terbuka.
+- Jalur dua arah diuji bersama penghalang pejalan kaki. Arus yang berbelok di persimpangan dengan banyak kendaraan dan stabilitas sesi panjang di browser masih terbuka.
+- Snapshot lama tetap diterima. Untuk crash di antara dua sinkronisasi, tampilan dapat mundur ke checkpoint terakhir. Pesanan simulasi dapat diteruskan tanpa kembali ke awal rute.
 - Browser ponsel fisik dan verifikasi integrasi production masih terbuka. Pengujian lokal menggunakan SQLite sementara dan Studio Scheduler dalam kondisi nonaktif.
 - Checkpoint disimpan lokal. Rilis menunggu pengujian visual aktivitas bergerak, lalu lintas dan perumahan yang diwajibkan dalam brief.

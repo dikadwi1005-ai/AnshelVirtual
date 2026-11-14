@@ -767,6 +767,78 @@
       "path": "public/models/district/van.glb",
       "validation": "GLB lokal dengan checksum SHA-256",
       "sha256": "58ee6d0b068ed0f8f1b5d12b0377300ae81ded67c3053f5cd844f7885d96728d"
+    },
+    {
+      "name": "building-type-b.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/city-kit-suburban",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/city-kit-suburban",
+      "format": "GLB",
+      "path": "public/models/district/building-type-b.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "02de0e3c89cbdc205188259be5c12809055db77dc629527da1b4d9fb8e41dc34"
+    },
+    {
+      "name": "building-type-c.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/city-kit-suburban",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/city-kit-suburban",
+      "format": "GLB",
+      "path": "public/models/district/building-type-c.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "2265b104f11e624a62b357913e30177fa1560b97cf0bfde3939615e67e081054"
+    },
+    {
+      "name": "books.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/furniture-kit",
+      "format": "GLB",
+      "path": "public/models/district/books.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "b8dc56e5d29f6fc1f4727fccb1b9642627fee9942c48060a00034e98df02701c"
+    },
+    {
+      "name": "lampsquareceiling.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/furniture-kit",
+      "format": "GLB",
+      "path": "public/models/district/lampsquareceiling.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "57066be51583d83ae60071e8179af275189cb2911ecb9fc24953bb930c8bf118"
+    },
+    {
+      "name": "lampwall.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/furniture-kit",
+      "format": "GLB",
+      "path": "public/models/district/lampwall.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "a9679ecd3be05731846f22ade97c37069598ca7a06dd9319f50230e63a1ea83c"
+    },
+    {
+      "name": "pillowblue.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/furniture-kit",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/furniture-kit",
+      "format": "GLB",
+      "path": "public/models/district/pillowblue.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "8326e018c09cb00c19c2c9b745f521cd7eba1169b755322b04f88440dbfef319"
     }
   ]
 }

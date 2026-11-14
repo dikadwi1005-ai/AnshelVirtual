@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { homes, officeEnvelope } from './layout.js';
+import { districtServices, homes, officeEnvelope } from './layout.js';
 import { batchDistrictModels } from './district-models.js';
 
 function modelParts(parent) {
@@ -41,6 +41,8 @@ export async function addBuildings(scene,loadModel) {
   scene.add(exterior,interior,streets);
   const shell=modelParts(exterior), rooms=modelParts(interior), paths=modelParts(streets);
   const importedExterior=new THREE.Group(), importedInterior=new THREE.Group(), homeShell=new THREE.Group();
+  const services=new THREE.Group();
+  streets.add(services);
   exterior.add(homeShell,importedExterior);
   interior.add(importedInterior);
   const homeParts=modelParts(homeShell);
@@ -117,6 +119,9 @@ export async function addBuildings(scene,loadModel) {
     asset('furniture/lamproundfloor',-w*.45,.145,1.18,[.31,1.39,.31]);
     asset('district/doorwayopen',0,.14,d/2,[1.48,2.14,.15]);
     asset('furniture/plantsmall2',w*.41,.145,-d*.36,[.43,.62,.43]);
+    asset('district/pillowblue',-w*.24+.54,.49,.69,[.36,.16,.25],.18);
+    asset('district/books',-w*.24,.53,2.25,[.24,.07,.17],-.19);
+    asset('district/lampwall',w*.34,.82,-d/2+.17,[.28,.35,.16]);
     local(paths,'#a7aa92',0,.025,0,w+1,.14,d+.95);
     local(paths,'#a9a891',0,.043,d/2+.82,2.05,.12,1.71);
     local(paths,'#587553',w*.52,.02,0,1.15,.11,d+2.2);
@@ -142,7 +147,7 @@ export async function addBuildings(scene,loadModel) {
     local(homeParts,bronze,-w*.22,2.16,d/2+.83,w*.54,.20,1.9);
     local(homeParts,steel,-w*.45,1.02,d/2+1.56,.14,2.05,.14);
     local(rooms,'#e9d5af',0,.105,0,w-.32,.08,d-.31);
-    local(rooms,wall,0,.43,-d/2,w,.66,.23);
+    local(rooms,wall,0,.66,-d/2,w,1.19,.23);
     for (const side of [-1,1]) {
       local(rooms,wall,side*w/2,.43,0,.22,.66,d);
       local(rooms,wall,side*w*.28,.43,d/2,w*.43,.66,.22);
@@ -154,6 +159,12 @@ export async function addBuildings(scene,loadModel) {
     local(fallback,'#53665a',w*.25,.56,1.73,1.8,1.12,.72);
     local(rooms,'#81988e',-w*.49,.59,-d*.19,.12,1.1,d*.45);
     local(rooms,'#81988e',-w*.31,.59,-d*.045,w*.37,1.1,.15);
+  }
+  for (const service of districtServices) {
+    const {x,z,width,depth,height,model}=service;
+    placeModel(services,'district/'+model,[x,.1,z],[width,height,depth],Math.PI);
+    paths.add('#a7a898',x,.02,z,width+.55,.16,depth+.55);
+    paths.add('#aaa99d',x,.024,42.2,2.5,.08,3.2);
   }
   for(const side of [-1,1]) {
     paths.add('#46525c',side*36.9,-.018,-.55,2.7,.07,69);
@@ -208,7 +219,7 @@ export async function addBuildings(scene,loadModel) {
         group.traverse(mesh=>{
           if (!mesh.isMesh) return;
           mesh.dispose?.();
-          if (mesh.parent===importedInterior || mesh.parent===importedExterior) return;
+          if (mesh.parent===importedInterior || mesh.parent===importedExterior || mesh.parent===services) return;
           resources.add(mesh.geometry); resources.add(mesh.material);
         });
       }

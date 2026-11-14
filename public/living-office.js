@@ -244,5 +244,5 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
     previousState=undefined;
   }
 
-  return {step,record,snapshot,persist,resume};
+  return {step,record,snapshot,persist,resume,needs:id=>staff.get(id)?.values};
 }

@@ -7,6 +7,7 @@ import { addOutdoors } from './outdoors.js';
 import { createDisplays } from './displays.js';
 import { furniture, obstaclesFor, partitions, propsFor } from './furnishings.js';
 import { addLounge } from './lounge.js';
+import { batchDistrictModels } from './district-models.js';
 import { layoutItems } from './layout-editor.js';
 import { emission, finish, floorMaterial, objectMaterial, radialTexture } from './materials.js';
 
@@ -234,6 +235,12 @@ export async function buildWorld(scene,shadowTexture) {
   });
   fixture.computeBoundingSphere();
   fixtures.add(fixture);
+  try {
+    const housing=await model('district/lampsquareceiling');
+    batchDistrictModels(fixtures,housing,rooms.filter(room=>room.id!=='garden').map(room=>({
+      position:[room.x,2.765,room.z+room.depth*.36],size:[1.28,.14,.34],angle:0,
+    })));
+  } catch { /* Keep the emissive strip visible if its housing cannot load. */ }
   scene.add(fixtures);
   scene.add(movable);
   const wings=new Map();
@@ -280,7 +287,12 @@ export async function buildWorld(scene,shadowTexture) {
       }
     },
     fixtureLight(night) { fixture.material.emissiveIntensity=.25+night*.7; },
-    disposeFixtures() { fixture.dispose(); fixture.geometry.dispose(); fixture.material.dispose(); },
+    disposeFixtures() {
+      fixtures.removeFromParent();
+      for (const mesh of fixtures.children) mesh.dispose();
+      fixture.geometry.dispose();
+      fixture.material.dispose();
+    },
     pickFurniture(ray) {
       const hit=ray.intersectObjects(movable.children,true)[0];
       if (!hit || ray.intersectObjects(scene.children,true).some(other=>
