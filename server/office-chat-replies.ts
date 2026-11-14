@@ -10,7 +10,7 @@ const clock=at=>new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',
 
 export function isOfficeLocationQuestion(question='') {
   const q=String(question);
-  return /\b(?:masih\s+(?:di\s+)?kantor|(?:sudah|udah|lagi|sedang|pada)\s+pulang|(?:masih|sudah|udah|lagi|sedang)\s+(?:di\s+)?rumah|(?:lokasi|posisi)\s+(?:pegawai|staf|tim|karyawan|avatar|kalian|mereka)|(?:pegawai|staf|tim|karyawan|avatar|kalian|mereka)\s+(?:di\s+mana|dimana))\b/i.test(q);
+  return /\b(?:(?:masih|lagi|sedang|udah|sudah|sekarang)\s+(?:di\s+)?kantor|(?:kamu|dia|mereka|semua|pegawai|karyawan|staf)\s+(?:lagi\s+)?di\s+kantor|(?:sudah|udah|lagi|sedang|pada)\s+pulang|(?:masih|sudah|udah|lagi|sedang)\s+(?:di\s+)?rumah|(?:lokasi|posisi)\s+(?:pegawai|staf|tim|karyawan|avatar|kalian|mereka)|(?:pegawai|staf|tim|karyawan|avatar|kalian|mereka)\s+(?:di\s+mana|dimana))\b/i.test(q);
 }
 
 export function officeLocationReply(state,division,question='') {

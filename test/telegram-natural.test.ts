@@ -191,7 +191,7 @@ test('balasan suasana kantor tidak membeberkan status internal atau menganggap s
   assert.deepEqual(facts.contohTugasDivisiTerbaru,[]);
   assert.match(instruction,/Bedakan angka total SEMUA divisi/i);
   assert.match(instruction,/JANGAN membuka dengan kalimat defensif/i);
-  assert.match(instruction,/jangan menyalin nama key data/i);
+  assert.match(instruction,/Jangan menyebut istilah teknis/i);
   assert.equal(cleanOfficeNaturalResponse(
     'Aku nggak bisa lihat langsung keadaan fisik kantor sekarang, tapi lima draf sudah statis complete.',
     'balasan aman',question),'balasan aman');

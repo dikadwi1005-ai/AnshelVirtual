@@ -21,6 +21,7 @@ test('Alya answers staff going home naturally, without an unrequested schedule d
    const state=s.state();
    const q='Alya, sekarang para pegawai sudah pulang atau masih di kantor?';
    assert.equal(isOfficeLocationQuestion(q),true);
+   assert.equal(isOfficeLocationQuestion('Alya, kamu lagi di kantor?'),true);
    const answer=officeScheduleReply('management',q,state);
    assert.match(answer,/Pak/i);
    assert.match(answer,/jam kerja udah selesai/i);

@@ -49,7 +49,7 @@ test('panggilan kolektif membangun satu Gemini JSON tanpa nama/identitas sensiti
   const req=buildOfficeCollectiveRequest('Hai guys, ada yang menarik?',four,state);
   const prompt=req.systemInstruction.parts[0].text;
   assert.match(prompt,/PEMILIK sekaligus pimpinan/);
-  assert.match(prompt,/PALING BANYAK SATU|paling banyak SATU/i);
+  assert.match(prompt,/satu kali saja untuk seluruh rangkaian jawaban/i);
   assert.match(prompt,/pegawai yang sedang bebas/i);
   assert.match(prompt,/operations/);
   assert.match(prompt,/posisiTerpantau/);
@@ -68,8 +68,8 @@ test('single employee Gemini recognizes the owner without repeating their name o
   const req=buildOfficeNaturalRequest('operations','Bima, apa kabar?',{tasks:[],counts:{}});
   const instructions=req.systemInstruction.parts[0].text;
   assert.match(instructions,/pemilik sekaligus pimpinan/i);
-  assert.match(instructions,/boleh kadang menyebut "Pak"/i);
-  assert.match(instructions,/JANGAN setiap balasan/);
+  assert.match(instructions,/Panggil pemilik "Pak" secara natural/i);
+  assert.match(instructions,/Tidak harus di setiap balasan/i);
   assert.match(instructions,/Jangan sebut nama pemilik/i);
   assert.match(instructions,/Jangan bersikap seperti bot layanan pelanggan/i);
 });
