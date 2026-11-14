@@ -1,0 +1,94 @@
+name: Anshel - Backup PostgreSQL Terenkripsi
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:17 WIB; GitHub scheduler may be delayed.
+    - cron: '17 2 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anshel-postgres-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ANSHEL_DATABASE_URL: ${{ secrets.ANSHEL_DATABASE_URL }}
+      ANSHEL_BACKUP_AGE_RECIPIENT: ${{ vars.ANSHEL_BACKUP_AGE_RECIPIENT }}
+    steps:
+      - name: Validate backup settings
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "${ANSHEL_DATABASE_URL}" || -z "${ANSHEL_BACKUP_AGE_RECIPIENT}" ]]; then
+            echo "::error::Configure ANSHEL_DATABASE_URL secret and ANSHEL_BACKUP_AGE_RECIPIENT variable first."
+            exit 1
+          fi
+          if [[ "${ANSHEL_DATABASE_URL}" != *'pooler.supabase.com:5432/'* ]]; then
+            echo "::error::Use the Supabase Session pooler connection string on port 5432."
+            exit 1
+          fi
+          if [[ "${ANSHEL_BACKUP_AGE_RECIPIENT}" != age1* ]]; then
+            echo "::error::Provide a public age recipient (age1...), never the private key."
+            exit 1
+          fi
+
+      - name: Install age encryption utility
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age
+
+      - name: Create and encrypt database backup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          BACKUP_DIR="$(mktemp -d "${RUNNER_TEMP}/anshel-backup.XXXXXXXX")"
+          echo "BACKUP_DIR=${BACKUP_DIR}" >> "${GITHUB_ENV}"
+          trap 'rm -f "${BACKUP_DIR}/anshel.dump" "${BACKUP_DIR}/contents.txt"' EXIT
+
+          # Data from application schema anshel only (not Auth / Storage objects).
+          docker run --rm --network host \
+            -e ANSHEL_DATABASE_URL -e PGSSLMODE=require \
+            -v "${BACKUP_DIR}:/out" postgres:17-alpine \
+            sh -ec 'pg_dump --dbname="$ANSHEL_DATABASE_URL" --format=custom --schema=anshel --no-owner --no-privileges --file=/out/anshel.dump'
+
+          test "$(stat -c '%s' "${BACKUP_DIR}/anshel.dump")" -gt 512
+          docker run --rm -v "${BACKUP_DIR}:/out:ro" postgres:17-alpine \
+            pg_restore --list /out/anshel.dump > "${BACKUP_DIR}/contents.txt"
+          grep -qi 'anshel' "${BACKUP_DIR}/contents.txt"
+
+          FILE="anshel-$(date -u +'%Y%m%dT%H%M%SZ').dump.age"
+          age -r "${ANSHEL_BACKUP_AGE_RECIPIENT}" -o "${BACKUP_DIR}/${FILE}" "${BACKUP_DIR}/anshel.dump"
+          test "$(stat -c '%s' "${BACKUP_DIR}/${FILE}")" -gt 128
+          sha256sum "${BACKUP_DIR}/${FILE}" > "${BACKUP_DIR}/${FILE}.sha256"
+          printf '{"format":"pg_dump custom+age","schema":"anshel","created_utc":"%s","encrypted_file":"%s"}\n' \
+            "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "${FILE}" > "${BACKUP_DIR}/backup-info.json"
+          rm -f "${BACKUP_DIR}/anshel.dump" "${BACKUP_DIR}/contents.txt"
+
+      - name: Upload only encrypted artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: anshel-encrypted-backup-${{ github.run_id }}
+          path: |
+            ${{ env.BACKUP_DIR }}/*.age
+            ${{ env.BACKUP_DIR }}/*.sha256
+            ${{ env.BACKUP_DIR }}/backup-info.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Delete temporary files
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${BACKUP_DIR:-}" && -d "${BACKUP_DIR}" ]]; then
+            rm -rf -- "${BACKUP_DIR}"
+          fi
