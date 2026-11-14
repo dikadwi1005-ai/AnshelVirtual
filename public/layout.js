@@ -1,7 +1,7 @@
 import { divisions } from './catalog.js';
 
 // One world unit equals one meter. Ground is y=0.
-export const site = {width:74, depth:68};
+export const site = {width:114, depth:106};
 const edgeX = 24.4;
 const edgeZ = 21.5;
 const bevel = 2.3;
@@ -31,6 +31,89 @@ export const outdoorObstacles=[
   ...planterBoxes.map(box=>({box,height:.5})),
   ...outdoorSeats.map(([x,z],i)=>({box:[x-.785,z-.265,x+.785,z+.285],height:.94,id:'outdoor-bench-'+i})),
 ];
+
+export const homes=divisions.map((person,index)=>{
+  const side=index<4?-1:index<8?1:0;
+  const x=side?side*47:(index-9.5)*15;
+  const z=side?-20+(index%4)*13:-43;
+  const front=side?[ -side,0 ]:[0,1];
+  const width=8+(index%3)*.6, depth=7.4+(index%2)*.8;
+  const angle=Math.atan2(front[0],front[1]);
+  const point=(u,v)=>[x+u*Math.cos(angle)+v*Math.sin(angle),z-u*Math.sin(angle)+v*Math.cos(angle)];
+  const door=point(0,depth/2);
+  const porch=point(0,depth/2+1.3);
+  const road=side?[side*39,z]:[x,-34];
+  const boulevard=side?[side*39,32]:[x<0?-39:39,32];
+  return {id:'home-'+person.id,person,x,z,side,width,depth,angle,point,door,porch,road,boulevard,
+    variant:index%4,sofa:point(-width*.24,.55),bed:point(width*.24,-depth*.28)};
+});
+export const homeByEmployee=Object.fromEntries(homes.map(home=>[home.person.id,home]));
+const wallSegment=(a,b,height=3)=>({box:fenceBox([...a,...b]),height});
+export const officeEnvelope=[
+  wallSegment([-24.85,-21.65],[24.85,-21.65],3.58),
+  wallSegment([-24.85,-21.65],[-24.85,21.65],3.58),
+  wallSegment([24.85,-21.65],[24.85,21.65],3.58),
+  wallSegment([-24.85,21.65],[-3.45,21.65],3.58),
+  wallSegment([-.15,21.65],[24.85,21.65],3.58),
+];
+export const homeObstacles=homes.flatMap(home=>{
+  const w=home.width/2,d=home.depth/2;
+  const walls=[[-w,-d,w,-d],[-w,-d,-w,d],[w,-d,w,d],[-w,d,-.68,d],[.68,d,w,d]]
+    .map(([x,z,tx,tz])=>wallSegment(home.point(x,z),home.point(tx,tz)));
+  const furniture=[
+    [-home.width*.24,.55,2.22,.94,'sofa'],
+    [home.width*.24,-home.depth*.28,1.55,2.29,'bed'],
+    [home.width*.25,1.73,1.8,.72,'kitchen'],
+    [-home.width*.25,-home.depth*.30,1.11,.78,'bath'],
+  ].map(([x,z,width,depth,name])=>{
+    const a=home.point(x-width/2,z-depth/2),b=home.point(x+width/2,z+depth/2);
+    return {id:home.id+'-'+name,height:name==='sofa'?.88:.65,
+      box:[Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])]};
+  });
+  return [...walls,...furniture];
+});
+export const districtObstacles=[...outdoorObstacles,...officeEnvelope,...homeObstacles];
+export const pedestrianGate=[-1.8,29];
+export const vestibule=[-1.8,21.65];
+export const foodStop=[-.95,22.85];
+export const foodMenu=['Nasi ayam','Nasi uduk','Gado-gado'];
+
+export function commuteWaypoints(home) {
+  const corner=home.side?[]:[[home.boulevard[0],-34]];
+  const offset=((home.person.index%3)-1)*.66;
+  return [home.porch,home.road,...corner,home.boulevard,[pedestrianGate[0]+offset,32],
+    [pedestrianGate[0]+offset,pedestrianGate[1]],[vestibule[0]+offset,vestibule[1]]];
+}
+export function districtRoute(nav,from,to,home) {
+  const inCampus=([x,z])=>Math.abs(x)<34 && z>-29 && z<29;
+  if (inCampus(from)===inCampus(to)) return nav.route(from,to);
+  const chain=commuteWaypoints(home);
+  const fromHome=Math.hypot(from[0]-home.x,from[1]-home.z)<7;
+  const toHome=Math.hypot(to[0]-home.x,to[1]-home.z)<7;
+  const points=inCampus(from)?
+    (toHome?chain.slice().reverse():chain.slice(-2).reverse()):
+    (fromHome?chain:chain.slice(-2));
+  const route=[];
+  for (const target of [...points,to]) {
+    if (Math.hypot(from[0]-target[0],from[1]-target[1])<.05) continue;
+    const path=nav.route(from,target);
+    if (!path) return null;
+    route.push(...path);
+    from=target;
+  }
+  return route.length?route:[to];
+}
+
+export function staysHome(phase,elapsed,index) {
+  const order=index*7%12;
+  return (phase==='closed' && elapsed>=order*2.6) || (phase==='arrival' && elapsed<order*3.8+1);
+}
+
+export function structureView(mode,{x,z},zoom,character) {
+  if (mode!=='auto') return mode;
+  const inside=(Math.abs(x)<25 && Math.abs(z)<22) || homes.some(home=>Math.abs(home.x-x)<4.5 && Math.abs(home.z-z)<4.5);
+  return (character || zoom>1.3) && inside?'interior':'exterior';
+}
 
 export const doorway = 1.75;
 export const wallThickness = .19;

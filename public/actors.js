@@ -5,7 +5,7 @@ import { employeeFigure } from './employee-look.js';
 import { employeeMouth } from './employee-mouth.js';
 import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, conversationAnchors, station } from './furnishings.js';
-import { roomById } from './layout.js';
+import { districtRoute, homeByEmployee, roomById } from './layout.js';
 import { gamepad } from './lounge.js';
 import { isGameReaction } from './lounge-game.js';
 import { characterClearance } from './character-mode.js';
@@ -130,7 +130,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     const actor={person,root,figure,shadowMesh,mixer,clips,stature:profile.stature,action:null,animation:'idle',path:[],
       hands:[figure.getObjectByName('arm-left'),figure.getObjectByName('arm-right')],
       head:figure.getObjectByName('head'),headYaw:0,mouth:employeeMouth(figure),
-      stage:'idle',seatProgress:0,activity:plan?.executing?'work':'desk',reaction:0,wait:0,retry:0,animationDelta:0};
+      stage:'idle',seatProgress:0,activity:plan?.executing?'work':['arrival','closed'].includes(initial?.phase)?'home':'desk',
+      reaction:0,wait:0,retry:0,animationDelta:0};
     actor.cup=new THREE.Mesh(cupGeometry,cupMaterial);
     actor.book=new THREE.Group();
     const cover=new THREE.Mesh(coverGeometry,coverMaterial), pages=new THREE.Mesh(paperGeometry,paperMaterial);
@@ -174,7 +175,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
 
   function route(actor) {
     const target=actor.pending;
-    const path=nav.route(location(actor),target.approach);
+    const path=districtRoute(nav,location(actor),target.approach,homeByEmployee[actor.person.id]);
     if (!path) {
       if (actor.anchor.id!==target.id) reservations.delete(target.id);
       actor.pending=null;
@@ -193,7 +194,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     actor.blocked=0;
   }
 
-  let campus=[];
+  let campus=[], pickup=null;
   function occupied(actor,point,from) {
     for (const {root,radius} of campus) {
       if (!root.visible) continue;
@@ -237,11 +238,27 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         const blockers=actors.filter(other=>other!==actor &&
           other.root.position.distanceToSquared(actor.root.position)<5**2).map(location);
         if (player) blockers.push([player.position.x,player.position.z]);
-        const detour=nav.route(here,actor.anchor.approach,blockers);
+        for(const {root} of campus)
+          if(root.visible && root.position.distanceToSquared(actor.root.position)<25)
+            blockers.push([root.position.x,root.position.z]);
+        const commuting=actor.actual==='home' || Math.abs(here[0])>=34 || Math.abs(here[1])>=29;
+        const localGoal=commuting?actor.path[0]:actor.anchor.approach;
+        const detour=nav.route(here,localGoal,blockers);
         if (detour) {
-          actor.path=detour;
+          actor.path=commuting?[...detour,...actor.path.slice(1)]:detour;
           actor.wait=0;
           return;
+        }
+        if (obstructed) {
+          for (const side of [1,-1]) {
+            const gap=[here[0]-forward[1]*.82*side,here[1]+forward[0]*.82*side];
+            if (occupied(actor,gap,here) || !nav.clear(here,gap)) continue;
+            const onward=nav.route(gap,localGoal,blockers);
+            if (!onward) continue;
+            actor.path=[gap,...onward,...(commuting?actor.path.slice(1):[])];
+            actor.wait=0;
+            return;
+          }
         }
         actor.wait=-.3;
       }
@@ -287,7 +304,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     if (actor.directTurn && (actor.directTurn.remaining-=delta)<=0) actor.directTurn=null;
     const reacting=actor.reaction>0 && !plan?.taskLock;
     const attending=state?.meeting?.participants.includes(actor.person.id) && !plan?.taskLock;
-    const requested=attending?'meeting':actor.invitation?'meet-dika':reacting && actor.activity!=='meet-dika'?actor.activity:plan?.activity ?? 'desk';
+    const requested=attending?'meeting':pickup===actor.person.id && !plan?.taskLock && state?.phase==='lunch'?'pickup':
+      actor.invitation?'meet-dika':reacting && actor.activity!=='meet-dika'?actor.activity:plan?.activity ?? 'desk';
     const room=attending?'meeting':plan?.room;
     actor.retry=Math.max(0,actor.retry-delta);
     const chatting=actor.directTurn && ['seated','arrived'].includes(actor.stage);
@@ -504,6 +522,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   return {
     errors,actors,turns:conversations.turns,game,living,
     campus(obstacles) { campus=obstacles; },
+    pickup(id) { pickup=id; },
     capture,apply,followSnapshot,replayFrame,replayPose,
     visible(value) {
       for(const actor of actors) actor.root.visible=actor.shadowMesh.visible=value;

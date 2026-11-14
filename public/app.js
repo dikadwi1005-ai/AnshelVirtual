@@ -2,7 +2,7 @@ import { activities, divisions, timezone } from './catalog.js';
 import { createCharacterStick } from './character-input.js';
 import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
-import { rooms, roomById, wings } from './layout.js';
+import { foodMenu, rooms, roomById, wings } from './layout.js';
 import { officeStudio } from './office-studio.js';
 import { loadSceneModule, lowGraphics, SceneModuleError, sceneFailureMessage } from './scene-support.js';
 
@@ -167,6 +167,7 @@ async function enter() {
     },openWorkstation,input=>api('dialogue',input).then(result=>result.lines).catch(()=>[]),
     {low:graphicsPreference()});
     scene.state(office);
+    scene.buildings(buildingMode);
     void studio.syncMeeting();
     await syncPresence();
     scene.voice(voiceEnabled);
@@ -284,7 +285,9 @@ function updateEmployee() {
   const moving=['walking','aligning','sitting','departing'].includes(actor?.stage);
   const workStatus=plan.executing?'Eksekusi berjalan':plan.task?.status==='blocked'?'Tugas terhambat':
     plan.task ? (!office.worker || !office.capabilities.includes(plan.task.kind) ? 'Menunggu worker' : 'Dalam antrean') : 'Tanpa tugas aktif';
-  const activity=moving ? (plan.executing?'Menuju meja kerja':'Berjalan') :
+  const activity=moving ? (plan.executing?'Menuju meja kerja':actor?.activity==='home'?'Dalam perjalanan pulang':
+    actor?.activity==='pickup'?'Menuju titik pengambilan':actor && (Math.abs(actor.x)>34 || actor.z<-29 || actor.z>29)?
+      'Dalam perjalanan ke kantor':'Berjalan') :
     actor?.animation?.endsWith('speak')?'Sedang berbicara':activities[actor?.activity ?? plan.activity];
   const markup=stats([
     ['Aktivitas',activity],['Status kerja',workStatus],
@@ -465,6 +468,24 @@ function renderMonitoring() {
 }
 function render() {
   if (!office || !panel) return;
+  if (panel==='district') {
+    title('Anshel Virtual Tech','Kawasan');
+    $('panel-content').innerHTML='<div class="context-actions">'+
+      [['area','Seluruh kawasan'],['office','Kantor'],['homes','Perumahan'],['garden','Taman'],['gate','Gerbang']]
+        .map(([id,label])=>'<button type="button" data-district="'+id+'">'+label+'</button>').join('')+
+      '</div><label>Tampilan bangunan<select id="building-mode">'+optionList([['interior','Lihat Interior'],
+        ['exterior','Gedung Utuh'],['auto','Otomatis mengikuti kamera']],buildingMode)+'</select></label>'+
+      '<p class="section-label">Rumah pegawai</p><div class="quick-rooms">'+divisions.map(person=>
+        '<button type="button" data-district="'+person.id+'">'+escape(person.employee)+'</button>').join('')+'</div>'+
+      '<p id="district-delivery" class="status-text" role="status"></p>'+
+      (office.phase==='lunch'?'<form id="district-food"><p class="section-label">Pesan makan · Simulasi</p>'+
+        '<div class="form-grid"><label>Pegawai<select name="employee">'+
+        optionList(divisions.map(person=>[person.id,person.employee]),'')+'</select></label>'+
+        '<label>Menu<select name="food">'+optionList(foodMenu.map(food=>[food,food]),'')+
+        '</select></label></div><div class="context-actions"><button type="submit">Panggil kurir</button></div></form>':'');
+    updateDelivery();
+    return;
+  }
   if (panel==='studio') return;
   if (panel==='office') return renderOffice();
   if (panel==='monitor') return renderMonitoring();
@@ -500,6 +521,7 @@ function render() {
 $('panel-content').addEventListener('click',async event=>{
   const button=event.target.closest('button');
   if (!button) return;
+  if (button.dataset.district) return scene?.focusDistrict(button.dataset.district);
   if (button.id==='minimize-display') return scene?.closeDisplay();
   if (button.dataset.workstation) return openWorkstation({room:button.dataset.workstation});
   if (button.dataset.focusDisplay) {
@@ -551,6 +573,7 @@ $('panel-content').addEventListener('click',async event=>{
 
 $('panel-content').addEventListener('change',async event=>{
   const field=event.target;
+  if (field.id==='building-mode') return setBuildingMode(field.value);
   if (field.id==='lighting') setLighting(field.value);
   if (field.id==='character-partner') {
     partner=partnerChoices.find(person=>person.id===field.value)?.id ?? '';
@@ -581,6 +604,14 @@ $('panel-content').addEventListener('change',async event=>{
 });
 
 $('panel-content').addEventListener('submit',async event=>{
+  if (event.target.id==='district-food') {
+    event.preventDefault();
+    const fields=new FormData(event.target);
+    const error=scene?.orderFood(fields.get('employee'),fields.get('food'));
+    if (error) notice(error);
+    updateDelivery();
+    return;
+  }
   if (event.target.id!=='settings-form') return;
   event.preventDefault();
   const fields = new FormData(event.target);
@@ -638,6 +669,27 @@ function syncLightingControl() {
   button.dataset.next=next;
 }
 $('light-toggle').addEventListener('click',()=>setLighting($('light-toggle').dataset.next ?? 'evening'));
+let buildingMode=localStorage.getItem('anshel-building-view') ?? 'interior';
+function setBuildingMode(value) {
+  buildingMode=['auto','interior','exterior'].includes(value)?value:'interior';
+  localStorage.setItem('anshel-building-view',buildingMode);
+  scene?.buildings(buildingMode);
+  const button=$('building-toggle');
+  const label=buildingMode==='exterior'?'Lihat Interior':'Gedung Utuh';
+  button.setAttribute('aria-label',label);
+  button.setAttribute('aria-pressed',String(buildingMode==='exterior'));
+  button.lastElementChild.textContent=label;
+  button.title=label;
+  if ($('building-mode')) $('building-mode').value=buildingMode;
+}
+setBuildingMode(buildingMode);
+$('building-toggle').addEventListener('click',()=>setBuildingMode(buildingMode==='exterior'?'interior':'exterior'));
+function updateDelivery() {
+  const element=$('district-delivery');
+  const text=scene?.deliveryStatus() ?? '';
+  if (element && element.textContent!==text) element.textContent=text;
+}
+setInterval(updateDelivery,800);
 function toggleCharacterMode() {
   const enable=!characterActive;
   setCharacterMode(enable);

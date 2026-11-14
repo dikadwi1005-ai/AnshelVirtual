@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createActors } from './actors.js';
 import { createCharacter } from './character-mode.js';
 import { createCharacterCamera } from './character-camera.js';
-import { insideRoom, rooms, roomById, point } from './layout.js';
+import { homeByEmployee, insideRoom, rooms, roomById, point, structureView } from './layout.js';
 import { furniture } from './furnishings.js';
 import { checkLayout } from './layout-editor.js';
 import { radialTexture } from './materials.js';
@@ -39,17 +39,17 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   host.append(renderer.domElement);
   renderer.domElement.setAttribute('aria-label','Kantor 3D interaktif');
 
-  const camera=new THREE.OrthographicCamera(-32,32,24,-24,.1,190);
-  const exportCamera=new THREE.OrthographicCamera(-32,32,24,-24,.1,190);
+  const camera=new THREE.OrthographicCamera(-32,32,24,-24,.1,220);
+  const exportCamera=new THREE.OrthographicCamera(-32,32,24,-24,.1,220);
   const chase=createCharacterCamera();
   const controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true;
   controls.dampingFactor=.10;
   controls.maxZoom=48;
-  controls.minZoom=.56;
+  controls.minZoom=.34;
   controls.minPolarAngle=.29;
   controls.maxPolarAngle=1.18;
-  controls.maxTargetRadius=32;
+  controls.maxTargetRadius=61;
   controls.zoomToCursor=true;
   controls.touches.ONE=THREE.TOUCH.ROTATE;
   controls.touches.TWO=THREE.TOUCH.DOLLY_PAN;
@@ -75,6 +75,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
   let world, population, character, traffic, state=null, following=null, selected=null, cameraMove=null, drag=null;
   let shared=null, leading=false, displayReturn=null, nav, meeting=null, replay=null, laidOut=false;
+  let buildingMode='interior', renderedBuildingMode;
   let simulationState, previousState, previousMeeting, previousLayout;
   let nextRecording=0, chooseFurniture=null;
   const preview=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial({
@@ -87,7 +88,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     population.visible(value.leader || Boolean(value.snapshot));
     population.apply(value.snapshot,value.leader);
     if (!value.leader || state?.phase==='paused') return;
-    const seconds=value.snapshot?Math.min(75,(value.age??0)/1000):36+(Math.floor((state?.now??Date.now())/1000)%24);
+    const seconds=value.snapshot?Math.min(75,(value.age??0)/1000):
+      state?.phase==='arrival'?0:36+(Math.floor((state?.now??Date.now())/1000)%24);
     population.catchUp(seconds,{...state,dialogueEnabled:false});
   }
   const movement={x:0,y:0};
@@ -179,6 +181,17 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     following=null;
     focus(room.x,room.z,host.clientWidth<650?2.97:3.70);
   }
+  function focusDistrict(id) {
+    if (characterActive()) return;
+    following=null;
+    const home=homeByEmployee[id];
+    if (home) return focus(home.x,home.z,3.4);
+    if (id==='gate') return focus(3,27,2.2);
+    if (id==='homes') return focus(0,-36,1.15);
+    if (id==='garden') return focus(-18.9,11.8,2.35);
+    if (id==='area') cameraMove={target:center.clone(),position:overview.clone(),zoom:.44};
+    else reset();
+  }
 
   function focusEmployee(id,follow=false) {
     const actor=population?.actors.find(item=>item.person.id===id);
@@ -257,6 +270,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const skyNight=new THREE.Color(evening.sky), groundNight=new THREE.Color(evening.ground);
 
   function updateLabels(width,height) {
+    if (renderedBuildingMode==='exterior') {
+      for (const {element} of roomLabels) element.hidden=true;
+      return;
+    }
     const view=viewCamera(), zoom=viewZoom(), target=viewTarget();
     const avatar=characterActive()?temp.copy(target).project(view):null;
     const avatarX=avatar && (.5+avatar.x*.5)*width;
@@ -349,6 +366,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (loaded) return;
     onMessage('Menyiapkan kantor…');
     world=await buildWorld(scene,shadow);
+    renderedBuildingMode=undefined;
     world.displays.sync(state);
     let storage;
     try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
@@ -358,7 +376,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     population=await createActors(scene,liveNav,shadow,state,requestDialogue,storage);
     population.campus(traffic.obstacles);
     if(shared) restoreOffice(shared);
-    else if(state?.phase!=='paused') population.catchUp(42,{...state,dialogueEnabled:false});
+    else if(!['paused','arrival'].includes(state?.phase)) population.catchUp(42,{...state,dialogueEnabled:false});
     try { character=await createCharacter(scene,liveNav,shadow); }
     catch (error) { console.error('Avatar Dika gagal dimuat',error); }
     for (const room of rooms) {
@@ -423,7 +441,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       if (id) chooseFurniture(id);
       return;
     }
-    const device=world?.displays.pick(ray,scene.children);
+    const device=renderedBuildingMode==='interior'?world?.displays.pick(ray,scene.children.filter(child=>child.visible)):null;
     if (device) { onDisplay(device); return; }
     const candidate=population?.actors.map(actor=>{
       temp.copy(actor.root.position).y+=actor.stage==='seated'?.45:.8;
@@ -471,7 +489,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
         else population.followSnapshot(delta/steps);
       }
       world?.showDockedControllers(population.game.players);
-      traffic?.update(Math.min(delta,.06),state,[...population.actors.map(actor=>actor.root),...(character?[character.root]:[])]);
+      traffic?.update(Math.min(delta,.06),state,[...population.actors.map(actor=>actor.root),...(character?[character.root]:[])],population.actors);
+      population.pickup(traffic?.pickup());
       if (traffic) host.dataset.campusActors=String(traffic.roots.filter(root=>root.visible).length);
       if (population.actors.length===12 && population.actors[0].root.visible && now>=nextRecording) {
         nextRecording=now+400;
@@ -484,6 +503,14 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       camera.updateMatrixWorld();
     }
     const view=viewCamera(), target=viewTarget(), zoom=viewZoom();
+    const siteMode=displayReturn || replay?'interior':structureView(buildingMode,target,zoom,characterView());
+    if (siteMode!==renderedBuildingMode) {
+      renderedBuildingMode=siteMode;
+      world?.buildings.setMode(siteMode);
+      renderer.shadowMap.needsUpdate=true;
+      host.dataset.buildings=siteMode;
+    }
+    world?.walls(siteMode,view.position,target,zoom>1.5 && zoom<10 && !replay);
     refreshLighting(delta);
     const lounge=roomById.gaming;
     const gameVisible=zoom>=2 && Math.hypot(target.x-lounge.x,target.z-lounge.z)<10;
@@ -511,7 +538,13 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   });
 
   return {
-    load,reset,focusRoom,focusEmployee,focusDisplay,closeDisplay,
+    load,reset,focusRoom,focusEmployee,focusDisplay,closeDisplay,focusDistrict,
+    buildings(value) { buildingMode=value; },
+    deliveryStatus() { return traffic?.status() ?? ''; },
+    orderFood(id,food) {
+      if (!traffic || !population || replay || shared && !leading && !laidOut) return 'Gunakan sesi kantor yang sedang memimpin simulasi.';
+      return traffic.request(id,food,state,population.actors);
+    },
     meeting(value) {
       meeting=value;
       world?.displays.agenda(value?.agenda ?? '');
@@ -590,6 +623,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       resizeObserver.disconnect();
       controls.dispose();
       world?.outdoors.dispose();
+      world?.buildings.dispose();
       traffic?.dispose();
       renderer.dispose();
       preview.geometry.dispose();

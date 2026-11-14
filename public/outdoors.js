@@ -3,7 +3,7 @@ import { fenceRuns, gate, outdoorSeats, planterBoxes } from './layout.js';
 const treeSites=[[-29,-22,2],[-28,-18,1.4],[28,-15,2.2],[29,-8,1.3],[-29,11,2.5],[-28,14,1.65],
   [18,-25,2.3],[23,-25,1.5],[-22,25.5,2],[-16,25.5,1.65],[22,25,1.8],[28,25,2.1]];
 
-export function addOutdoors(scene) {
+export function addOutdoors(scene,loadModel) {
   const boxes=new Map(), halos=[];
   const material=new THREE.MeshStandardMaterial({roughness:.88});
   const cube=new THREE.BoxGeometry(), crown=new THREE.IcosahedronGeometry(1,1);
@@ -13,7 +13,7 @@ export function addOutdoors(scene) {
   }
   const terrain=new THREE.BoxGeometry();
   const ground=(color,x,z,w,d,y=-.015)=>piece(color,x,y-.035,z,w,.07,d,0,terrain);
-  ground('#596c5b',0,0,178,175,-.09);
+  ground('#596c5b',0,0,360,340,-.09);
   ground('#657e51',0,0,68,58,-.025);
   ground('#384554',0,36,176,10);
   ground('#a1a498',0,31.1,155,1.65);
@@ -34,11 +34,6 @@ export function addOutdoors(scene) {
       const t=(i+.5)/6;
       piece(i%2?'#798b52':'#54734a',x1+(x2-x1)*t,.26,z1+.65+Math.sin(i*2)*.29,.40,.30,.38,i,crown);
     }
-  }
-  for(const [x,z,s] of treeSites) {
-    piece('#5e4836',x,s*.55,z,.25,s*1.1,.25);
-    piece('#58784d',x,s*1.25,z,s*.51,s*.63,s*.48,x,crown);
-    piece('#728b55',x+s*.16,s*1.62,z-.22,s*.39,s*.48,s*.41,z,crown);
   }
   for(const [x,z,w,d,angle] of [[-49,-35,18,8,.15],[39,-46,26,12,-.14],[-44,19,8,15,.12],
     [47,16,12,22,-.15],[-29,46,18,8,-.08],[31,49,27,10,.13]]) {
@@ -103,8 +98,39 @@ export function addOutdoors(scene) {
   const board=new THREE.Mesh(new THREE.PlaneGeometry(6.6,.86),new THREE.MeshBasicMaterial({map:texture,side:THREE.DoubleSide}));
   board.position.set(gate.vehicle,3.03,gate.z);
   scene.add(board);
+  const trees=new THREE.Group();
+  scene.add(trees);
+  const variants=['tree-default','tree-tall','tree-small'];
+  const vegetation=[...treeSites,[-51,8,1.6],[52,-2,2.2],[-51,-22,2],[-50,19,1.8],[52,19,2],[-27,-47,2.1],
+    [-13,-47,1.7],[7,-47,2.3],[27,-47,1.6],[-51,-8,1.8],[52,-21,2]];
+  const fallbackMaterial=new THREE.MeshStandardMaterial({color:'#668451'});
+  let closed=false;
+  void Promise.allSettled(variants.map(name=>loadModel('nature/'+name))).then(assets=>{
+    if (closed) return;
+    for (const [index,[x,z,height]] of vegetation.entries()) {
+      const result=assets[index%assets.length];
+      if (result.status!=='fulfilled' || !result.value.size.y) {
+        const fallback=new THREE.Mesh(crown,fallbackMaterial);
+        fallback.position.set(x,height*.74,z);
+        fallback.scale.set(height*.32,height*.65,height*.31);
+        trees.add(fallback);
+        continue;
+      }
+      const {scene:asset,bounds,size}=result.value;
+      const tree=asset.clone(true), scale=height*1.55/size.y;
+      const center=bounds.getCenter(new THREE.Vector3());
+      tree.position.set(x-center.x*scale,-bounds.min.y*scale,z-center.z*scale);
+      tree.scale.setScalar(scale);
+      tree.traverse(mesh=>{if(mesh.isMesh) mesh.castShadow=mesh.receiveShadow=true;});
+      trees.add(tree);
+    }
+  });
   return {
     lighting(night) { bulb.color.set('#dbcdb1').lerp(tint.set('#ffb35f'),night); },
-    dispose() { for(const asset of [cube,terrain,crown,material,bulb,texture,board.geometry,board.material]) asset.dispose(); },
+    dispose() {
+      closed=true;
+      trees.removeFromParent();
+      for(const asset of [cube,terrain,crown,material,bulb,texture,board.geometry,board.material,fallbackMaterial]) asset.dispose();
+    },
   };
 }

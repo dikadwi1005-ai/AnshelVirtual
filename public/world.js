@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { doorway, entrance, footprint, outdoorObstacles, point, roomOutline, rooms } from './layout.js';
+import { districtObstacles, doorway, entrance, footprint, point, roomOutline, rooms } from './layout.js';
+import { addBuildings } from './neighborhood.js';
 import { addOutdoors } from './outdoors.js';
 import { createDisplays } from './displays.js';
 import { furniture, obstaclesFor, partitions, propsFor } from './furnishings.js';
@@ -68,7 +69,7 @@ const glass=new THREE.MeshStandardMaterial({
   color:'#b0d5d6',transparent:true,opacity:.27,roughness:.22,metalness:.08,depthWrite:false,side:THREE.DoubleSide,
 });
 
-function architecture(parent,room) {
+function architecture(parent,room,upperWalls) {
   if (room.style==='hub') paving(parent,roomOutline(room,.01),.012,finish('#536f68'),3);
   paving(parent,roomOutline(room),.016,
     floorMaterial(room.finish,room.floor),room.finish==='oak'?2.1:2.6);
@@ -79,13 +80,20 @@ function architecture(parent,room) {
   for (const {box:bounds,type} of partitions(room)) {
     const [x0,z0,x1,z1]=bounds;
     const x=(x0+x1)/2, z=(z0+z1)/2, width=x1-x0, depth=z1-z0;
-    const glazed=room.style==='pod' || (type==='back' && room.daylight);
+    const glazed=room.style==='pod' && type==='front' || type==='back' && room.daylight;
     const baseHeight=type==='back'?.82:.50;
     let height=glazed?(type==='back'?.55:.26):baseHeight;
     if (room.style==='service') height=type==='stall'?1.16:.92;
     box(parent,[width,height,depth],[x,height/2,z],room.style==='garden'?trim:wall);
     box(parent,[width+.035,.054,depth+.035],[x,height+.017,z],type==='back'?panel:trim);
-    if (!glazed) continue;
+    if (!glazed) {
+      if (room.style!=='garden' && type!=='stall') {
+        const wallMesh=box(upperWalls,[width,2.8-height,depth],[x,(2.8+height)/2,z],wall);
+        wallMesh.castShadow=false;
+        wallMesh.userData={x,z,long:width>depth,room};
+      }
+      continue;
+    }
     const glassHeight=type==='back' && room.daylight?1.24:1.01;
     const axis=width>depth ? 'x' : 'z';
     const long=axis==='x'?width:depth;
@@ -192,7 +200,10 @@ function contactShadows(parent,props,map) {
 }
 
 export async function buildWorld(scene,shadowTexture) {
-  const outdoors=addOutdoors(scene);
+  const outdoors=addOutdoors(scene,model);
+  const buildings=addBuildings(scene);
+  const upperWalls=new THREE.Group();
+  scene.add(upperWalls);
   const displays=createDisplays();
   const core=new THREE.Group();
   scene.add(core);
@@ -223,7 +234,7 @@ export async function buildWorld(scene,shadowTexture) {
       wings.set(room.wing,group);
     }
     const wing=wings.get(room.wing);
-    architecture(wing,room);
+    architecture(wing,room,upperWalls);
     const props=propLists.get(room.id);
     jobs.push(...props.map(async (prop,index)=>{
       const id=room.id+':'+index;
@@ -243,8 +254,18 @@ export async function buildWorld(scene,shadowTexture) {
   for (const group of wings.values()) batchStatic(group);
   batchStatic(core);
   const moveShadow=contactShadows(core,[...propLists.values()].flat(),shadowTexture);
-  const obstacles=[...outdoorObstacles,...rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)))];
-  return {errors,warmGlow,obstacles,outdoors,displays,showDockedControllers:addLounge(scene),
+  const obstacles=[...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)))];
+  return {errors,warmGlow,obstacles,outdoors,buildings,displays,showDockedControllers:addLounge(scene),
+    walls(mode,eye,target,close) {
+      upperWalls.visible=mode==='interior';
+      if (!upperWalls.visible) return;
+      for(const mesh of upperWalls.children) {
+        const {x,z,long,room}=mesh.userData;
+        const coordinate=long?'z':'x', edge=long?z:x;
+        mesh.visible=close && Math.hypot(room.x-target.x,room.z-target.z)<9 &&
+          (eye[coordinate]-edge)*(room[coordinate]-edge)>0;
+      }
+    },
     pickFurniture(ray) {
       const hit=ray.intersectObjects(movable.children,true)[0];
       if (!hit || ray.intersectObjects(scene.children,true).some(other=>

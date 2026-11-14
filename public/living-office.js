@@ -1,4 +1,5 @@
 import { divisions } from './catalog.js';
+import { staysHome } from './layout.js';
 
 const storageKey='anshel-living-office-v1';
 const people=new Map(divisions.map(person=>[person.id,person]));
@@ -12,7 +13,7 @@ const effects={
   read:[.30,1.04,-.10,.95,.53], game:[-.14,-.15,.48,.54,1.7],
   talk:[-.12,-.06,.45,.20,.42], meeting:[-.22,-.22,.35,-.12,-.14],
   stroll:[.18,.33,-.06,.70,1.02], outdoor:[.61,.41,-.06,1.02,.34],
-  commute:[.30,.25,.04,.41,.08], travel:[-.16,-.10,-.14,-.13,-.13],
+  commute:[.30,.25,.04,.41,.08], home:[1.1,.32,-.03,1.3,.4], travel:[-.16,-.10,-.14,-.13,-.13],
 };
 const choices=['desk','coffee','rest','read','game','stroll'];
 
@@ -50,6 +51,7 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
   const plans={};
   let clock=0, accumulator=0, lastSave=0, nextEvent=7, dirty=false, sequence=0;
   let previousState;
+  let phaseName, phaseStarted=0;
 
   function change(member,activity,duration,event=null) {
     member.activity=activity;
@@ -129,6 +131,10 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
   function step(delta,state,actors) {
     if (state?.phase==='paused') return plans;
     clock+=delta;
+    if (phaseName!==state?.phase) {
+      phaseName=state?.phase;
+      phaseStarted=clock;
+    }
     accumulator+=delta;
     const advance=accumulator>=.5;
     if (!advance && state===previousState && Object.keys(plans).length) return plans;
@@ -160,14 +166,14 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
         member.values.mood=clamp(member.values.mood+(target-member.values.mood)*Math.min(1,elapsed*.075));
         dirty=true;
       }
-      const commuting=state?.phase==='closed' || state?.phase==='arrival' && clock<12+member.person.index*.9;
+      const atHome=staysHome(state?.phase,clock-phaseStarted,member.person.index);
       plans[id]={task:remote?.task ?? null,executing:Boolean(remote?.executing),taskLock,
-        activity:taskLock?(remote.executing?'work':'desk'):commuting?'commute':
+        activity:taskLock?(remote.executing?'work':'desk'):atHome?'home':
           state?.phase==='lunch' && member.person.index<2?'outdoor':member.activity,room:member.event?.room};
     }
     if (advance) {
       schedule(state?.phase,byId);
-      for (const [id,member] of staff) if (member.event && !plans[id].taskLock && !['commute','outdoor'].includes(plans[id].activity)) {
+      for (const [id,member] of staff) if (member.event && !plans[id].taskLock && !['home','outdoor'].includes(plans[id].activity)) {
         plans[id].activity=member.activity;
         plans[id].room=member.event.room;
       }

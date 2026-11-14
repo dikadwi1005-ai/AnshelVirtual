@@ -1,4 +1,4 @@
-import { doorway, entrance, gate, outdoorSeats, point, roomById, wallThickness } from './layout.js';
+import { doorway, entrance, foodStop, gate, homeByEmployee, outdoorSeats, point, roomById, wallThickness } from './layout.js';
 
 // Width, depth and height in meters. Ground props share these dimensions with navigation.
 export const furniture = {
@@ -299,6 +299,12 @@ export function activityAnchors(person,activity) {
     stroll:()=>[-1.18,0,1.18].map((x,i)=>localAnchor(roomById.garden,x,-.50,0,'idle','garden-'+i)),
     commute:()=>[{id:'gate-'+person.id,point:[gate.walkway+(person.index%3-1)*.8,31.2+Math.floor(person.index/3)*.78],
       approach:[gate.walkway+(person.index%3-1)*.8,31.2+Math.floor(person.index/3)*.78],angle:Math.PI,height:0,clip:'idle'}],
+    home:()=>{
+      const home=homeByEmployee[person.id];
+      return [{id:home.id,point:home.sofa,approach:home.point(-home.width*.24,1.43),
+        angle:home.angle,height:.42,clip:'sit',support:home.id+'-sofa'}];
+    },
+    pickup:()=>[{id:'food-pickup',point:foodStop,approach:foodStop,angle:-Math.PI/2,height:0,clip:'idle'}],
     outdoor:()=>outdoorSeats.map(([x,z],i)=>({id:'outdoor-'+i,point:[x,z],approach:[x,z-.78],angle:Math.PI,
       height:.48,clip:'sit',support:'outdoor-bench-'+i})),
     visit:()=>[roomById.hr,roomById.marketing,roomById.creative].filter(room=>room.id!==person.id)

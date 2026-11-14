@@ -3,7 +3,8 @@ import { writeFile } from 'node:fs/promises';
 const { chromium }=await import(process.env.ANSHEL_PLAYWRIGHT_MODULE ?? 'playwright');
 import { officeServer } from '../server/http.ts';
 import { createStore } from '../server/store.ts';
-const store=createStore(':memory:');
+let testClock=null;
+const store=createStore(':memory:',()=>testClock ?? Date.now());
 const password='local-fixture-password';
 store.settings({mode:'open'});
 const server=officeServer(store,{OWNER_PASSWORD:password});
@@ -34,7 +35,7 @@ function testAudio() {
   for(let i=0;i<samples;i++) wave.writeInt16LE(Math.round(Math.sin(i*Math.PI*.11)*1600),44+i*2);
   return {name:'fixture.wav',mimeType:'audio/wav',buffer:wave};
 }
-const shot=(p,name)=>process.env.ANSHEL_SCREENSHOTS && p.screenshot({path:process.env.ANSHEL_SCREENSHOTS+'/phase8-'+name+'.png'});
+const shot=(p,name)=>process.env.ANSHEL_SCREENSHOTS && p.screenshot({path:process.env.ANSHEL_SCREENSHOTS+'/phase9-'+name+'.png'});
 async function perf(page) {
   return page.evaluate(()=>new Promise(resolve=>{
     const samples=[];
@@ -56,6 +57,22 @@ async function perf(page) {
 try {
   const desktop=await open({viewport:{width:1440,height:900}});
   const metrics={live:await perf(desktop)};
+  await desktop.locator('#building-toggle').click();
+  await desktop.waitForFunction(()=>document.getElementById('scene').dataset.buildings==='exterior');
+  await shot(desktop,'building-front');
+  await desktop.locator('[data-panel=district]').click();
+  await desktop.locator('[data-district=area]').click();
+  await desktop.waitForTimeout(1150);
+  await shot(desktop,'district');
+  await desktop.locator('[data-district=research]').click();
+  await desktop.waitForTimeout(1150);
+  await shot(desktop,'home-exterior');
+  await desktop.locator('#building-toggle').click();
+  await desktop.waitForFunction(()=>document.getElementById('scene').dataset.buildings==='interior');
+  await shot(desktop,'home-interior');
+  await desktop.locator('[data-district=office]').click();
+  await desktop.waitForTimeout(950);
+  await desktop.locator('#inspector-back').click();
   await desktop.waitForFunction(()=>Number(document.getElementById('scene').dataset.campusActors)>0);
   if (await desktop.locator('#light-toggle').getAttribute('data-next')==='day') await desktop.locator('#light-toggle').click();
   await desktop.waitForTimeout(900);
@@ -69,6 +86,10 @@ try {
   await desktop.locator('#light-toggle').click();
   await desktop.waitForTimeout(900);
   await shot(desktop,'campus-night');
+  await desktop.locator('#building-toggle').click();
+  await desktop.waitForFunction(()=>document.getElementById('scene').dataset.buildings==='exterior');
+  await shot(desktop,'building-rear');
+  await desktop.locator('#building-toggle').click();
   await desktop.locator('[data-panel=office]').click();
   await desktop.locator('[data-room=development]').click();
   await desktop.locator('[data-workstation=development]').click();
@@ -105,6 +126,9 @@ try {
   await Promise.all([desktop.waitForResponse(response=>response.url().endsWith('/api/studio/meetings') &&
     response.request().method()==='POST' && response.ok()),desktop.locator('#studio-minutes button[value=save]').click()]);
   await desktop.waitForTimeout(1000);
+  await tab(desktop,'replay');
+  await click(desktop,'archive-now');
+  await desktop.locator('#studio-archive option[value^="local:"]').first().waitFor({state:'attached'});
   await desktop.reload();
   await desktop.locator('#character-mode:enabled').waitFor({timeout:90000});
   await desktop.locator('[data-panel=studio]').click();
@@ -148,7 +172,7 @@ try {
       for (let i=0;i<data.length;i+=16384) binary+=String.fromCharCode(...data.subarray(i,i+16384));
       return btoa(binary);
     });
-    await writeFile(process.env.ANSHEL_SCREENSHOTS+'/phase8-replay.webm',Buffer.from(encoded,'base64'));
+    await writeFile(process.env.ANSHEL_SCREENSHOTS+'/phase9-replay.webm',Buffer.from(encoded,'base64'));
   }
   assert.ok(bytes>2000); await desktop.waitForFunction(()=>document.querySelector('#studio-output video')?.readyState>=2); const dimensions=await desktop.locator('#studio-output video').evaluate(v=>[v.videoWidth,v.videoHeight]); assert.deepEqual(dimensions,[960,540]);
   metrics.replay=await perf(desktop);
@@ -186,7 +210,10 @@ try {
   await desktop.locator('[data-studio-plan]').click();
   assert.equal(await desktop.locator('#task-form [name=description]').inputValue(),'Uji pengingat');
   await desktop.locator('#task-form [data-close]').click();
+  const cityReady=desktop.waitForResponse(response=>response.url().endsWith('/api/studio/nation-city'));
   await tab(desktop,'city');
+  await cityReady;
+  await desktop.waitForTimeout(350);
   const at=new Date().toISOString();
   await desktop.locator('[name=snapshot]').setInputFiles({name:'city.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({
     version:1,status:'offline',updatedAt:at,events:[{id:'e-1',type:'city.service',at,label:'<img src=x onerror=alert(1)>'}]
@@ -206,6 +233,21 @@ try {
   await mobile.locator('[data-panel=studio]').tap();
   await shot(mobile,'mobile');
   assert.equal(await mobile.evaluate(()=>document.documentElement.scrollWidth),390);
+  await mobile.close();
+  testClock=Date.parse('2026-11-16T05:10:00Z');
+  store.settings({mode:'auto'});
+  const lunch=await open({viewport:{width:1280,height:800}});
+  await lunch.locator('[data-panel=district]').click();
+  await lunch.locator('[data-district=gate]').click();
+  await lunch.locator('#district-food [name=employee]').selectOption('marketing');
+  await lunch.locator('#district-food [name=food]').selectOption('Nasi uduk');
+  await lunch.locator('#district-food button').click();
+  await lunch.locator('#district-delivery').filter({hasText:'Kurir Saji Kampung'}).waitFor({timeout:40000});
+  assert.match(await lunch.locator('#district-delivery').innerText(),/Nasi uduk · Jihan/);
+  await shot(lunch,'scooter');
+  await lunch.locator('#district-delivery').filter({hasText:'Pesanan diserahkan'}).waitFor({timeout:145000});
+  await shot(lunch,'food-handoff');
+  await lunch.close();
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({videoBytes:bytes,mp4,metrics,errors}));
 } finally {

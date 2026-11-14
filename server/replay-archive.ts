@@ -26,7 +26,7 @@ export function replayOperation(current,input,now) {
     previous=frame.at;
     const actors=frame.actors.map(actor=>{
       if (!Array.isArray(actor?.position) || actor.position.length!==2 ||
-          !validNumber(actor.position[0],-37,37) || !validNumber(actor.position[1],-34,34) ||
+          !validNumber(actor.position[0],-57,57) || !validNumber(actor.position[1],-53,53) ||
           !validNumber(actor.y,0,1) || !validNumber(actor.angle,-100,100) || !validNumber(actor.clipTime,0,60) ||
           typeof actor.animation!=='string' || !/^[a-z-]{1,25}$/.test(actor.animation)) throw new Fault(400,'Pose replay tidak valid.');
       return {position:actor.position,y:actor.y,angle:actor.angle,clipTime:actor.clipTime,animation:actor.animation};

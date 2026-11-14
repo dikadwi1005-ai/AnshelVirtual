@@ -1,6 +1,6 @@
 import { divisions } from './catalog.js';
 import { activityAnchors, obstaclesFor, propBounds, propsFor } from './furnishings.js';
-import { entrance, insideRoom, outdoorObstacles, roomById, rooms } from './layout.js';
+import { districtObstacles, entrance, insideRoom, roomById, rooms } from './layout.js';
 import { agentRadius, navigation, segmentHits } from './navigation.js';
 
 const movable=new Set(['plant','largePlant','smallTree','lamp','bench','lounge']);
@@ -8,9 +8,9 @@ const original=new Map(rooms.map(room=>[room.id,propsFor(room)]));
 export const layoutItems=rooms.flatMap(room=>original.get(room.id).flatMap((prop,index)=>
   movable.has(prop.type) && !prop.id && prop.y===0 ? [{id:room.id+':'+index,room,prop}] : []));
 const itemsById=new Map(layoutItems.map(item=>[item.id,item]));
-const baseObstacles=[...outdoorObstacles,...rooms.flatMap(room=>obstaclesFor(room,original.get(room.id)))];
+const baseObstacles=[...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room,original.get(room.id)))];
 const baseNav=navigation(baseObstacles);
-const anchors=divisions.flatMap(person=>['desk','coffee','game','rest','read','talk','meeting','stroll','visit','outdoor','commute']
+const anchors=divisions.flatMap(person=>['desk','coffee','game','rest','read','talk','meeting','stroll','visit','outdoor','commute','home']
   .flatMap(activity=>activityAnchors(person,activity)));
 const access=new Map(rooms.map(room=>[room.id,entrance(room)]));
 const center=[0,0];
@@ -47,7 +47,7 @@ export function checkLayout(edits) {
       .some(({box})=>bounds[0]<box[2]+.05 && bounds[2]>box[0]-.05 && bounds[1]<box[3]+.05 && bounds[3]>box[1]-.05);
     if (overlaps || anchors.some(anchor=>segmentHits(anchor.approach,anchor.point,bounds,agentRadius))) return null;
   }
-  const nav=navigation([...outdoorObstacles,...rooms.flatMap(room=>obstaclesFor(room,lists.get(room.id)))]);
+  const nav=navigation([...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room,lists.get(room.id)))]);
   reachable ??= baselineAccess.filter(target=>baseNav.route(center,target));
   if (reachable.some(target=>!nav.route(center,target))) return null;
   return {props:new Map([...moved].map(([id,value])=>[id,value.next])),nav};

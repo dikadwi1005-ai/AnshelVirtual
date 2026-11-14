@@ -172,3 +172,7 @@ Monitor interaktif, editor tata letak, rapat, riwayat, replay, ekspor video, sto
 ## Checkpoint Phase 8 · Kampus Anshel
 
 Lingkungan luar, rapat empat peserta, replay tersimpan, perubahan Studio, audit database, dan verifikasi Production yang masih terbuka dicatat dalam [checkpoint Phase 8](phase-8-completion.md).
+
+## Checkpoint Phase 9 · Arsitektur dan perumahan
+
+[Checkpoint Phase 9](phase-9-living-world.md) mencatat perumahan pegawai, perjalanan rumah–kantor, mode gedung dan kurir simulasi.

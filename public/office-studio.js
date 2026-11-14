@@ -81,7 +81,7 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
           .map(([at,source])=>'<option value="'+source+':'+at+'">'+time.format(at)+' WIB · '+source+'</option>').join('')+'</select></label>'+
         '<div class="context-actions">'+button('replay-start','Muat rekaman')+button('play','Putar / jeda')+button('replay-stop','Kembali live')+'</div>'+
         '<div class="context-actions">'+button('archive-clear','Hapus arsip browser')+button('cloud-save','Simpan arsip lokal ke cloud')+
-        button('cloud-delete','Hapus pilihan cloud')+'</div>'+
+        button('cloud-delete','Hapus pilihan cloud')+button('archive-now','Arsipkan rekaman terbaru')+'</div>'+
         '<label>Timeline<input type="range" id="studio-seek" min="0" max="0" value="0" step=".1"></label><p id="replay-subtitle" role="status"></p>'+
         '<form id="studio-video"><div class="form-grid"><label>Kecepatan<select id="studio-speed"><option>.5</option><option selected>1</option><option>2</option></select></label>'+
         '<label>Kamera<select id="studio-camera"><option value="">Seluruh kantor</option><option value="meeting">Pod Rapat</option>'+
@@ -247,7 +247,7 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
       position:actor.position.map(value=>Math.round(value*100)/100),angle:Math.round(actor.angle*100)/100,
       clipTime:Math.round(actor.clipTime*100)/100,y:Math.round(actor.y*100)/100,
     }))}));
-    void archive.save({start:compact[0].at,frames:compact,events:batchEvents}).catch(()=>{archiveFailed=true;});
+    return archive.save({start:compact[0].at,frames:compact,events:batchEvents}).catch(()=>{archiveFailed=true;});
   }
   window.addEventListener('pagehide',flushArchive);
   async function inspectArchive() {
@@ -549,6 +549,14 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
         if (!window.confirm('Hapus seluruh rekaman yang tersimpan di browser ini?')) break;
         try { pendingFrames=[]; pendingEvents=[]; await archive.clear(); historical=[]; await inspectArchive(); notice('Arsip browser dihapus.'); }
         catch { notice('Arsip browser tidak dapat dihapus.'); }
+        break;
+      case 'archive-now':
+        if (recording || replaying) return notice('Kembali live sebelum mengarsipkan.');
+        if (pendingFrames.length<2) pendingFrames=frameList.slice(-75);
+        if (pendingFrames.length<2) return notice('Tunggu beberapa detik sampai rekaman tersedia.');
+        await flushArchive();
+        await inspectArchive();
+        if (archiveFailed) notice('Arsip browser tidak dapat disimpan.');
         break;
       case 'replay-stop': stopReplay(); break;
       case 'cancel-video': recording?.cancel(); break;

@@ -32,6 +32,7 @@ h1,h2,h3,.brand,.clock{font-family:'Space Grotesk',sans-serif}
 .utilities{top:19px;right:20px;padding:3px;gap:3px}
 .icon-button,.nav-button{border:0;background:transparent;color:var(--muted);border-radius:8px}
 .icon-button{width:37px;height:37px;display:grid;place-items:center}
+#building-toggle{width:auto;display:flex;align-items:center;gap:6px;padding:0 8px;font-size:11px;font-weight:700;white-space:nowrap}
 .icon-button:hover,.nav-button:hover,.icon-button.active,.nav-button.active{background:#344b66;color:#fff}
 [data-icon] svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;flex:none}
 #character-mode{touch-action:manipulation}
@@ -142,6 +143,8 @@ input[type=checkbox]{accent-color:var(--accent)}
   #queue-badge{position:absolute;top:1px;right:0}
   .brand strong{font-size:14px}
   .utilities .icon-button{width:32px;height:34px}
+  .utilities #building-toggle{width:32px;justify-content:center;padding:0}
+  #building-toggle span{display:none}
   .room-label{font-size:9px}
   .inspector{top:auto;bottom:160px;max-height:min(54%,calc(100% - 260px));width:calc(100% - 20px)}
   .inspector-heading{padding:8px 12px}

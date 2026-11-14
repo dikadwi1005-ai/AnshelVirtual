@@ -26,4 +26,6 @@ export const activities = {
   meeting:'Duduk di ruang rapat', visit:'Mengunjungi divisi lain', read:'Membaca di ruang santai',
   tv:'Menonton TV', stroll:'Jalan-jalan di teras', nap:'Beristirahat di meja', celebrate:'Merayakan hasil',
   outdoor:'Duduk di taman depan', commute:'Melalui gerbang kantor',
+  home:'Istirahat di rumah',
+  pickup:'Mengambil makanan',
 };
