@@ -234,7 +234,7 @@ test('12 persona punya gaya berbeda; pertanyaan pegawai tidak mendapat statistik
   const factual=JSON.parse(specific.systemInstruction.parts[0].text.split('DATA KANTOR TERPERCAYA: ')[1]);
   assert.equal(factual.pegawai,'Bima');
   assert.equal(factual.aktivitasAvatarDiKantorVirtual,undefined);
-  assert.match(factual.statusLokasiAvatar,/belum terverifikasi/);
+  assert.match(factual.statusLokasiAvatar,/belum ada pembaruan posisi/);
   assert.equal(factual.adaTugasYangSedangDieksekusi,false);
   assert.equal(factual.totalSemuaDivisi,undefined);
   assert.equal(factual.contohTugasDivisiTerbaru.length,0);
@@ -384,7 +384,7 @@ test('pertanyaan jam kantor diproses langsung dari jadwal tanpa biaya Gemini dan
     assert.deepEqual(next,{mode:'handled',sent:true,division:'operations',source:'office-schedule'});
     assert.ok(sent[1].url.includes(tokens.operations));
     assert.match(sent[1].body.text,/belum ada pembaruan posisi|belum kebaca/i);
-    assert.match(sent[1].body.text,/chat Telegram tetap bisa dipakai/i);
+    assert.match(sent[1].body.text,/jam kerja udah selesai|belum kebaca/i);
   } finally{s.close();}
 });
 

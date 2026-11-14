@@ -354,8 +354,8 @@ test('obrolan aktivitas avatar empat bot sekali setiap hari WIB, siang hari kerj
     assert.equal(first.followedUp,true);
     assert.equal(sent.length,2);
     assert.equal(sent[1].payload.reply_parameters.message_id,701);
-    assert.match(sent[0].payload.text,/kantor virtual|simulasi kantor/i);
-    assert.match(sent[1].payload.text,/kantor virtual|catatan anshel/i);
+    assert.match(sent[0].payload.text,/pengin kita diskusiin|kantor virtual|simulasi kantor/i);
+    assert.match(sent[1].payload.text,/belum ada update kerjaan|kantor virtual|catatan anshel/i);
     assert.deepEqual(await dispatchOfficeGroupCheckin(s,fourEnv,fake),
       {sent:false,reason:'already-sent-today'});
     clock+=24*60*60_000;
