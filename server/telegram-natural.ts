@@ -7,7 +7,8 @@ import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse,ownerReplyContext,conversationQuestion,groupDelayMs } from './telegram-group.ts';
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
-import { observedAvatar } from './office-avatar-status.ts';
+import { observedAvatar,avatarForConversation } from './office-avatar-status.ts';
+import { isOfficeLocationQuestion,officeLocationReply } from './office-chat-replies.ts';
 import {parseGroupWorkspaceCommand,workspacePromptContext} from './telegram-workspace.ts';
 import {loadTelegramMedia,questionForMedia,attachMediaToGeminiRequest} from './telegram-media.ts';
 import {isJihanNewsQuery,readBciftBlogTitles,addJihanNewsGrounding,
@@ -74,7 +75,8 @@ function wibDateAt(now,addDays=0) {
       .format(date)};
 }
 export function officeScheduleReply(division,question,state) {
-  if (!officeHoursQuestion(question)) return null;
+  const asksLocation=isOfficeLocationQuestion(question);
+  if (!officeHoursQuestion(question) && !asksLocation) return null;
   const schedule=state.schedule;
   if (!schedule || !Array.isArray(schedule.days) || !Array.isArray(schedule.holidays) ||
       !['arrival','open','briefingEnd','lunch','lunchEnd','review','close'].every(k=>
@@ -91,6 +93,8 @@ export function officeScheduleReply(division,question,state) {
   const asksTomorrow=/\bbesok\b/i.test(question);
   const asksToday=/\bhari\s+ini\b/i.test(question);
   const asksNow=/\b(?:sekarang|saat\s+ini|lagi\s+di\s+kantor|masih\s+di\s+kantor)\b/i.test(question);
+  const explicitHours=/\b(?:jam\s+berapa|jam\s+(?:masuk|kerja|buka|pulang|operasional)|masuk\s+jam|jadwal|briefing|istirahat\s+siang|kantor\s+(?:buka|tutup|libur)|besok\s+masuk|hari\s+ini\s+libur)\b/i.test(question);
+  if(asksLocation && !explicitHours)return officeLocationReply(state,division,question);
   const at=Number(state.now);
   if (!Number.isFinite(at) || at<=0) return 'Jadwal hari operasional Anshel: '+
     dayList+'. '+regular+' Waktu saat ini belum tercatat untuk memastikan sedang buka atau tidak.';
@@ -119,11 +123,7 @@ export function officeScheduleReply(division,question,state) {
     const currentStatus=timePeriodName[phase]||'status belum diketahui';
     reply+=' Sekarang status kantor virtual: '+currentStatus+'.';
     if(state.mode && state.mode!=='auto') reply+=' Mode operasional sedang diatur manual.';
-    const avatar=observedAvatar(state,division);
-    if(avatar) reply+=' Lokasi avatar terpantau: '+avatar.location.toLowerCase()+
-      (avatar.activity?' ('+avatar.activity.toLowerCase()+')':'')+'.';
-    else reply+=' Posisi avatar belum terverifikasi karena tidak ada snapshot simulasi yang aktif.';
-    reply+=' Chat Telegram tetap bisa dipakai di luar jadwal.';
+    reply+=' '+officeLocationReply(state,division,question);
   }
   return reply;
 }
@@ -157,25 +157,29 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     };
   }
   const avatar=state.people?.[division];
-  if(wantsAvatarActivity(spokenQuestion)) {
-    const observed=observedAvatar(state,division);
-    if(observed) {
+  if(wantsAvatarActivity(spokenQuestion)||isOfficeLocationQuestion(spokenQuestion)) {
+    const observed=avatarForConversation(state,division);
+    if(observed.quality==='live') {
       facts.aktivitasAvatarDiKantorVirtual=observed.activity;
       facts.lokasiAvatarDiSimulasi=observed.location;
-      facts.statusLokasiAvatar='terverifikasi dari snapshot simulasi yang aktif';
-    } else facts.statusLokasiAvatar='belum terverifikasi; jangan menebak posisi avatar.';
+      facts.statusLokasiAvatar='live';
+    } else if(observed.quality==='last-seen') {
+      facts.lokasiTerakhirAvatar=observed.location;
+      facts.waktuLokasiTerakhir=observed.at;
+      facts.statusLokasiAvatar='catatan terakhir, bukan kondisi live';
+    } else facts.statusLokasiAvatar='belum ada pembaruan posisi; gunakan jadwal hanya untuk status kantor.';
     facts.adaTugasYangSedangDieksekusi=avatar?.executing===true;
   }
   const instructions=[
     'Kamu adalah '+person.employee+', pegawai AI Anshel Virtual Tech yang sedang berbicara di grup Telegram privat.',
     persona[division],
-    'Balas dalam Bahasa Indonesia sehari-hari seperti rekan kerja saat chat, alami dan spesifik. Biasanya 1-3 kalimat pendek, di bawah 320 karakter.',
+    'Bahasa chat Indonesia Gen Z yang natural dan tetap profesional: santai, spontan, hangat, singkat, bukan gaya chatbot CS atau laporan sistem. Boleh pakai variasi kata seperti "nih", "iya", "oke", "kayaknya", "bentar", "udah", "nggak" saat cocok; jangan sok gaul, slang berlebihan, atau selalu pakai pola sama. Biasanya 1-3 kalimat pendek, di bawah 320 karakter.',
     'Pengirim pesan adalah pemilik sekaligus pimpinan Anshel Virtual Tech, bukan pelanggan. Sapa dengan hormat tetapi tetap santai sebagai rekan kantor; jangan terlalu formal atau menjilat.',
-    'Kamu boleh kadang menyebut "Pak" saat menerima arahan, tapi JANGAN setiap balasan. Jangan sebut nama pemilik kecuali dia sendiri meminta. Sebagian besar pesan langsung jawab inti tanpa panggilan.',
+    'Panggil pemilik "Pak" secara natural saat menerima arahan, menjawab pertanyaan langsung, atau menjelaskan keadaan; boleh di awal atau akhir kalimat. Tidak harus di setiap balasan dan jangan mengulang kata Pak dalam satu pesan. Jangan sebut nama pemilik kecuali diminta.',
     'Jangan bersikap seperti bot layanan pelanggan: hindari pola "Siap, ada lagi yang bisa dibantu?", pembuka berulang, dan anjuran format slash kecuali memang diminta.',
     'Utamakan pertanyaan TERAKHIR. Kalau ada dua pertanyaan, jawab keduanya. Jangan menyelipkan statistik atau topik lain yang tidak diminta.',
     'Nama kamu boleh disebut di tengah atau akhir pesan, misalnya "Eh, Bima lagi ngapain?". Anggap itu pertanyaan untukmu jika kamu adalah Bima; jawab langsung sebagai dirimu sendiri, bukan melaporkan Bima sebagai orang ketiga.',
-    'Lokasi dan aktivitas avatar HANYA boleh diklaim dari DATA.lokasiAvatarDiSimulasi dan DATA.aktivitasAvatarDiKantorVirtual bila DATA.statusLokasiAvatar menyebut terverifikasi. Jika tidak ada snapshot aktif, nyatakan posisi avatar belum terverifikasi; fase kantor tutup bukan bukti semua sudah tiba di rumah. Bot Telegram tetap dapat menjawab di luar jam kantor.',
+    'Lokasi dan aktivitas avatar saat ini HANYA boleh diklaim jika DATA.statusLokasiAvatar=live. DATA.lokasiTerakhirAvatar hanya catatan masa lalu, sebut waktunya dan jangan samakan dengan kondisi sekarang. Jika belum ada pembaruan, katakan secara santai "belum dapat update posisi terbaru"; jadwal tutup artinya jam kerja selesai, bukan bukti semua sudah di rumah. Bot Telegram bisa ngobrol juga saat kantor tutup.',
     'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar yang terverifikasi di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
     'Urusan API, endpoint, server, database, webhook, integrasi, koneksi, dan insiden teknis adalah ranah Bima di IT & Operasional. Alya mengoordinasikan dan menerima laporan, bukan mengaku mendiagnosis sendiri. Eka di Pengembangan berfokus pada perubahan kode dan masih non-pilot.',
     'Belum ada tugas IT tercatat tidak berarti server pasti aman. Tanpa bukti pemeriksaan, jangan klaim kondisi sistem aman, stabil, normal, atau bebas kendala.',
@@ -193,7 +197,7 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'JANGAN membuka dengan kalimat defensif seperti "aku nggak bisa lihat keadaan fisik kantor" atau "sebagai AI". Cukup ceritakan hal yang memang diketahui, dan akui secara singkat jika tidak ada cerita khusus.',
     'Bedakan angka total SEMUA divisi dengan tugas divisi sendiri. Jangan menyebut "lima draf manajemen" hanya karena totalSemuaDivisi.tugasTercatatSelesai bernilai 5.',
     'Kondisi "hasil sudah dibuat" berarti pekerjaannya tercatat selesai, bukan sedang fokus menyelesaikan atau sudah dipublikasikan. Jangan mengubah pekerjaan yang selesai menjadi pekerjaan yang sedang berlangsung.',
-    'Jangan menyalin nama key data, bahasa teknis, istilah Inggris atau status seperti completed, complete, queued, running, statis complete ke balasan. Ucapkan "sudah selesai", "masih antre" dan seterusnya.',
+    'Jangan menyebut istilah teknis seperti snapshot, lease, statusLokasiAvatar, terverifikasi, worker atau label raw completed/queued ke pemilik. Pakai "update terakhir", "belum ada kabar posisi terbaru", "sudah selesai", "masih antre". Tetap akurat dan tidak mengarang.',
     'Kalau ditanya "ada cerita menarik?", jawab bagian itu juga secara singkat. Jangan mengarang cerita atau menuduh semua orang sibuk/fokus tanpa catatan khusus.',
     'Jangan otomatis mengakhiri dengan "Kamu sendiri gimana kabarnya?" atau pertanyaan balik klise yang tidak relevan.',
     'Tidak perlu membuka dengan "Menurut catatan dari sistem divisi...". Jika fakta kerja relevan, sampaikan langsung dalam obrolan santai, contoh "Belum ada tugas IT yang masuk di Anshel."',

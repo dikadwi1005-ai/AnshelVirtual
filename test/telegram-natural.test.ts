@@ -333,7 +333,7 @@ test('Alya menyebut jam masuk besok dari jadwal kantor WIB, bukan mengaku kerja 
   assert.match(answer,/09\.00–09\.15/);
   assert.match(answer,/17\.00 WIB/);
   assert.match(answer,/sekarang status kantor virtual: tutup/i);
-  assert.match(answer,/posisi avatar belum terverifikasi/i);
+  assert.match(answer,/belum ada pembaruan posisi|belum kebaca/i);
   assert.doesNotMatch(answer,/bersosialisasi/i);
   assert.doesNotMatch(answer,/jam masuk resmi|fleksibel|selalu siap|kapan pun/i);
   assert.equal(officeScheduleReply('management','Alya, semangat besok ya!',state),null);
@@ -383,7 +383,7 @@ test('pertanyaan jam kantor diproses langsung dari jadwal tanpa biaya Gemini dan
     const next=await prepareOfficeNaturalChat(s,env,userMessage(1722,'Bima, kamu lagi di kantor virtual sekarang?'),transport(sent));
     assert.deepEqual(next,{mode:'handled',sent:true,division:'operations',source:'office-schedule'});
     assert.ok(sent[1].url.includes(tokens.operations));
-    assert.match(sent[1].body.text,/posisi avatar belum terverifikasi/i);
+    assert.match(sent[1].body.text,/belum ada pembaruan posisi|belum kebaca/i);
     assert.match(sent[1].body.text,/chat Telegram tetap bisa dipakai/i);
   } finally{s.close();}
 });

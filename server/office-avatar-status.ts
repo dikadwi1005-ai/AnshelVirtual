@@ -25,7 +25,24 @@ export function officeAvatarPresence(record,now) {
       inBuilding?'Di dalam kantor':'Di area luar kantor';
     people[actor.id]={location,activity:activities[actor.actual]??null};
   }
-  return {fresh,asOf:fresh?record.savedAt:null,people};
+  // An expired browser lease leaves a historical observation, not a live position.
+  const lastSeenValid=!fresh&&Number.isFinite(age)&&age>=0&&age<=18*60*60_000&&
+    Array.isArray(record?.snapshot?.actors)&&record.snapshot.actors.length===ids.size;
+  const lastSeenPeople={};
+  if(lastSeenValid) {
+    const last=officeAvatarPresence({...record,until:Number(now)+5500,savedAt:now},now);
+    Object.assign(lastSeenPeople,last.people);
+  }
+  return {fresh,asOf:fresh?record.savedAt:null,people,
+    lastSeenAt:lastSeenValid?record.savedAt:null,lastSeenPeople};
+}
+
+export function avatarForConversation(state,id) {
+  const live=observedAvatar(state,id);
+  if(live)return {...live,quality:'live',at:state.avatarPresence?.asOf??null};
+  const last=state?.avatarPresence?.lastSeenPeople?.[id];
+  if(last)return {...last,quality:'last-seen',at:state.avatarPresence.lastSeenAt};
+  return {quality:'unknown',location:null,activity:null,at:null};
 }
 
 export function observedAvatar(state,id) {

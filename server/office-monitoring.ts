@@ -35,7 +35,7 @@ export function officeActivityReply(state,configured=pilotDivisions) {
   const lines=employees.map(p=>p.name+': '+(p.executing?'sedang memproses tugas':
     p.task?.status==='queued'?'ada tugas menunggu di antrean':
     'tidak sedang mengeksekusi tugas')+
-    '; avatar virtual '+(p.lokasi?p.lokasi.toLowerCase()+' ('+p.avatar.toLowerCase()+')':'belum terverifikasi lokasinya')+
+    '; avatar virtual '+(p.lokasi?p.lokasi.toLowerCase()+' ('+p.avatar.toLowerCase()+')':'belum ada update lokasi terbaru')+
     (p.task?' ('+p.task.project+', '+(status[p.task.status]||'status belum diketahui')+')':''));
   return (employees.length===4?'Aktivitas empat pegawai Anshel':'Aktivitas pegawai Telegram aktif Anshel')+
     ' (berdasarkan catatan kantor, bukan pengamatan nyata):\n'+

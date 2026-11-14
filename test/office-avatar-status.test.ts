@@ -45,7 +45,7 @@ test('SQLite state exposes observed avatar homes but never mistakes estimates fo
     assert.equal(state.avatarPresence.people.management.location,'Di rumah');
     const q='Alya, kamu masih di kantor sekarang?';
     const answer=officeScheduleReply('management',q,state);
-    assert.match(answer,/lokasi avatar terpantau: di rumah/i);
+    assert.match(answer,/avatarku di rumah/i);
     assert.doesNotMatch(answer,/avatar yang tercatat: bersosialisasi/i);
     const personal=buildOfficeNaturalRequest('management','Alya, lagi ngapain?',state);
     const facts=JSON.parse(personal.systemInstruction.parts[0].text.split('DATA KANTOR TERPERCAYA: ')[1]);
@@ -56,7 +56,7 @@ test('SQLite state exposes observed avatar homes but never mistakes estimates fo
     now+=6000; // leader lease expires; old position is no longer current
     const stale=store.state();
     assert.equal(stale.avatarPresence.fresh,false);
-    assert.match(officeScheduleReply('management',q,stale),/posisi avatar belum terverifikasi/i);
+    assert.match(officeScheduleReply('management',q,stale),/terakhir jam|belum kebaca/i);
     assert.doesNotMatch(officeActivityReply(stale),/di rumah/i);
   } finally { store.close(); }
 });

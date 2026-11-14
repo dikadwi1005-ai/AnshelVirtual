@@ -1,6 +1,7 @@
 import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeIndonesiaCalendarContext } from './office-calendar.ts';
+import { observedAvatar } from './office-avatar-status.ts';
 import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert } from './office-monitoring.ts';
 import { parseGroupWorkspaceCommand } from './telegram-workspace.ts';
 
@@ -743,8 +744,10 @@ export function officeVirtualCheckin(state,configured) {
   const first=relevant?.division||eligible[idx];
   const second=eligible[(eligible.indexOf(first)+1)%eligible.length];
   const names=Object.fromEntries(divisions.map(d=>[d.id,d.employee]));
-  const p1=activities[state.people[first].activity].toLowerCase();
-  const p2=activities[state.people[second].activity].toLowerCase();
+  const a1=observedAvatar(state,first);
+  const a2=observedAvatar(state,second);
+  const p1=a1?.activity?.toLowerCase();
+  const p2=a2?.activity?.toLowerCase();
   if(relevant) {
     const project=clean(relevant.project)||'pekerjaan terbaru';
     const fact={
@@ -762,13 +765,16 @@ export function officeVirtualCheckin(state,configured) {
     return {first,second,text:firstText,reply:answers[second]};
   }
 
+  if(!p1||!p2)return {first,second,
+    text:'Eh '+names[second]+', ada hal yang pengin kita diskusiin hari ini?',
+    reply:'Boleh, tapi kalau belum ada update kerjaan, mending kita fokus yang memang tercatat dulu.'};
   const openers=[
-    'Di kantor virtual, avatarku lagi '+p1+' nih. '+names[second]+', kalau kamu lagi apa?',
-    'Kelihatannya avatarku lagi '+p1+' di simulasi kantor. '+names[second]+', kamu lagi di mana?',
+    'Aku lagi '+p1+' nih di simulasi. '+names[second]+', kamu lagi apa?',
+    'Baru lihat avatarku '+p1+'. '+names[second]+', kamu sendiri gimana?',
   ];
   const responses=[
-    'Aku lagi '+p2+' di kantor virtual. Kalau nanti ada perkembangan tugas, kita lihat catatan Anshel, ya.',
-    'Avatarku lagi '+p2+' di simulasi kantor. Kalau nanti ada update kerjaan, kita bahas dari catatan Anshel.',
+    'Aku lagi '+p2+'. Kalau ada update kerjaan, nanti kita bahas ya.',
+    'Di simulasiku lagi '+p2+'. Belum ada kabar kerja baru yang bisa kupastiin.',
   ];
   return {first,second,text:openers[localDay%openers.length],
     reply:responses[localDay%responses.length]};

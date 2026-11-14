@@ -3,7 +3,8 @@ import { automaticOfficeDivisions } from './telegram-office.ts';
 import { Fault } from './store.ts';
 import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import {workspacePromptContext} from './telegram-workspace.ts';
-import { observedAvatar } from './office-avatar-status.ts';
+import { observedAvatar,avatarForConversation } from './office-avatar-status.ts';
+import { isOfficeLocationQuestion,officeLocationReply } from './office-chat-replies.ts';
 
 const names=divisions.map(d=>d.employee).join('|');
 const leadingPerson=new RegExp('^(?:'+names+')\\s*[,：:]','i');
@@ -121,10 +122,12 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
     recipients.every(id=>allowed.includes(id))&&new Set(recipients).size===recipients.length;
   if(!valid)throw new Fault(400,'Panggilan pegawai aktif tidak valid.');
   const people=recipients.map(id=>{
-    const avatar=observedAvatar(state,id);
+    const avatar=avatarForConversation(state,id);
     return {id,name:labels[id],personality:styles[id],
-      avatar:avatar?.activity??null,lokasiAvatar:avatar?.location??null,
-      posisiTerpantau:Boolean(avatar),
+      avatar:avatar.quality==='live'?avatar.activity:null,
+      lokasiAvatar:avatar.quality==='live'?avatar.location:null,
+      posisiTerpantau:avatar.quality==='live',
+      posisiTerakhir:avatar.quality==='last-seen'?avatar.location:null,
       tasks:(state.tasks||[]).filter(t=>t.division===id).slice(0,2)
         .map(t=>({status:t.status,project:typeof t.project==='string'?t.project.slice(0,55):''}))};
   });
@@ -155,10 +158,10 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
     'Libur nasional, cuti bersama, dan penutupan kantor virtual adalah tiga hal BERBEDA. Jangan berjanji kantor libur kecuali DATA.indonesiaCalendar menunjukkan officeScheduledClosed atau jadwal kantor menyatakan tutup. Libur nasional sendiri bukan otomatis pengubahan jadwal kantor virtual.',
     'Tulis satu kalimat pendek, unik, dan natural untuk setiap pegawai, 10-95 karakter. Tanggapi maksud kalimat terakhir pimpinan, bukan empat variasi teks basa-basi.',
     'Contoh respons saat pemilik bilang "Guys, besok semangat ya": Alya menanggapi koordinasi yang relevan dengan jadwal, Bima santai menanggapi semangat, Citra menanggapi catatan jika dibutuhkan, Dara menanggapi kesejahteraan tim. JANGAN menyalin contoh secara harfiah.',
-    'Gunakan bahasa Indonesia sehari-hari yang wajar. Boleh gunakan "Pak" paling banyak SATU kali pada keseluruhan percakapan, jangan menyebut nama pemilik kecuali diminta.',
+    'Gaya chat Gen Z Indonesia yang santai dan sopan, bukan kaku seperti bot. Boleh "nih", "oke", "iya", "kayaknya", "udah", "nggak" kalau natural. Sapaan "Pak" satu kali saja untuk seluruh rangkaian jawaban (sebaiknya Alya), tidak harus semua pegawai. Jangan menyebut nama pemilik kecuali diminta.',
     'Jangan memulai semua respons dengan "Siap", tidak usah menawarkan format tugas atau perintah bot jika tak ditanya.',
     'Dilarang mengarang hasil kerja, status server, interaksi antarbot, tindakan nyata, atau cerita fisik. Kegiatan avatar hanya simulasi.',
-    'Hanya DATA.people dengan posisiTerpantau=true yang punya lokasi dan aktivitas avatar terverifikasi. Bila false, jangan mengatakan pegawai masih di kantor atau sudah di rumah. Jam kantor tutup tidak membuktikan lokasi tepat pegawai. Bot Telegram tetap bisa berbicara dari mana pun.',
+    'DATA.people.posisiTerpantau=true berarti lokasi live dari kantor 3D. posisiTerakhir hanya bukti terakhir, bukan lokasi saat ini. Jika belum ada update, jelaskan dengan bahasa santai, jangan istilah teknis seperti snapshot/terverifikasi. Kantor tutup tidak otomatis berarti semua sudah sampai rumah. Bot Telegram tetap bisa bicara kapan saja.',
     'Saat pemilik meminta kabar atau update hari ini, utamakan DATA.recentWork dan counts: sebut tugas yang antre atau sedang dikerjakan sebagai fakta, tanpa menganggap semua tugas selesai atau pekerjaan baru selesai hari ini.',
     'Jangan mengatakan tidak ada kabar baru jika DATA menunjukkan antrean atau perkembangan tugas. Bila tidak ada data baru yang dapat diverifikasi, jawab bahwa belum ada perkembangan tugas yang dapat dipastikan, bukan semua informasi kantor kosong.',
     'Khusus Bima: jangan menyimpulkan semua sistem terpantau aman, normal, atau bebas masalah karena tidak ada log monitoring. Khusus Dara: jangan menilai suasana tim kondusif atau saling mendukung tanpa catatan. Khusus Citra: jangan menyimpulkan arsip belum bertambah tanpa data arsip.',
@@ -269,7 +272,7 @@ function fallbackFor(id,q,state={}) {
       const fact=mostRelevant.status==='queued'?'masih antre':
         mostRelevant.status==='running'?'sedang diproses':
         mostRelevant.status==='blocked'?'terhambat':'gagal';
-      if(id==='management')return 'Ada tugas '+who+' yang '+fact+' menurut catatan Anshel. Belum bisa disebut selesai.';
+      if(id==='management')return 'Ada tugas '+who+' yang '+fact+' di Anshel, Pak. Jadi belum bisa dibilang beres.';
       if(id==='operations')return 'Dari catatan tugas, ada pekerjaan yang '+fact+'. Aku belum punya hasil pemeriksaan server.';
       if(id==='administration')return mostRelevant.division==='administration'
         ?'Tugas administrasi '+fact+' di Anshel, jadi belum ada hasil dari tugas itu.'
@@ -287,13 +290,8 @@ function fallbackFor(id,q,state={}) {
     if(waiting)return 'Di divisi ini masih ada tugas antre; belum bisa kusebut selesai.';
     if(done)return 'Ada hasil draf yang tercatat selesai di divisi ini, tinggal ditinjau.';
   }
-  if(category==='activity') {
-    const a=observedAvatar(state,id);
-    if(a)return 'Di simulasi avatarku '+a.location.toLowerCase()+
-      (a.activity?' dan sedang '+a.activity.toLowerCase():'')+'.';
-    return state.phase==='closed'
-      ?'Kantor virtual sudah tutup menurut jadwal, tapi posisi avatarku belum terverifikasi.'
-      :'Posisi avatarku belum terverifikasi dari simulasi yang aktif.';
+  if(category==='activity'||isOfficeLocationQuestion(question)) {
+    return officeLocationReply(state,id,question);
   }
   return groups[category][id];
 }
