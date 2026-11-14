@@ -68,7 +68,7 @@ jobs:
           FILE="anshel-$(date -u +'%Y%m%dT%H%M%SZ').dump.age"
           age -r "${ANSHEL_BACKUP_AGE_RECIPIENT}" -o "${BACKUP_DIR}/${FILE}" "${BACKUP_DIR}/anshel.dump"
           test "$(stat -c '%s' "${BACKUP_DIR}/${FILE}")" -gt 128
-          sha256sum "${BACKUP_DIR}/${FILE}" > "${BACKUP_DIR}/${FILE}.sha256"
+          ( cd "${BACKUP_DIR}" && sha256sum "${FILE}" > "${FILE}.sha256" )
           printf '{"format":"pg_dump custom+age","schema":"anshel","created_utc":"%s","encrypted_file":"%s"}\n' \
             "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "${FILE}" > "${BACKUP_DIR}/backup-info.json"
           rm -f "${BACKUP_DIR}/anshel.dump" "${BACKUP_DIR}/contents.txt"
@@ -84,6 +84,76 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+
+      # Optional until the separate Cloudflare R2 bucket/credentials are configured.
+      # Always upload GitHub artifact first, preserving the primary backup if R2 fails.
+      - name: Upload encrypted backup to Cloudflare R2 and verify it
+        if: ${{ vars.ANSHEL_BACKUP_R2_ENABLED == 'true' }}
+        shell: bash
+        env:
+          R2_ENDPOINT: ${{ vars.ANSHEL_BACKUP_R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.ANSHEL_BACKUP_R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.ANSHEL_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.ANSHEL_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          if [[ -z "${AWS_ACCESS_KEY_ID}" || -z "${AWS_SECRET_ACCESS_KEY}" || -z "${R2_ENDPOINT}" || -z "${R2_BUCKET}" ]]; then
+            echo "::error::Cloudflare R2 enabled but credentials or endpoint/bucket are missing."
+            exit 1
+          fi
+          if [[ ! "${R2_ENDPOINT}" =~ ^https://[a-zA-Z0-9.-]+\.r2\.cloudflarestorage\.com$ ]]; then
+            echo "::error::R2 endpoint must be the HTTPS S3 endpoint from Cloudflare R2 Overview."
+            exit 1
+          fi
+          if [[ ! "${R2_BUCKET}" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]]; then
+            echo "::error::R2 bucket name is invalid."
+            exit 1
+          fi
+          command -v aws >/dev/null || { echo "::error::AWS CLI unavailable on runner."; exit 1; }
+          shopt -s nullglob
+          ENCRYPTED_FILES=("${BACKUP_DIR}"/anshel-*.dump.age)
+          if (( ${#ENCRYPTED_FILES[@]} != 1 )); then
+            echo "::error::Expected exactly one encrypted backup file."
+            exit 1
+          fi
+          ENCRYPTED="${ENCRYPTED_FILES[0]}"
+          FILENAME="${ENCRYPTED##*/}"
+          YEAR="${FILENAME:7:4}"
+          MONTH="${FILENAME:11:2}"
+          OBJECT_PREFIX="anshel/postgres/${YEAR}/${MONTH}"
+          OBJECT_URI="s3://${R2_BUCKET}/${OBJECT_PREFIX}/${FILENAME}"
+          LOCAL_SHA="$(sha256sum "${ENCRYPTED}" | awk '{print $1}')"
+          VERIFY_FILE="${BACKUP_DIR}/r2-copy-verify.age"
+          trap 'rm -f "${VERIFY_FILE}"' EXIT
+
+          # The bucket is private; encryption happens BEFORE upload.
+          aws --endpoint-url "${R2_ENDPOINT}" s3 cp "${ENCRYPTED}" "${OBJECT_URI}" --no-progress --only-show-errors
+          # Download the actual remote bytes; verify integrity independently.
+          aws --endpoint-url "${R2_ENDPOINT}" s3 cp "${OBJECT_URI}" "${VERIFY_FILE}" --no-progress --only-show-errors
+          REMOTE_SHA="$(sha256sum "${VERIFY_FILE}" | awk '{print $1}')"
+          if [[ "${LOCAL_SHA}" != "${REMOTE_SHA}" ]]; then
+            echo "::error::Cloudflare R2 copy checksum mismatch. Offsite backup NOT verified."
+            exit 1
+          fi
+          rm -f "${VERIFY_FILE}"
+
+          aws --endpoint-url "${R2_ENDPOINT}" s3 cp "${ENCRYPTED}.sha256" "${OBJECT_URI}.sha256" --no-progress --only-show-errors
+          aws --endpoint-url "${R2_ENDPOINT}" s3 cp "${BACKUP_DIR}/backup-info.json" "s3://${R2_BUCKET}/${OBJECT_PREFIX}/${FILENAME}.info.json" --no-progress --only-show-errors
+          echo "### Offsite backup: Cloudflare R2 verified" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Encrypted bytes uploaded, downloaded and SHA-256 verified. Bucket: ${R2_BUCKET}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Report offsite storage not yet enabled
+        if: ${{ vars.ANSHEL_BACKUP_R2_ENABLED != 'true' }}
+        shell: bash
+        run: |
+          echo "### Offsite backup: not enabled" >> "${GITHUB_STEP_SUMMARY}"
+          echo "GitHub artifact was created; configure Cloudflare R2 before claiming a second copy." >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Delete temporary files
         if: always()
