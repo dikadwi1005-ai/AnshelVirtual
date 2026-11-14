@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { homes, officeEnvelope } from './layout.js';
+import { batchDistrictModels } from './district-models.js';
 
 function modelParts(parent) {
   const groups=new Map();
@@ -34,11 +35,24 @@ function modelParts(parent) {
   return {add,build};
 }
 
-export function addBuildings(scene) {
+export async function addBuildings(scene,loadModel) {
   const exterior=new THREE.Group(), interior=new THREE.Group(), streets=new THREE.Group();
   exterior.name='Atap dan fasad'; interior.name='Interior rumah';
   scene.add(exterior,interior,streets);
   const shell=modelParts(exterior), rooms=modelParts(interior), paths=modelParts(streets);
+  const importedExterior=new THREE.Group(), importedInterior=new THREE.Group(), homeShell=new THREE.Group();
+  exterior.add(homeShell,importedExterior);
+  interior.add(importedInterior);
+  const homeParts=modelParts(homeShell);
+  const assets=new Map(), fallbackInterior=new THREE.Group();
+  interior.add(fallbackInterior);
+  const fallback=modelParts(fallbackInterior);
+  function placeModel(parent,name,position,size,angle=0,tint) {
+    if (!assets.has(name)) assets.set(name,new Map());
+    const sets=assets.get(name);
+    if (!sets.has(parent)) sets.set(parent,[]);
+    sets.get(parent).push({position,size,angle,tint});
+  }
   const [plaster,bronze,steel]=['#e5d8bc','#936746','#253e48'];
   function window(x,z,y,width,angle) {
     for(const dy of [-.66,.66]) shell.add(steel,x,y+dy,z,width+.16,.09,.15,angle);
@@ -88,34 +102,45 @@ export function addBuildings(scene) {
       const [x,z]=home.point(u,v);
       builder.add(color,x,y,z,width,h,depth,home.angle+rotation,shape,finish);
     };
+    const asset=(name,u,y,v,size,rotation=0)=>{
+      const [x,z]=home.point(u,v);
+      placeModel(importedInterior,name,[x,y,z],size,home.angle+rotation);
+    };
+    placeModel(importedExterior,'district/building-type-'+['a','d','f','i'][home.variant],[home.x,.06,home.z],
+      [w+.35,home.variant===3?5.7:4.65,d+.4],home.angle,['#ffe6d0','#dbf3ff','#fff1c4','#d7ead8'][home.variant]);
+    asset('furniture/loungesofa',-w*.24,.145,.55,[2.22,.94,.94]);
+    asset('furniture/tablecoffee',-w*.24,.145,2.25,[1.22,.38,.47]);
+    asset('district/bedsingle',w*.24,.145,-d*.28,[1.55,.71,2.29]);
+    asset('district/kitchencabinet',w*.25,.145,1.73,[1.8,1.02,.72],Math.PI);
+    asset('district/bathroomcabinet',-w*.25,.145,-d*.30,[1.11,.93,.78]);
+    asset('furniture/toilet',-w*.39,.145,-d*.18,[.48,.69,.52],Math.PI/2);
+    asset('furniture/lamproundfloor',-w*.45,.145,1.18,[.31,1.39,.31]);
+    asset('district/doorwayopen',0,.14,d/2,[1.48,2.14,.15]);
+    asset('furniture/plantsmall2',w*.41,.145,-d*.36,[.43,.62,.43]);
     local(paths,'#a7aa92',0,.025,0,w+1,.14,d+.95);
     local(paths,'#a9a891',0,.043,d/2+.82,2.05,.12,1.71);
     local(paths,'#587553',w*.52,.02,0,1.15,.11,d+2.2);
-    local(shell,wall,0,height/2,-d/2,w,height,.31);
+    local(homeParts,wall,0,height/2,-d/2,w,height,.31);
     for(const side of [-1,1]) {
-      local(shell,wall,side*w/2,.55,0,.28,1.1,d);
-      local(shell,wall,side*w/2,height-.36,0,.28,.72,d);
-      local(shell,wall,side*w*.27,.55,d/2,w*.44,1.1,.29);
-      local(shell,wall,side*w*.27,height-.34,d/2,w*.44,.68,.29);
-      local(shell,wall,side*.79,1.5,d/2,.27,3,.29);
-      const [x,z]=home.point(side*w*.29,d/2);
-      window(x,z,1.61,w*.31,home.angle);
-      const [sx,sz]=home.point(side*w/2,0);
-      window(sx,sz,1.61,d*.63,home.angle+Math.PI/2);
+      local(homeParts,wall,side*w/2,.55,0,.28,1.1,d);
+      local(homeParts,wall,side*w/2,height-.36,0,.28,.72,d);
+      local(homeParts,wall,side*w*.27,.55,d/2,w*.44,1.1,.29);
+      local(homeParts,wall,side*w*.27,height-.34,d/2,w*.44,.68,.29);
+      local(homeParts,wall,side*.79,1.5,d/2,.27,3,.29);
     }
-    local(shell,steel,0,2.21,d/2,1.42,.14,.28);
+    local(homeParts,steel,0,2.21,d/2,1.42,.14,.28);
     if (home.variant===1 || home.variant===2) {
-      local(shell,roof,0,height+.31,0,w*.64,.87,d+1.08,0,'roof');
-      local(shell,steel,0,height,0,w+.63,.20,d+.78);
+      local(homeParts,roof,0,height+.31,0,w*.64,.87,d+1.08,0,'roof');
+      local(homeParts,steel,0,height,0,w+.63,.20,d+.78);
     } else {
-      local(shell,roof,0,height,0,w+.63,.27,d+.63);
+      local(homeParts,roof,0,height,0,w+.63,.27,d+.63);
       if(home.variant===3) {
-        local(shell,wall,-w*.14,height+.53,-d*.17,w*.62,1.09,d*.63);
-        local(shell,roof,-w*.14,height+1.12,-d*.17,w*.70,.25,d*.72);
+        local(homeParts,wall,-w*.14,height+.53,-d*.17,w*.62,1.09,d*.63);
+        local(homeParts,roof,-w*.14,height+1.12,-d*.17,w*.70,.25,d*.72);
       }
     }
-    local(shell,bronze,-w*.22,2.16,d/2+.83,w*.54,.20,1.9);
-    local(shell,steel,-w*.45,1.02,d/2+1.56,.14,2.05,.14);
+    local(homeParts,bronze,-w*.22,2.16,d/2+.83,w*.54,.20,1.9);
+    local(homeParts,steel,-w*.45,1.02,d/2+1.56,.14,2.05,.14);
     local(rooms,'#e9d5af',0,.105,0,w-.32,.08,d-.31);
     local(rooms,wall,0,.43,-d/2,w,.66,.23);
     for (const side of [-1,1]) {
@@ -124,24 +149,11 @@ export function addBuildings(scene) {
     }
     local(rooms,'#b89470',-w*.23,.155,1.28,2.64,.023,2.55);
     // Keep the center aisle clear from the door to the rear rooms.
-    local(rooms,'#477267',-w*.24,.37,.55,2.22,.58,.94);
-    local(rooms,'#335850',-w*.24,.68,.12,2.22,.47,.23);
-    local(rooms,'#966e53',-w*.24,.24,2.25,1.22,.38,.47);
-    local(rooms,'#926b57',w*.24,.31,-d*.28,1.55,.38,2.29);
-    local(rooms,'#e6ded0',w*.24,.54,-d*.29,1.44,.22,2.06);
-    local(rooms,roof,w*.24,.67,-d*.37,1.40,.12,1.17);
-    local(rooms,'#f4e9db',w*.24,.68,-d*.28+ .82,1.28,.15,.45);
-    local(rooms,'#53665a',w*.25,.56,1.73,1.8,1.12,.72);
-    local(rooms,'#bbc0b8',w*.25,1.14,1.73,1.8,.08,.74);
-    local(rooms,'#405153',w*.25-.41,1.19,1.73,.58,.025,.47);
-    local(rooms,'#253638',w*.25+.44,1.192,1.73,.48,.024,.36);
-    for (const du of [.32,.55]) local(rooms,'#808d85',w*.25+du,1.218,1.73,.14,.024,.14,0,'tile');
-    local(rooms,'#9ca6a1',-w*.25,.52,-d*.30,1.11,.96,.78);
-    local(rooms,'#f2eee0',-w*.25,1.04,-d*.30,1.10,.09,.78);
+    local(fallback,'#477267',-w*.24,.37,.55,2.22,.58,.94);
+    local(fallback,'#e6ded0',w*.24,.38,-d*.28,1.55,.48,2.29);
+    local(fallback,'#53665a',w*.25,.56,1.73,1.8,1.12,.72);
     local(rooms,'#81988e',-w*.49,.59,-d*.19,.12,1.1,d*.45);
     local(rooms,'#81988e',-w*.31,.59,-d*.045,w*.37,1.1,.15);
-    local(rooms,'#55605c',-w*.45,.48,1.18,.09,.75,.09,0,'tile');
-    local(rooms,'#fff4cc',-w*.45,.90,1.18,.21,.24,.21,0,'tile','glow');
   }
   for(const side of [-1,1]) {
     paths.add('#46525c',side*36.9,-.018,-.55,2.7,.07,69);
@@ -166,7 +178,16 @@ export function addBuildings(scene) {
   paths.add('#7e9a6b',0,-.022,-27.1,13.5,.08,3.15);
   paths.add('#997958',-3.25,.30,-27.05,2.3,.16,.49);
   paths.add('#997958',3.25,.30,-27.05,2.3,.16,.49);
-  shell.build(); rooms.build(); paths.build();
+  shell.build(); rooms.build(); paths.build(); homeParts.build(); fallback.build();
+  const loaded=await Promise.allSettled([...assets].map(async ([name,placements])=>[await loadModel(name),placements]));
+  const missing=loaded.some(result=>result.status==='rejected');
+  if (!missing) {
+    for(const result of loaded) {
+      const [asset,sets]=result.value;
+      for(const [group,placements] of sets) batchDistrictModels(group,asset,placements);
+    }
+  }
+  homeShell.visible=fallbackInterior.visible=missing;
   const canvas=document.createElement('canvas');
   canvas.width=640; canvas.height=96;
   const ink=canvas.getContext('2d');
@@ -184,7 +205,12 @@ export function addBuildings(scene) {
       const resources=new Set();
       for(const group of [exterior,interior,streets]) {
         group.removeFromParent();
-        for(const mesh of group.children) { mesh.dispose?.(); resources.add(mesh.geometry); resources.add(mesh.material); }
+        group.traverse(mesh=>{
+          if (!mesh.isMesh) return;
+          mesh.dispose?.();
+          if (mesh.parent===importedInterior || mesh.parent===importedExterior) return;
+          resources.add(mesh.geometry); resources.add(mesh.material);
+        });
       }
       texture.dispose();
       for(const resource of resources) resource.dispose();

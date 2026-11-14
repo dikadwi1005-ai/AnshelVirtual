@@ -35,7 +35,36 @@ function testAudio() {
   for(let i=0;i<samples;i++) wave.writeInt16LE(Math.round(Math.sin(i*Math.PI*.11)*1600),44+i*2);
   return {name:'fixture.wav',mimeType:'audio/wav',buffer:wave};
 }
-const shot=(p,name)=>process.env.ANSHEL_SCREENSHOTS && p.screenshot({path:process.env.ANSHEL_SCREENSHOTS+'/phase9-'+name+'.png'});
+const shot=(p,name)=>process.env.ANSHEL_SCREENSHOTS && p.screenshot({path:process.env.ANSHEL_SCREENSHOTS+'/phase10-'+name+'.png'});
+async function recordScene(page) {
+  if (!process.env.ANSHEL_SCREENSHOTS) return async()=>{};
+  await page.evaluate(()=>{
+    const stream=document.querySelector('#scene canvas').captureStream(15);
+    const recorder=new MediaRecorder(stream,{videoBitsPerSecond:1800000});
+    const chunks=[];
+    recorder.ondataavailable=event=>chunks.push(event.data);
+    window.finishSceneRecording=()=>new Promise(resolve=>{
+      recorder.onstop=()=>{
+        stream.getTracks().forEach(track=>track.stop());
+        resolve(URL.createObjectURL(new Blob(chunks,{type:recorder.mimeType})));
+      };
+      recorder.stop();
+    });
+    recorder.start();
+  });
+  return async name=>{
+    const clip=await page.evaluate(()=>window.finishSceneRecording());
+    const bytes=Buffer.from(await page.evaluate(async url=>{
+      const data=new Uint8Array(await (await fetch(url)).arrayBuffer());
+      URL.revokeObjectURL(url);
+      let binary='';
+      for (let i=0;i<data.length;i+=16384) binary+=String.fromCharCode(...data.subarray(i,i+16384));
+      return btoa(binary);
+    },clip),'base64');
+    assert.ok(bytes.length>2000);
+    await writeFile(process.env.ANSHEL_SCREENSHOTS+'/phase10-'+name+'.webm',bytes);
+  };
+}
 async function perf(page) {
   return page.evaluate(()=>new Promise(resolve=>{
     const samples=[];
@@ -90,6 +119,16 @@ try {
   await desktop.waitForFunction(()=>document.getElementById('scene').dataset.buildings==='exterior');
   await shot(desktop,'building-rear');
   await desktop.locator('#building-toggle').click();
+  if (process.env.ANSHEL_SCREENSHOTS) {
+    for(const room of ['management','operations','administration','hr','development','creative','video','social','research',
+      'marketing','qa','finance','executive','reception','meeting','gaming','pantry','restroom','garden','relaxation','hub']) {
+      await desktop.locator('[data-panel=office]').click();
+      await desktop.locator('[data-room='+room+']').click();
+      await desktop.locator('#inspector-back').click();
+      await desktop.waitForTimeout(620);
+      await shot(desktop,'room-'+room);
+    }
+  }
   await desktop.locator('[data-panel=office]').click();
   await desktop.locator('[data-room=development]').click();
   await desktop.locator('[data-workstation=development]').click();
@@ -172,7 +211,7 @@ try {
       for (let i=0;i<data.length;i+=16384) binary+=String.fromCharCode(...data.subarray(i,i+16384));
       return btoa(binary);
     });
-    await writeFile(process.env.ANSHEL_SCREENSHOTS+'/phase9-replay.webm',Buffer.from(encoded,'base64'));
+    await writeFile(process.env.ANSHEL_SCREENSHOTS+'/phase10-replay.webm',Buffer.from(encoded,'base64'));
   }
   assert.ok(bytes>2000); await desktop.waitForFunction(()=>document.querySelector('#studio-output video')?.readyState>=2); const dimensions=await desktop.locator('#studio-output video').evaluate(v=>[v.videoWidth,v.videoHeight]); assert.deepEqual(dimensions,[960,540]);
   metrics.replay=await perf(desktop);
@@ -238,15 +277,24 @@ try {
   store.settings({mode:'auto'});
   const lunch=await open({viewport:{width:1280,height:800}});
   await lunch.locator('[data-panel=district]').click();
+  await lunch.waitForTimeout(13500);
+  assert.equal(await lunch.locator('#scene').getAttribute('data-food-courier'),'false');
+  assert.equal(await lunch.locator('#district-delivery').textContent(),'');
   await lunch.locator('[data-district=gate]').click();
   await lunch.locator('#district-food [name=employee]').selectOption('marketing');
   await lunch.locator('#district-food [name=food]').selectOption('Nasi uduk');
+  const finishDeliveryRecording=await recordScene(lunch);
   await lunch.locator('#district-food button').click();
   await lunch.locator('#district-delivery').filter({hasText:'Kurir Saji Kampung'}).waitFor({timeout:40000});
   assert.match(await lunch.locator('#district-delivery').innerText(),/Nasi uduk · Jihan/);
+  const observer=await open({viewport:{width:900,height:650},deviceScaleFactor:1});
+  await observer.waitForFunction(()=>document.getElementById('scene').dataset.foodCourier==='true',{},{timeout:25000});
+  await observer.close();
   await shot(lunch,'scooter');
   await lunch.locator('#district-delivery').filter({hasText:'Pesanan diserahkan'}).waitFor({timeout:145000});
   await shot(lunch,'food-handoff');
+  await lunch.waitForFunction(()=>document.getElementById('scene').dataset.foodCourier==='false',{},{timeout:90000});
+  await finishDeliveryRecording('food-delivery');
   await lunch.close();
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({videoBytes:bytes,mp4,metrics,errors}));

@@ -22,6 +22,10 @@ const casual=[
   ['katanya biskuit pantri tinggal satu. Kamu tahu ceritanya?', 'Tadi masih ada tiga. Mungkin yang dua lagi ikut rapat.', 'Besok kita bawa stok cadangan, deh.', 'Setuju. Tapi kali ini kasih nama di toplesnya.'],
   ['kalau akhir pekan hujan, kamu lebih pilih film atau tidur?', 'Film dulu. Biasanya baru lima menit sudah ketiduran.', 'Berarti dua-duanya jalan.', 'Kalau filmnya bagus, besok baru kita lanjut.'],
   ['ada rekomendasi lagu buat perjalanan pulang?', 'Aku lagi suka musik yang bisa diputar tanpa ikut nyanyi.', 'Nah, itu baru cocok buat naik kendaraan umum.', 'Nanti kita tukeran playlist.'],
+  ['mau cari tempat makan yang bisa didatangi jalan kaki?', 'Boleh, sekalian ambil udara di luar.', 'Kita lewat trotoar depan saja.', 'Yuk setelah jadwal kosong.'],
+  ['kamu pernah nyoba puzzle di lounge?', 'Pernah. Bagian susun warna bikin lupa waktu.', 'Nanti aku coba satu ronde.', 'Aku temani kalau sudah longgar.'],
+  ['tanaman di depan rumahmu kena matahari pagi?', 'Cukup terang, jadi aku pindahkan pot lebih dekat teras.', 'Aku masih cari tanaman buat sudut rumah.', 'Coba mulai dari pot kecil dulu.'],
+  ['kalau istirahat sebentar biasanya kamu pilih ke mana?', 'Aku suka duduk di teras kalau cuacanya adem.', 'Aku biasanya bawa buku ke sofa.', 'Boleh juga ganti suasana hari ini.'],
 ];
 
 export function chooseConversationAnchor(actor,reservations,isAvailable,room) {
@@ -48,8 +52,8 @@ function line(room,round,index,other,office) {
     'Oke, sisanya kita cek lagi setelah kembali ke meja.',
     'Aku cek materi yang tersedia sebelum menambahkan keputusan.',
   ][index%4];
-  if (round%4!==0) {
-    const text=casual[round%4-1][index];
+  if (round%(casual.length+1)!==0) {
+    const text=casual[(round-1)%casual.length][index];
     return index===0 ? other.employee+', '+text : text;
   }
   if (index===0) return other.employee+', '+prompts[room][round%2];

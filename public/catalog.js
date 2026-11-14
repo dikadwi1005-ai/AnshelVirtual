@@ -28,4 +28,6 @@ export const activities = {
   outdoor:'Duduk di taman depan', commute:'Melalui gerbang kantor',
   home:'Istirahat di rumah',
   pickup:'Mengambil makanan',
+  'home-sleep':'Tidur di rumah', phone:'Melihat ponsel', snack:'Makan di pantri',
+  notes:'Mengecek catatan', stretch:'Meregangkan badan', brew:'Membuat kopi',
 };

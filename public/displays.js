@@ -240,10 +240,10 @@ export function createDisplays() {
           const players=game?.players.size ?? 0;
           const time=players ? game.elapsed : now/1000;
           const frame=gameVisible ? Math.floor(time*24) : 0;
-          const stamp=players+':'+frame;
+          const stamp=players+':'+frame+':'+(game?.genre ?? 0);
           if (stamp!==screen.stamp) {
             screen.stamp=stamp;
-            drawLoungeGame(screen.context,frame/24,players);
+            drawLoungeGame(screen.context,frame/24,players,game?.genre);
             screen.texture.needsUpdate=true;
           }
           continue;

@@ -263,6 +263,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     renderer.toneMappingExposure=THREE.MathUtils.lerp(day.exposure,evening.exposure,night);
     if (world) {
       world.warmGlow.opacity=THREE.MathUtils.lerp(day.glow,evening.glow,night);
+      world.fixtureLight(night);
       world.outdoors.lighting(night);
     }
   }
@@ -372,7 +373,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
     nav=navigation(world.obstacles);
     const liveNav={clear:(...args)=>nav.clear(...args),route:(...args)=>nav.route(...args)};
-    traffic=await campusTraffic(scene,liveNav);
+    traffic=await campusTraffic(scene,liveNav,(id,asset)=>population?.receiveFood(id,asset));
     population=await createActors(scene,liveNav,shadow,state,requestDialogue,storage);
     population.campus(traffic.obstacles);
     if(shared) restoreOffice(shared);
@@ -489,9 +490,14 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
         else population.followSnapshot(delta/steps);
       }
       world?.showDockedControllers(population.game.players);
-      traffic?.update(Math.min(delta,.06),state,[...population.actors.map(actor=>actor.root),...(character?[character.root]:[])],population.actors);
-      population.pickup(traffic?.pickup());
-      if (traffic) host.dataset.campusActors=String(traffic.roots.filter(root=>root.visible).length);
+      if (!shared || leading) traffic?.update(Math.min(delta,.06),state,
+        [...population.actors.map(actor=>actor.root),...(character?[character.root]:[])],population.actors);
+      else traffic?.follow(shared.snapshot?.traffic,delta);
+      population.pickup(traffic?.pickup(),traffic?.handingOff());
+      if (traffic) {
+        host.dataset.campusActors=String(traffic.roots.filter(root=>root.visible).length);
+        host.dataset.foodCourier=String(traffic.courierActive());
+      }
       if (population.actors.length===12 && population.actors[0].root.visible && now>=nextRecording) {
         nextRecording=now+400;
         host.dispatchEvent(new CustomEvent('office-frame',{detail:{...population.replayFrame(),agenda:meeting?.agenda}}));
@@ -624,6 +630,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       controls.dispose();
       world?.outdoors.dispose();
       world?.buildings.dispose();
+      world?.disposeFixtures();
       traffic?.dispose();
       renderer.dispose();
       preview.geometry.dispose();
@@ -639,7 +646,9 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       if(shared && !leading) return shared.snapshot?.actors.find(actor=>actor.id===id)?.life;
       return population?.living.snapshot(id);
     },
-    sharedSnapshot() { return !replay && leading && population?.actors.length===12?population.capture():undefined; },
+    sharedSnapshot() {
+      if (!replay && leading && population?.actors.length===12) return {...population.capture(),traffic:traffic?.snapshot()};
+    },
     sharedOffice(value) {
       if(!value || replay || laidOut)return;
       if(!value.leader || !leading || value.resume) restoreOffice(value);

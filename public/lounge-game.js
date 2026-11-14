@@ -22,7 +22,35 @@ function text(ctx,value,x,y,size,color) {
 
 export const isGameReaction=time=>time>=4 && time%8>=4 && time%8<4.9;
 
-export function drawLoungeGame(ctx,time,players) {
+export function drawLoungeGame(ctx,time,players,genre=0) {
+  if (genre===1) {
+    rect(ctx,0,0,width,height,'#203c34');
+    for(let x=30;x<450;x+=55) rect(ctx,x,46,52,181,x%2?'#427955':'#3a704d');
+    ctx.strokeStyle='#d0e4ab'; ctx.strokeRect(26,45,428,184); ctx.strokeRect(26,88,42,97); ctx.strokeRect(412,88,42,97);
+    rect(ctx,239,46,2,181,'#d0e4ab');
+    for(let i=0;i<8;i++) {
+      const x=92+i%4*96+Math.sin(time+i*2)*21,y=86+Math.floor(i/4)*83+Math.cos(time*.9+i)*22;
+      rect(ctx,x,y,13,14,i%2?'#efa872':'#83d4ef');
+    }
+    rect(ctx,236+Math.sin(time*1.82)*162,135+Math.cos(time*1.3)*61,8,8,'#fff4cd');
+    text(ctx,'KICKOFF KAMPUNG',28,30,20,'#edf5d0');
+    text(ctx,players?players+' pemain':'Demo',31,252,15,'#d4e9ca');
+    return;
+  }
+  if (genre===2) {
+    rect(ctx,0,0,width,height,'#222941');
+    const palette=['#80d4c3','#e1a577','#928ed9','#e1cf8a'];
+    for(let i=0;i<48;i++) {
+      const x=95+i%8*36,y=46+Math.floor(i/8)*30;
+      const index=(i*5+Math.floor(time+i%4))%palette.length;
+      rect(ctx,x,y,29,24,palette[index]);
+    }
+    const active=Math.floor(time*3)%48;
+    ctx.strokeStyle='#fff6ce'; ctx.lineWidth=2; ctx.strokeRect(93+active%8*36,44+Math.floor(active/8)*30,33,28);
+    text(ctx,'RONA MOSAIK',28,28,20,'#f0dec9');
+    text(ctx,players?players+' pemain':'Demo',32,251,15,'#dfd4ef');
+    return;
+  }
   rect(ctx,0,0,width,height,'#27305a');
   rect(ctx,0,76,width,34,'#483c72');
   ctx.fillStyle='#ffd083';

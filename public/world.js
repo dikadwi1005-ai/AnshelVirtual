@@ -201,7 +201,7 @@ function contactShadows(parent,props,map) {
 
 export async function buildWorld(scene,shadowTexture) {
   const outdoors=addOutdoors(scene,model);
-  const buildings=addBuildings(scene);
+  const buildings=await addBuildings(scene,model);
   const upperWalls=new THREE.Group();
   scene.add(upperWalls);
   const displays=createDisplays();
@@ -223,6 +223,18 @@ export async function buildWorld(scene,shadowTexture) {
   const propLists=new Map(rooms.map(room=>[room.id,propsFor(room)]));
   const furnitureGroups=new Map(), movable=new THREE.Group();
   const editable=new Set(layoutItems.map(item=>item.id));
+  const fixtures=new THREE.Group();
+  const fixture=new THREE.InstancedMesh(new THREE.BoxGeometry(1.25,.043,.085),
+    new THREE.MeshStandardMaterial({color:'#f5ead4',emissive:'#ffd39d',emissiveIntensity:.35}),rooms.length-1);
+  const mount=new THREE.Object3D();
+  rooms.filter(room=>room.id!=='garden').forEach((room,index)=>{
+    mount.position.set(room.x,2.73,room.z+room.depth*.36);
+    mount.updateMatrix();
+    fixture.setMatrixAt(index,mount.matrix);
+  });
+  fixture.computeBoundingSphere();
+  fixtures.add(fixture);
+  scene.add(fixtures);
   scene.add(movable);
   const wings=new Map();
   const jobs=[];
@@ -257,6 +269,7 @@ export async function buildWorld(scene,shadowTexture) {
   const obstacles=[...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)))];
   return {errors,warmGlow,obstacles,outdoors,buildings,displays,showDockedControllers:addLounge(scene),
     walls(mode,eye,target,close) {
+      fixtures.visible=mode==='interior' && close;
       upperWalls.visible=mode==='interior';
       if (!upperWalls.visible) return;
       for(const mesh of upperWalls.children) {
@@ -266,6 +279,8 @@ export async function buildWorld(scene,shadowTexture) {
           (eye[coordinate]-edge)*(room[coordinate]-edge)>0;
       }
     },
+    fixtureLight(night) { fixture.material.emissiveIntensity=.25+night*.7; },
+    disposeFixtures() { fixture.dispose(); fixture.geometry.dispose(); fixture.material.dispose(); },
     pickFurniture(ray) {
       const hit=ray.intersectObjects(movable.children,true)[0];
       if (!hit || ray.intersectObjects(scene.children,true).some(other=>

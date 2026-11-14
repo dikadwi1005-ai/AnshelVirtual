@@ -176,3 +176,7 @@ Lingkungan luar, rapat empat peserta, replay tersimpan, perubahan Studio, audit 
 ## Checkpoint Phase 9 · Arsitektur dan perumahan
 
 [Checkpoint Phase 9](phase-9-living-world.md) mencatat perumahan pegawai, perjalanan rumah–kantor, mode gedung dan kurir simulasi.
+
+## Checkpoint Phase 10 · Kawasan dan aktivitas
+
+[Checkpoint Phase 10](phase-10-living-world.md) mencatat aset eksternal yang dipakai, pesanan simulasi, variasi aktivitas, regresi, dan pemeriksaan visual yang masih terbuka.

@@ -10,9 +10,13 @@ test('office presence preserves a snapshot through refresh and rejects an old le
   const client='11111111-1111-4111-8111-111111111111';
   const next='22222222-2222-4222-8222-222222222222';
   const snapshot={actors:divisions.map(({id})=>({id,position:[1,2],y:.02,angle:0,stage:'walking',
-    activity:'coffee',actual:'coffee',anchor:'coffee-0',animation:'walk',seat:0,path:[[2,3]]})),turn:null};
+    activity:'coffee',actual:'coffee',anchor:'coffee-0',animation:'walk',seat:0,path:[[2,3]]})),turn:null,
+    traffic:{status:'Menunggu pengambilan',active:true,mounted:false,parcel:true,variant:1,roadVariant:2,
+      poses:[[false,0,0,0],[true,-1.8,22.4,0],[true,15.9,24.2,1.5],[true,53,37.5,-1.5]]}};
   try {
     assert.equal(validPresence({client,snapshot}),true);
+    assert.equal(validPresence({client,snapshot:{...snapshot,traffic:undefined}}),true);
+    assert.equal(validPresence({client,snapshot:{...snapshot,traffic:{...snapshot.traffic,roadVariant:9}}}),false);
     assert.equal(validPresence({client,snapshot:{...snapshot,actors:snapshot.actors.slice(1)}}),false);
     assert.equal(store.officePresence({client}).leader,true);
     assert.deepEqual(store.officePresence({client,snapshot}).snapshot,snapshot);

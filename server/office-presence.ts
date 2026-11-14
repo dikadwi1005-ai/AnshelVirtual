@@ -29,7 +29,17 @@ export function validPresence(input) {
     (!actor.room||anchor(actor.room))&&typeof actor.animation==='string'&&/^[a-z-]{1,25}$/.test(actor.animation)&&
     (!actor.life||life(actor.life))&&bounded(actor.seat,1)&&actor.seat>=0&&
     Array.isArray(actor.path)&&actor.path.length<=160&&actor.path.every(pair)) &&
-    (!snapshot.turn||ids.has(snapshot.turn.id)&&typeof snapshot.turn.text==='string'&&snapshot.turn.text.length<=320);
+    (!snapshot.turn||ids.has(snapshot.turn.id)&&typeof snapshot.turn.text==='string'&&snapshot.turn.text.length<=320) &&
+    (snapshot.traffic===undefined || validTraffic(snapshot.traffic));
+}
+
+function validTraffic(value) {
+  return value && typeof value.status==='string' && value.status.length<=160 &&
+    ['active','mounted','parcel'].every(key=>typeof value[key]==='boolean') &&
+    Number.isInteger(value.variant) && value.variant>=-1 && value.variant<=3 &&
+    (value.roadVariant===undefined || Number.isInteger(value.roadVariant) && value.roadVariant>=-1 && value.roadVariant<=2) &&
+    Array.isArray(value.poses) && [3,4].includes(value.poses.length) && value.poses.every(item=>
+      Array.isArray(item)&&item.length===4&&typeof item[0]==='boolean'&&pair(item.slice(1,3))&&bounded(item[3],Math.PI));
 }
 
 export function exchangeOfficePresence(current,input,now) {

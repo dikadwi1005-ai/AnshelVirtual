@@ -67,8 +67,8 @@ test('semua titik aktivitas dapat dicapai dan gerak duduk hanya mengecualikan ku
         assert.ok(nav.clear(anchor.approach,anchor.point,anchor.support,.075),anchor.id);
         if (!anchor.support) continue;
         assert.ok(obstacles.find(item=>item.id===anchor.support),anchor.id);
-        assert.ok(distance(anchor.point,anchor.approach)<1.15);
-        assert.ok(anchor.height>=.38 && anchor.height<=.49);
+        assert.ok(distance(anchor.point,anchor.approach)<(name==='home-sleep'?1.25:1.15));
+        assert.ok(anchor.height>=.38 && anchor.height<=(name==='home-sleep'?.72:.49));
       }
     }
   }
@@ -105,7 +105,8 @@ test('lounge mempunyai satu TV dan dua tempat duduk yang dibagi dengan penonton'
   assert.equal(props.some(prop=>prop.type==='arcade'),false);
   const games=activityAnchors(divisions[0],'game');
   const viewers=activityAnchors(divisions[0],'tv');
-  assert.deepEqual(games.map(slot=>slot.id),viewers.map(slot=>slot.id));
+  assert.deepEqual(games.map(slot=>slot.id),viewers.filter(slot=>slot.controller!==undefined).map(slot=>slot.id));
+  assert.equal(viewers[0].support,'gaming-spectator');
   assert.deepEqual(games.map(slot=>slot.controller),[0,1]);
   assert.ok(games.every(slot=>slot.clip==='game-play' && slot.angle===-Math.PI/2));
   assert.deepEqual([0,3.99,4,4.89,4.91,12].map(isGameReaction),[false,false,true,true,false,true]);

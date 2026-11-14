@@ -11,6 +11,7 @@ import { isGameReaction } from './lounge-game.js';
 import { characterClearance } from './character-mode.js';
 import { createLivingOffice } from './living-office.js';
 import { flatMesh, model } from './world.js';
+import { fittedModel } from './district-models.js';
 
 const speed=1.72;
 const personalSpace=.70;
@@ -84,7 +85,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   const living=createLivingOffice({storage});
   const conversations=createConversations(living.record);
   const monologues=createMonologues();
-  const game={elapsed:0,players:new Set()};
+  const game={elapsed:0,players:new Set(),genre:0};
   const pads=[gamepad(),gamepad()];
   const cupGeometry=new THREE.CylinderGeometry(.047,.036,.092,12);
   const cupMaterial=new THREE.MeshStandardMaterial({color:0xf1a758,roughness:.62});
@@ -113,6 +114,11 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     if (idle) {
       clips.set('speak',mixer.clipAction(gestureClip(idle,'speak',1.36,talk)));
       clips.set('drink',mixer.clipAction(gestureClip(idle,'drink',3.8,{'arm-right':[-.52,-1.50,-1.38,-.52]})));
+      clips.set('snack',mixer.clipAction(gestureClip(idle,'snack',3.1,{head:[0,.16,.12,0],'arm-right':[-.28,-1.34,-1.16,-.28]})));
+      clips.set('brew',mixer.clipAction(gestureClip(idle,'brew',3.6,{'arm-right':[0,-.57,-.82,0]})));
+      clips.set('take-parcel',mixer.clipAction(gestureClip(idle,'take-parcel',1.1,{'arm-left':[0,-1.2,-1.08,0]})));
+      const sleeping=gestureClip(idle,'home-sleep',4.2,{head:[0,.045,.025,0],'arm-left':[.11,.12,.11,.11]});
+      clips.set('home-sleep',mixer.clipAction(sleeping));
     }
     const sit=result.value.animations.find(clip=>clip.name==='sit');
     if (sit) {
@@ -125,6 +131,12 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         {head:talk.head,'arm-right':[0,-.37,-.18,0]})));
       clips.set('read',mixer.clipAction(gestureClip(sit,'read',4.4,
         {head:[.18,.23,.28,.18],'arm-left':[-.82,-.86,-.82,-.82],'arm-right':[-.82,-.82,-.69,-.82]})));
+      clips.set('desk-nap',mixer.clipAction(gestureClip(sit,'desk-nap',6,
+        {head:[.42,.56,.53,.42],'arm-left':[-.66,-.82,-.82,-.66],'arm-right':[-.76,-.91,-.90,-.76]})));
+      clips.set('phone',mixer.clipAction(gestureClip(sit,'phone',3.2,
+        {head:[.23,.29,.24,.23],'arm-right':[-.93,-1.03,-.98,-.93]})));
+      clips.set('stretch',mixer.clipAction(gestureClip(sit,'stretch',3.3,
+        {head:[0,-.22,-.16,0],'arm-right':[0,-2,-1.78,0],'arm-left':[0,-1.78,-2,0]})));
     }
     const plan=initial?.people?.[person.id];
     const actor={person,root,figure,shadowMesh,mixer,clips,stature:profile.stature,action:null,animation:'idle',path:[],
@@ -137,7 +149,9 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     const cover=new THREE.Mesh(coverGeometry,coverMaterial), pages=new THREE.Mesh(paperGeometry,paperMaterial);
     pages.position.y=.015;
     actor.book.add(cover,pages);
-    root.add(actor.cup,actor.book);
+    actor.phone=new THREE.Mesh(new THREE.BoxGeometry(.11,.021,.20),new THREE.MeshStandardMaterial({color:'#354f6a',emissive:'#24568a',emissiveIntensity:.3}));
+    root.add(actor.cup,actor.book,actor.phone);
+    actor.phone.visible=false;
     actor.cup.visible=actor.book.visible=false;
     const anchor=chooseAnchor(actor,actor.activity,reservations,nav) ?? station(roomById[person.id]);
     reservations.set(anchor.id,actor);
@@ -194,7 +208,18 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     actor.blocked=0;
   }
 
-  let campus=[], pickup=null;
+  let campus=[], pickup=null, handingOff=false;
+  function receiveFood(id,asset) {
+    const actor=actors.find(item=>item.person.id===id);
+    if (!actor) return;
+    if (asset && !actor.parcel) {
+      actor.parcel=fittedModel(asset,[.29,.24,.27]);
+      actor.parcel.position.set(-.23,.77,.35);
+      actor.root.add(actor.parcel);
+    }
+    actor.foodTime=28;
+    actor.retry=0;
+  }
   function occupied(actor,point,from) {
     for (const {root,radius} of campus) {
       if (!root.visible) continue;
@@ -304,7 +329,10 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     if (actor.directTurn && (actor.directTurn.remaining-=delta)<=0) actor.directTurn=null;
     const reacting=actor.reaction>0 && !plan?.taskLock;
     const attending=state?.meeting?.participants.includes(actor.person.id) && !plan?.taskLock;
+    actor.foodTime=plan?.taskLock?0:Math.max(0,(actor.foodTime ?? 0)-delta);
+    if (actor.parcel) actor.parcel.visible=actor.foodTime>0;
     const requested=attending?'meeting':pickup===actor.person.id && !plan?.taskLock && state?.phase==='lunch'?'pickup':
+      actor.foodTime>0?'snack':
       actor.invitation?'meet-dika':reacting && actor.activity!=='meet-dika'?actor.activity:plan?.activity ?? 'desk';
     const room=attending?'meeting':plan?.room;
     actor.retry=Math.max(0,actor.retry-delta);
@@ -338,22 +366,31 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         actor.root.rotation.y+=THREE.MathUtils.clamp(turnAngle,-delta*3,delta*3);
       }
       const gaming=seated && actor.actual==='game';
-      const clip=(speaking || chatting) && seated ? 'seated-speak' : speaking || chatting || speakingAlone ? 'speak' :
-        gaming ? (isGameReaction(game.elapsed)?'game-react':'game-play') :
+      const receiving=handingOff && pickup===actor.person.id && actor.stage==='arrived' && actor.actual==='pickup';
+      const clip=receiving?'take-parcel':(speaking || chatting) && seated ? 'seated-speak' : speaking || chatting || speakingAlone ? 'speak' :
+        gaming ? (isGameReaction(game.elapsed+actor.person.index%3*.25)?'game-react':'game-play') :
           reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.stage==='waiting'?'idle':actor.anchor.clip;
       play(actor,clip);
       actor.reaction=Math.max(0,actor.reaction-delta);
     }
     actor.animationDelta+=delta;
-    const propActive=actor.animation==='drink'||actor.animation==='read';
+    const sleeping=actor.actual==='home-sleep' && ['seated','sitting','departing'].includes(actor.stage);
+    actor.figure.rotation.x=sleeping?-Math.PI/2*actor.seatProgress:0;
+    const propActive=['drink','read','phone','brew'].includes(actor.animation);
     const interval=actor.stage==='walking'||actor.stage==='sitting'||actor.stage==='departing' ? 1/30 : 1/12;
     if (animate || actor.animationDelta>=interval || propActive) {
       if (actor.headYaw) actor.head.rotateY(-actor.headYaw);
       actor.mixer.update(actor.animationDelta);
       actor.animationDelta=0;
       actor.headYaw=0;
-      actor.cup.visible=actor.animation==='drink';
+      actor.cup.visible=['drink','brew'].includes(actor.animation);
       actor.book.visible=actor.animation==='read';
+      actor.phone.visible=actor.animation==='phone';
+      if (actor.phone.visible) {
+        actor.hands[1].localToWorld(gripRight.set(-.12,-.075,.06));
+        actor.phone.position.copy(actor.root.worldToLocal(gripRight));
+        actor.phone.rotation.x=.46;
+      }
       if (actor.cup.visible) {
         actor.hands[1].localToWorld(gripRight.set(-.138,-.075,.030));
         actor.cup.position.copy(actor.root.worldToLocal(gripRight));
@@ -382,12 +419,14 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   }
 
   function updateGame(delta) {
+    const wasPlaying=game.players.size>0;
     game.players.clear();
     for (const actor of actors) {
       if (actor.stage!=='seated' || actor.actual!=='game') continue;
       const slot=actor.anchor.controller;
       const pad=pads[slot];
       if (!pad) continue;
+      if (!wasPlaying && !game.players.size) game.genre=actor.person.index%3;
       game.players.add(slot);
       if (pad.parent!==actor.root) actor.root.add(pad);
       actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.019));
@@ -432,6 +471,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       actor.root.rotation.y=value.angle+angleDifference(end.angle,value.angle)*fraction;
       actor.shadowMesh.position.x=actor.root.position.x;
       actor.shadowMesh.position.z=actor.root.position.z;
+      actor.figure.rotation.x=value.animation==='home-sleep'?-Math.PI/2:0;
       actor.cup.visible=value.animation==='drink';
       actor.book.visible=value.animation==='read';
       play(actor,value.animation,0);
@@ -500,10 +540,17 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       actor.root.position.z=THREE.MathUtils.lerp(actor.root.position.z,z,t);
       actor.root.rotation.y+=angleDifference(value.angle,actor.root.rotation.y)*t;
       actor.mixer.update(delta);
+      actor.figure.rotation.x=actor.actual==='home-sleep' && ['seated','sitting','departing'].includes(actor.stage)?
+        -Math.PI/2*actor.seatProgress:0;
       actor.shadowMesh.position.x=actor.root.position.x;
       actor.shadowMesh.position.z=actor.root.position.z;
       actor.cup.visible=actor.animation==='drink';
       actor.book.visible=actor.animation==='read';
+      actor.phone.visible=actor.animation==='phone';
+      if (actor.phone.visible) {
+        actor.hands[1].localToWorld(gripRight.set(-.12,-.075,.06));
+        actor.phone.position.copy(actor.root.worldToLocal(gripRight));
+      }
       if(actor.cup.visible) {
         actor.hands[1].localToWorld(gripRight.set(-.138,-.075,.030));
         actor.cup.position.copy(actor.root.worldToLocal(gripRight));
@@ -522,7 +569,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   return {
     errors,actors,turns:conversations.turns,game,living,
     campus(obstacles) { campus=obstacles; },
-    pickup(id) { pickup=id; },
+    pickup(id,handoff) { pickup=id; handingOff=handoff; },
+    receiveFood,
     capture,apply,followSnapshot,replayFrame,replayPose,
     visible(value) {
       for(const actor of actors) actor.root.visible=actor.shadowMesh.visible=value;

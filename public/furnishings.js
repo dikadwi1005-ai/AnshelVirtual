@@ -163,6 +163,7 @@ export function propsFor(room) {
       put('shelf',-2.58,2.38);
       put('books',-2.69,2.36,{y:1.24});
       put('lamp',2.5,1.55);
+      put('seat',2.66,-2.51,{turn:-Math.PI*.76,key:'spectator'});
       put('plant',-2.83,-1.68);
       break;
     case 'pantry':
@@ -275,11 +276,13 @@ export const conversationAnchors=[['hub',0,0],['reception',0,-1],['garden',-.25,
 });
 
 export function activityAnchors(person,activity) {
-  if (['desk','work','nap'].includes(activity)) return [{
-    ...station(roomById[person.id]), clip:'sit',
+  if (['desk','work','nap','phone','notes','stretch'].includes(activity)) return [{
+    ...station(roomById[person.id]), clip:{nap:'desk-nap',phone:'phone',notes:'read',stretch:'stretch'}[activity] ?? 'sit',
   }];
   const options = {
     coffee:()=>[-1.45,0,1.45].map((x,i)=>localAnchor(roomById.pantry,x,1.34,0,'drink','coffee-'+i)),
+    brew:()=>[-1.45,0,1.45].map((x,i)=>localAnchor(roomById.pantry,x,1.34,0,'brew','coffee-'+i)),
+    snack:()=>[-1.45,0,1.45].map((x,i)=>localAnchor(roomById.pantry,x,1.34,0,'snack','coffee-'+i)),
     game:()=>gamingSeats('game-play'),
     rest:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'sit','rest-'+i,{
       height:.42, approach:point(roomById.relaxation,x,.90), support:'relaxation-sofa',
@@ -287,7 +290,9 @@ export function activityAnchors(person,activity) {
     read:()=>[-.56,.56].map((x,i)=>localAnchor(roomById.relaxation,x,1.88,0,'read','rest-'+i,{
       height:.42, approach:point(roomById.relaxation,x,.90), support:'relaxation-sofa',
     })),
-    tv:()=>gamingSeats('sit'),
+    tv:()=>[localAnchor(roomById.gaming,2.66,-2.51,-Math.PI*.76,'sit','gaming-spectator',{
+      height:.42,approach:point(roomById.gaming,3.48,-2.53),support:'gaming-spectator',
+    }),...gamingSeats('sit')],
     talk:()=>conversationAnchors.flat(),
     meeting:()=>[-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,.22,Math.PI,'sit','meeting-'+i,{
       height:.42, approach:point(roomById.meeting,x,-.58), support:'meeting-seat-'+(i?'right':'left'),
@@ -303,6 +308,11 @@ export function activityAnchors(person,activity) {
       const home=homeByEmployee[person.id];
       return [{id:home.id,point:home.sofa,approach:home.point(-home.width*.24,1.43),
         angle:home.angle,height:.42,clip:'sit',support:home.id+'-sofa'}];
+    },
+    'home-sleep':()=>{
+      const home=homeByEmployee[person.id];
+      return [{id:home.id+'-bed',point:home.bed,approach:home.point(home.width*.24-1.16,-home.depth*.28),
+        angle:home.angle,height:.67,clip:'home-sleep',support:home.id+'-bed'}];
     },
     pickup:()=>[{id:'food-pickup',point:foodStop,approach:foodStop,angle:-Math.PI/2,height:0,clip:'idle'}],
     outdoor:()=>outdoorSeats.map(([x,z],i)=>({id:'outdoor-'+i,point:[x,z],approach:[x,z-.78],angle:Math.PI,

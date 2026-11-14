@@ -14,8 +14,11 @@ const effects={
   talk:[-.12,-.06,.45,.20,.42], meeting:[-.22,-.22,.35,-.12,-.14],
   stroll:[.18,.33,-.06,.70,1.02], outdoor:[.61,.41,-.06,1.02,.34],
   commute:[.30,.25,.04,.41,.08], home:[1.1,.32,-.03,1.3,.4], travel:[-.16,-.10,-.14,-.13,-.13],
+  nap:[.92,.23,-.16,1.1,-.1], phone:[.08,-.18,.24,.1,.68], notes:[-.16,.38,-.13,-.16,-.04],
+  stretch:[.50,.2,-.04,.83,.09], brew:[.43,.32,.05,.26,.1], snack:[.7,.25,.18,.39,.19],
+  visit:[-.07,-.06,.41,.09,.23], tv:[.13,-.08,.14,.36,.74], 'home-sleep':[1.62,.42,-.02,1.82,.08],
 };
-const choices=['desk','coffee','rest','read','game','stroll'];
+const choices=['desk','coffee','rest','read','game','stroll','nap','phone','notes','stretch','brew','snack','visit','tv'];
 
 function defaults(person) {
   const vary=(factor,range)=>(person.index*factor)%range;
@@ -71,12 +74,20 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
       read:(100-values.focus)*.48+(100-values.rest)*.36,
       game:(100-values.fun)*.86+values.energy*.10,
       stroll:(100-values.fun)*.56+(100-values.rest)*.29,
+      nap:values.energy<34 && values.rest<48?76:7,
+      phone:(100-values.fun)*.49+(100-values.social)*.14,
+      notes:working?33+values.focus*.20:14,
+      stretch:22+(100-values.rest)*.34,
+      brew:(100-values.energy)*.43+17,
+      snack:phase==='lunch'?49+(100-values.energy)*.15:16,
+      visit:25+(100-values.social)*.39,
+      tv:25+(100-values.fun)*.32,
     };
     const hobby=person.id==='research'?'read':person.hobby==='talk'?'stroll':person.hobby;
     const ranked=choices.map(activity=>{
       const crowded=[...staff.values()].filter(other=>other!==member && other.activity===activity).length;
       const occupied=actors.filter(actor=>actor.person!==person && actor.actual===activity && available(actor)).length;
-      const capacity={coffee:3,rest:2,read:2,game:2,stroll:3}[activity];
+      const capacity={coffee:3,brew:2,snack:2,rest:2,read:2,game:2,tv:1,stroll:3,visit:2}[activity];
       const shared=activity==='rest'||activity==='read' ? [...staff.values()].filter(other=>
         other!==member && ['rest','read'].includes(other.activity)).length : crowded;
       const full=capacity && Math.max(shared,occupied)>=capacity;
@@ -84,7 +95,7 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
         (recent[0]===activity?24:recent.includes(activity)?9:0)-(full?90:0)};
     });
     ranked.sort((a,b)=>b.score-a.score);
-    change(member,ranked[0].activity,40);
+    change(member,ranked[0].activity,24+random()*22);
   }
 
   function schedule(phase,byId) {
@@ -167,13 +178,15 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
         dirty=true;
       }
       const atHome=staysHome(state?.phase,clock-phaseStarted,member.person.index);
+      const wallHour=Number.isFinite(state?.now)?new Date(state.now+7*3600000).getUTCHours():12;
+      const sleep=state?.phase==='closed' && (wallHour>=21 || wallHour<6) && clock-phaseStarted>42+member.person.index*2;
       plans[id]={task:remote?.task ?? null,executing:Boolean(remote?.executing),taskLock,
-        activity:taskLock?(remote.executing?'work':'desk'):atHome?'home':
+        activity:taskLock?(remote.executing?'work':'desk'):atHome?(sleep?'home-sleep':'home'):
           state?.phase==='lunch' && member.person.index<2?'outdoor':member.activity,room:member.event?.room};
     }
     if (advance) {
       schedule(state?.phase,byId);
-      for (const [id,member] of staff) if (member.event && !plans[id].taskLock && !['home','outdoor'].includes(plans[id].activity)) {
+      for (const [id,member] of staff) if (member.event && !plans[id].taskLock && !['home','home-sleep','outdoor'].includes(plans[id].activity)) {
         plans[id].activity=member.activity;
         plans[id].room=member.event.room;
       }
