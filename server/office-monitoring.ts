@@ -1,5 +1,6 @@
 import { activities,divisions } from '../public/catalog.js';
 import { scheduledDraftDay } from './schedule.ts';
+import { observedAvatar } from './office-avatar-status.ts';
 
 export const pilotDivisions=['management','operations','administration','hr'];
 const labels=Object.fromEntries(divisions.map(x=>[x.id,x.employee]));
@@ -19,7 +20,9 @@ export function officeEmployeeOverview(state,configured=pilotDivisions) {
     const person=state.people?.[id]||{};
     const jobs=(state.tasks||[]).filter(t=>t.division===id);
     const task=jobs.find(t=>t.status==='running')||jobs.find(t=>t.status==='queued')||jobs[0];
-    return {id,name:labels[id],avatar:activities[person.activity]||'Belum tercatat',
+    const avatar=observedAvatar(state,id);
+    return {id,name:labels[id],avatar:avatar?.activity??'Belum terverifikasi',
+      lokasi:avatar?.location??null,
       executing:person.executing===true||jobs.some(t=>t.status==='running'),
       task:task?{status:task.status,project:safeProject(task.project),
         hasResult:task.status==='completed'&&!!task.sha256}:null};
@@ -32,7 +35,7 @@ export function officeActivityReply(state,configured=pilotDivisions) {
   const lines=employees.map(p=>p.name+': '+(p.executing?'sedang memproses tugas':
     p.task?.status==='queued'?'ada tugas menunggu di antrean':
     'tidak sedang mengeksekusi tugas')+
-    '; avatar virtual '+p.avatar.toLowerCase()+
+    '; avatar virtual '+(p.lokasi?p.lokasi.toLowerCase()+' ('+p.avatar.toLowerCase()+')':'belum terverifikasi lokasinya')+
     (p.task?' ('+p.task.project+', '+(status[p.task.status]||'status belum diketahui')+')':''));
   return (employees.length===4?'Aktivitas empat pegawai Anshel':'Aktivitas pegawai Telegram aktif Anshel')+
     ' (berdasarkan catatan kantor, bukan pengamatan nyata):\n'+

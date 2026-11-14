@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { officeNewsResult } from './bcift-news.ts';
 import { exchangeOfficePresence, officePresenceKey } from './office-presence.ts';
+import { officeAvatarPresence } from './office-avatar-status.ts';
 import { changeMeeting, meetingKey } from './studio-meetings.ts';
 import { automationKey, updateAutomation } from './studio-schedule.ts';
 import { replayKey, replayOperation } from './replay-archive.ts';
@@ -363,6 +364,7 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         capabilities: await readSetting('worker_kinds', []),
         tasks: taskRows.map(publicTask), running,
         people: employeePlans(simulation?.at ?? now(), simulation?.phase ?? officePhase, running, assigned),
+        avatarPresence: officeAvatarPresence(await readSetting(officePresenceKey,null),now()),
         counts: Object.fromEntries(counts.map(row => [row.status, row.count])),
         projects, audit: await rows('SELECT * FROM anshel.audit ORDER BY id DESC LIMIT 60'),
       };

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { officeNewsResult } from './bcift-news.ts';
 import { exchangeOfficePresence, officePresenceKey } from './office-presence.ts';
+import { officeAvatarPresence } from './office-avatar-status.ts';
 import { changeMeeting, meetingKey } from './studio-meetings.ts';
 import { automationKey, updateAutomation } from './studio-schedule.ts';
 import { replayKey, replayOperation } from './replay-archive.ts';
@@ -323,6 +324,7 @@ export function createStore(path: string, now = Date.now) {
         capabilities: readSetting('worker_kinds',[]),
         tasks:all('SELECT * FROM tasks ORDER BY created DESC,rowid DESC LIMIT 150').map(publicTask),
         running, people:employeePlans(simulation?.at ?? now(),simulation?.phase ?? officePhase,running,assigned),
+        avatarPresence:officeAvatarPresence(readSetting(officePresenceKey,null),now()),
         counts:Object.fromEntries(all('SELECT status,count(*) AS count FROM tasks GROUP BY status').map(row=>[row.status,row.count])),
         projects:all("SELECT project,status,count(*) AS count FROM tasks WHERE project<>'' GROUP BY project,status ORDER BY project"),
         audit:all('SELECT * FROM audit ORDER BY id DESC LIMIT 60'),

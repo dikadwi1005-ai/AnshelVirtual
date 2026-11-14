@@ -52,7 +52,8 @@ test('panggilan kolektif membangun satu Gemini JSON tanpa nama/identitas sensiti
   assert.match(prompt,/PALING BANYAK SATU|paling banyak SATU/i);
   assert.match(prompt,/pegawai yang sedang bebas/i);
   assert.match(prompt,/operations/);
-  assert.match(prompt,/Bermain PS5/);
+  assert.match(prompt,/posisiTerpantau/);
+  assert.doesNotMatch(prompt,/Bermain PS5/);
   assert.ok(!prompt.includes('Password privat'));
   assert.equal(req.generationConfig.responseMimeType,'application/json');
   assert.ok(req.generationConfig.maxOutputTokens>=1400,'allow thinking + four distinct responses');

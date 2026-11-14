@@ -38,7 +38,8 @@ test('empat pegawai menggunakan persona yang benar-benar berbeda; fakta tidak di
   assert.equal(privateContext.contohTugasDivisiTerbaru[0].kondisi,'masih antre');
   assert.equal(privateContext.contohTugasDivisiTerbaru[0].proyek,'Jadwal uji');
   assert.equal(privateContext.totalSemuaDivisi,undefined);
-  assert.equal(privateContext.aktivitasAvatarDiKantorVirtual,'Mengambil kopi');
+  assert.equal(privateContext.aktivitasAvatarDiKantorVirtual,undefined);
+  assert.match(privateContext.faseOperasionalKantor,/work/);
   assert.deepEqual(JSON.parse(personalities[0].split('DATA KANTOR TERPERCAYA: ')[1]).contohTugasDivisiTerbaru,[]);
 });
 
@@ -232,7 +233,8 @@ test('12 persona punya gaya berbeda; pertanyaan pegawai tidak mendapat statistik
     'Bima, lagi ngapain? Ada masalah teknis yang perlu kita beresin nggak?',state);
   const factual=JSON.parse(specific.systemInstruction.parts[0].text.split('DATA KANTOR TERPERCAYA: ')[1]);
   assert.equal(factual.pegawai,'Bima');
-  assert.equal(factual.aktivitasAvatarDiKantorVirtual,'Bermain PS5');
+  assert.equal(factual.aktivitasAvatarDiKantorVirtual,undefined);
+  assert.match(factual.statusLokasiAvatar,/belum terverifikasi/);
   assert.equal(factual.adaTugasYangSedangDieksekusi,false);
   assert.equal(factual.totalSemuaDivisi,undefined);
   assert.equal(factual.contohTugasDivisiTerbaru.length,0);
@@ -331,7 +333,8 @@ test('Alya menyebut jam masuk besok dari jadwal kantor WIB, bukan mengaku kerja 
   assert.match(answer,/09\.00–09\.15/);
   assert.match(answer,/17\.00 WIB/);
   assert.match(answer,/sekarang status kantor virtual: tutup/i);
-  assert.match(answer,/aktivitas avatar yang tercatat: bersosialisasi/i);
+  assert.match(answer,/posisi avatar belum terverifikasi/i);
+  assert.doesNotMatch(answer,/bersosialisasi/i);
   assert.doesNotMatch(answer,/jam masuk resmi|fleksibel|selalu siap|kapan pun/i);
   assert.equal(officeScheduleReply('management','Alya, semangat besok ya!',state),null);
   assert.equal(officeScheduleReply('management','Alya, jam berapa sekarang?',state),null);
@@ -380,7 +383,7 @@ test('pertanyaan jam kantor diproses langsung dari jadwal tanpa biaya Gemini dan
     const next=await prepareOfficeNaturalChat(s,env,userMessage(1722,'Bima, kamu lagi di kantor virtual sekarang?'),transport(sent));
     assert.deepEqual(next,{mode:'handled',sent:true,division:'operations',source:'office-schedule'});
     assert.ok(sent[1].url.includes(tokens.operations));
-    assert.match(sent[1].body.text,/aktivitas avatar yang tercatat/i);
+    assert.match(sent[1].body.text,/posisi avatar belum terverifikasi/i);
     assert.match(sent[1].body.text,/chat Telegram tetap bisa dipakai/i);
   } finally{s.close();}
 });

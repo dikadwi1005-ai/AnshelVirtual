@@ -3,6 +3,7 @@ import { automaticOfficeDivisions } from './telegram-office.ts';
 import { Fault } from './store.ts';
 import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import {workspacePromptContext} from './telegram-workspace.ts';
+import { observedAvatar } from './office-avatar-status.ts';
 
 const names=divisions.map(d=>d.employee).join('|');
 const leadingPerson=new RegExp('^(?:'+names+')\\s*[,：:]','i');
@@ -120,9 +121,10 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
     recipients.every(id=>allowed.includes(id))&&new Set(recipients).size===recipients.length;
   if(!valid)throw new Fault(400,'Panggilan pegawai aktif tidak valid.');
   const people=recipients.map(id=>{
-    const avatar=state.people?.[id];
+    const avatar=observedAvatar(state,id);
     return {id,name:labels[id],personality:styles[id],
-      avatar:avatar&&Object.hasOwn(activities,avatar.activity)?activities[avatar.activity]:null,
+      avatar:avatar?.activity??null,lokasiAvatar:avatar?.location??null,
+      posisiTerpantau:Boolean(avatar),
       tasks:(state.tasks||[]).filter(t=>t.division===id).slice(0,2)
         .map(t=>({status:t.status,project:typeof t.project==='string'?t.project.slice(0,55):''}))};
   });
@@ -137,7 +139,8 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
         project:typeof t.project==='string'?t.project.slice(0,55):''})):null,
     recentConversation:summarizeSharedOfficeConversation(history,allowed),
     groupWorkspace:workspacePromptContext(state.groupWorkspace,state.now??Date.now()),
-    indonesiaCalendar:officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,question)};
+    indonesiaCalendar:officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,question),
+    faseOperasionalKantor:state.phase??'tidak diketahui'};
   const prompt=[
     'Ini adalah chat Telegram kantor virtual Anshel Virtual Tech. Pengirim adalah PEMILIK sekaligus pimpinan, bukan pelanggan.',
     'Pembagian peran: masalah API, server, database, webhook, koneksi dan integrasi adalah tanggung jawab Bima (IT & Operasional); Alya hanya mengoordinasikan dan merekap. Eka (Pengembangan) menangani pekerjaan kode namun botnya belum aktif. Jangan menyebut Alya sebagai teknisi atau mengklaim Bima sudah memeriksa layanan tanpa bukti.',
@@ -155,6 +158,7 @@ export function buildOfficeCollectiveRequest(question,recipients,state,history=[
     'Gunakan bahasa Indonesia sehari-hari yang wajar. Boleh gunakan "Pak" paling banyak SATU kali pada keseluruhan percakapan, jangan menyebut nama pemilik kecuali diminta.',
     'Jangan memulai semua respons dengan "Siap", tidak usah menawarkan format tugas atau perintah bot jika tak ditanya.',
     'Dilarang mengarang hasil kerja, status server, interaksi antarbot, tindakan nyata, atau cerita fisik. Kegiatan avatar hanya simulasi.',
+    'Hanya DATA.people dengan posisiTerpantau=true yang punya lokasi dan aktivitas avatar terverifikasi. Bila false, jangan mengatakan pegawai masih di kantor atau sudah di rumah. Jam kantor tutup tidak membuktikan lokasi tepat pegawai. Bot Telegram tetap bisa berbicara dari mana pun.',
     'Saat pemilik meminta kabar atau update hari ini, utamakan DATA.recentWork dan counts: sebut tugas yang antre atau sedang dikerjakan sebagai fakta, tanpa menganggap semua tugas selesai atau pekerjaan baru selesai hari ini.',
     'Jangan mengatakan tidak ada kabar baru jika DATA menunjukkan antrean atau perkembangan tugas. Bila tidak ada data baru yang dapat diverifikasi, jawab bahwa belum ada perkembangan tugas yang dapat dipastikan, bukan semua informasi kantor kosong.',
     'Khusus Bima: jangan menyimpulkan semua sistem terpantau aman, normal, atau bebas masalah karena tidak ada log monitoring. Khusus Dara: jangan menilai suasana tim kondusif atau saling mendukung tanpa catatan. Khusus Citra: jangan menyimpulkan arsip belum bertambah tanpa data arsip.',
@@ -284,9 +288,12 @@ function fallbackFor(id,q,state={}) {
     if(done)return 'Ada hasil draf yang tercatat selesai di divisi ini, tinggal ditinjau.';
   }
   if(category==='activity') {
-    const a=state.people?.[id];
-    if(a&&Object.hasOwn(activities,a.activity))
-      return 'Di kantor virtual avatarku lagi '+activities[a.activity].toLowerCase()+'.';
+    const a=observedAvatar(state,id);
+    if(a)return 'Di simulasi avatarku '+a.location.toLowerCase()+
+      (a.activity?' dan sedang '+a.activity.toLowerCase():'')+'.';
+    return state.phase==='closed'
+      ?'Kantor virtual sudah tutup menurut jadwal, tapi posisi avatarku belum terverifikasi.'
+      :'Posisi avatarku belum terverifikasi dari simulasi yang aktif.';
   }
   return groups[category][id];
 }

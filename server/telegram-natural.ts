@@ -7,6 +7,7 @@ import { officeGroupConfig,configuredOfficeBots,sendOfficeBotMessage,
 import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,buildOfficeCollectiveRequest,
   resolveOfficeCollectiveResponse,ownerReplyContext,conversationQuestion,groupDelayMs } from './telegram-group.ts';
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
+import { observedAvatar } from './office-avatar-status.ts';
 import {parseGroupWorkspaceCommand,workspacePromptContext} from './telegram-workspace.ts';
 import {loadTelegramMedia,questionForMedia,attachMediaToGeminiRequest} from './telegram-media.ts';
 import {isJihanNewsQuery,readBciftBlogTitles,addJihanNewsGrounding,
@@ -118,10 +119,10 @@ export function officeScheduleReply(division,question,state) {
     const currentStatus=timePeriodName[phase]||'status belum diketahui';
     reply+=' Sekarang status kantor virtual: '+currentStatus+'.';
     if(state.mode && state.mode!=='auto') reply+=' Mode operasional sedang diatur manual.';
-    const avatar=state.people?.[division];
-    if(avatar && Object.hasOwn(activities,avatar.activity)) {
-      reply+=' Aktivitas avatar yang tercatat: '+activities[avatar.activity].toLowerCase()+'.';
-    }
+    const avatar=observedAvatar(state,division);
+    if(avatar) reply+=' Lokasi avatar terpantau: '+avatar.location.toLowerCase()+
+      (avatar.activity?' ('+avatar.activity.toLowerCase()+')':'')+'.';
+    else reply+=' Posisi avatar belum terverifikasi karena tidak ada snapshot simulasi yang aktif.';
     reply+=' Chat Telegram tetap bisa dipakai di luar jadwal.';
   }
   return reply;
@@ -147,7 +148,8 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
   const facts={pegawai:person.employee,divisi:person.name,contohTugasDivisiTerbaru:taskData,
     groupWorkspace:workspacePromptContext(state.groupWorkspace,state.now??Date.now()),
     kalenderIndonesia:officeIndonesiaCalendarContext(state.now??Date.now(),state.schedule,question),
-    cakupanData:'Catatan tugas dan simulasi kantor virtual; bukan log error, hasil audit atau verifikasi kondisi server.'};
+    faseOperasionalKantor:state.phase??'tidak diketahui',
+    cakupanData:'Catatan tugas dan snapshot simulasi kantor virtual; bukan log error, hasil audit atau verifikasi kondisi server.'};
   if(wantsCompanyOverview(spokenQuestion)) {
     facts.totalSemuaDivisi={
       tugasMasihAntre:Number(c.queued)||0,tugasSedangDiproses:Number(c.running)||0,
@@ -155,9 +157,14 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     };
   }
   const avatar=state.people?.[division];
-  if(wantsAvatarActivity(spokenQuestion) && avatar && Object.hasOwn(activities,avatar.activity)) {
-    facts.aktivitasAvatarDiKantorVirtual=activities[avatar.activity];
-    facts.adaTugasYangSedangDieksekusi=avatar.executing===true;
+  if(wantsAvatarActivity(spokenQuestion)) {
+    const observed=observedAvatar(state,division);
+    if(observed) {
+      facts.aktivitasAvatarDiKantorVirtual=observed.activity;
+      facts.lokasiAvatarDiSimulasi=observed.location;
+      facts.statusLokasiAvatar='terverifikasi dari snapshot simulasi yang aktif';
+    } else facts.statusLokasiAvatar='belum terverifikasi; jangan menebak posisi avatar.';
+    facts.adaTugasYangSedangDieksekusi=avatar?.executing===true;
   }
   const instructions=[
     'Kamu adalah '+person.employee+', pegawai AI Anshel Virtual Tech yang sedang berbicara di grup Telegram privat.',
@@ -168,7 +175,8 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'Jangan bersikap seperti bot layanan pelanggan: hindari pola "Siap, ada lagi yang bisa dibantu?", pembuka berulang, dan anjuran format slash kecuali memang diminta.',
     'Utamakan pertanyaan TERAKHIR. Kalau ada dua pertanyaan, jawab keduanya. Jangan menyelipkan statistik atau topik lain yang tidak diminta.',
     'Nama kamu boleh disebut di tengah atau akhir pesan, misalnya "Eh, Bima lagi ngapain?". Anggap itu pertanyaan untukmu jika kamu adalah Bima; jawab langsung sebagai dirimu sendiri, bukan melaporkan Bima sebagai orang ketiga.',
-    'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar YANG TERCATAT di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
+    'Lokasi dan aktivitas avatar HANYA boleh diklaim dari DATA.lokasiAvatarDiSimulasi dan DATA.aktivitasAvatarDiKantorVirtual bila DATA.statusLokasiAvatar menyebut terverifikasi. Jika tidak ada snapshot aktif, nyatakan posisi avatar belum terverifikasi; fase kantor tutup bukan bukti semua sudah tiba di rumah. Bot Telegram tetap dapat menjawab di luar jam kantor.',
+    'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar yang terverifikasi di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
     'Urusan API, endpoint, server, database, webhook, integrasi, koneksi, dan insiden teknis adalah ranah Bima di IT & Operasional. Alya mengoordinasikan dan menerima laporan, bukan mengaku mendiagnosis sendiri. Eka di Pengembangan berfokus pada perubahan kode dan masih non-pilot.',
     'Belum ada tugas IT tercatat tidak berarti server pasti aman. Tanpa bukti pemeriksaan, jangan klaim kondisi sistem aman, stabil, normal, atau bebas kendala.',
     'Jangan pernah bilang sistem terpantau aman, semua server normal, atau tim sedang kondusif/kompak/saling mendukung jika itu hanya dugaan dari percakapan. Ceritakan apa yang benar-benar tercatat, bukan membuat kesimpulan umum.',
