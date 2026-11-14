@@ -1,0 +1,39 @@
+{
+  "name": "Anshel · Studio Scheduler",
+  "active": false,
+  "nodes": [
+    {
+      "id": "studio-wib-trigger",
+      "name": "Setiap 15 menit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": {
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 15 }] }
+      }
+    },
+    {
+      "id": "studio-run-due",
+      "name": "Jalankan jadwal Studio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/studio-tick",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": { "timeout": 15000 }
+      }
+    }
+  ],
+  "connections": {
+    "Setiap 15 menit": {
+      "main": [[{ "node": "Jalankan jadwal Studio", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "timezone": "Asia/Jakarta", "executionOrder": "v1" }
+}

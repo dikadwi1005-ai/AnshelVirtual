@@ -1,6 +1,8 @@
 import pg from 'pg';
 import { officeNewsResult } from './bcift-news.ts';
 import { exchangeOfficePresence, officePresenceKey } from './office-presence.ts';
+import { changeMeeting, meetingKey } from './studio-meetings.ts';
+import { automationKey, updateAutomation } from './studio-schedule.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
@@ -71,6 +73,24 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
   }
 
   return {
+    async studioSchedule(input=undefined) {
+      if (input===undefined) return readSetting(automationKey,[]);
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293116)',[],client);
+        const value=updateAutomation(await readSetting(automationKey,[],client),input,now());
+        await writeSetting(automationKey,value,client);
+        return value;
+      });
+    },
+    async studioMeeting(input=undefined) {
+      if (input===undefined) return changeMeeting(await readSetting(meetingKey,null),undefined,now());
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293115)',[],client);
+        const value=changeMeeting(await readSetting(meetingKey,null,client),input,now());
+        await writeSetting(meetingKey,value,client);
+        return value;
+      });
+    },
     async officePresence(input) {
       return transaction(async client=>{
         await query('SELECT pg_advisory_xact_lock(17293114)',[],client);

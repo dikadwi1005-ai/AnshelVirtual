@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { officeNewsResult } from './bcift-news.ts';
 import { exchangeOfficePresence, officePresenceKey } from './office-presence.ts';
+import { changeMeeting, meetingKey } from './studio-meetings.ts';
+import { automationKey, updateAutomation } from './studio-schedule.ts';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
@@ -83,6 +85,22 @@ export function createStore(path: string, now = Date.now) {
   };
 
   return {
+    studioSchedule(input=undefined) {
+      if (input===undefined) return readSetting(automationKey,[]);
+      return transaction(()=>{
+        const value=updateAutomation(readSetting(automationKey,[]),input,now());
+        writeSetting(automationKey,value);
+        return value;
+      });
+    },
+    studioMeeting(input=undefined) {
+      if (input===undefined) return changeMeeting(readSetting(meetingKey,null),undefined,now());
+      return transaction(()=>{
+        const value=changeMeeting(readSetting(meetingKey,null),input,now());
+        writeSetting(meetingKey,value);
+        return value;
+      });
+    },
     officePresence(input) {
       return transaction(()=>{
         const exchange=exchangeOfficePresence(readSetting(officePresenceKey,null),input,now());

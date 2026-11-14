@@ -8,6 +8,8 @@ import { createStore, Fault } from './store.ts';
 import { telegram } from './telegram.ts';
 import { createDialogue } from './dialogue.ts';
 import { validPresence } from './office-presence.ts';
+import { createNationCity } from './nation-city.ts';
+import { ownerAutomation, runAutomation } from './studio-schedule.ts';
 
 const root = fileURLToPath(new URL('../',import.meta.url));
 const mime = {
@@ -51,6 +53,7 @@ async function json(req) {
 
 export function officeHandler(store, env = process.env) {
   const dialogue=createDialogue(env);
+  const nationCity=createNationCity(env);
   const sessions = new Map();
   let attempts = 0;
   let windowStart = Date.now();
@@ -139,6 +142,12 @@ export function officeHandler(store, env = process.env) {
           return respond({chatId:env.TELEGRAM_CHAT_ID,reply:['Anshel Virtual Tech · Ringkasan kantor',
             'Worker: '+(state.worker ? 'terhubung' : 'offline'),...counts].join('\n')});
         }
+        if (path==='/api/integrations/studio-tick' && post) {
+          if (!configured(env.N8N_TOKEN) || !equal(bearer,env.N8N_TOKEN)) throw new Fault(401,'Token n8n ditolak.');
+          if (env.STUDIO_SCHEDULER_ENABLED!=='true') throw new Fault(404,'Scheduler Studio belum aktif.');
+          if (Object.keys(await json(req)).length) throw new Fault(400,'Pemicu jadwal tidak menerima parameter.');
+          return respond(await runAutomation(store));
+        }
         if (!authed) throw new Fault(401,'Masuk sebagai Dika untuk melanjutkan.');
         if (path === '/api/logout' && post) {
           sessions.delete(token);
@@ -150,6 +159,12 @@ export function officeHandler(store, env = process.env) {
           ...await store.state(),dialogueEnabled:dialogue.enabled,dialogueStatus:dialogue.status,
         });
         if (path === '/api/dialogue' && post) return respond(await dialogue.generate(await json(req)));
+        if (path==='/api/studio/schedule' && (post || req.method==='GET'))
+          return respond({enabled:env.STUDIO_SCHEDULER_ENABLED==='true',
+            plans:await store.studioSchedule(post?ownerAutomation(await json(req)):undefined)});
+        if (path === '/api/studio/nation-city' && req.method==='GET') return respond(await nationCity());
+        if (path === '/api/studio/meetings' && (post || req.method==='GET'))
+          return respond(await store.studioMeeting(post?await json(req):undefined));
         if (path === '/api/office-presence' && post) {
           const input=await json(req);
           if(!validPresence(input))throw new Fault(400,'Snapshot kantor tidak valid.');

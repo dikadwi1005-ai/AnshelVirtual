@@ -49,7 +49,7 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 async function syncPresence() {
-  if (!scene || presenceBusy || studio.replaying || scene.layoutActive() || scene.meetingActive() || document.hidden || $('workspace').hidden) return;
+  if (!scene || presenceBusy || studio.replaying || scene.layoutActive() || document.hidden || $('workspace').hidden) return;
   presenceBusy=true;
   const takeOver=claimPresence;
   claimPresence=false;
@@ -167,6 +167,7 @@ async function enter() {
     },openWorkstation,input=>api('dialogue',input).then(result=>result.lines).catch(()=>[]),
     {low:graphicsPreference()});
     scene.state(office);
+    void studio.syncMeeting();
     await syncPresence();
     scene.voice(voiceEnabled);
     scene.spatialAudio(spatialAudio);
@@ -711,7 +712,7 @@ function openTask(description='',project='') {
   $('task-dialog').showModal();
 }
 const studio=officeStudio({host:$('scene'),content:$('panel-content'),scene:()=>scene,office:()=>office,
-  escape,notice,release:releasePresence,connect:syncPresence,newTask:openTask});
+  escape,notice,release:releasePresence,connect:syncPresence,newTask:openTask,api});
 $('new-task').addEventListener('click',()=>openTask());
 buttons('[data-close]').forEach(button=>button.addEventListener('click',()=>$('task-dialog').close()));
 $('task-form').addEventListener('submit',async event=>{

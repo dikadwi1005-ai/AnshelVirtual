@@ -1,9 +1,9 @@
 import { divisions } from './catalog.js';
 
 // One world unit equals one meter. Ground is y=0.
-export const site = {width:48.8, depth:43};
-const edgeX = site.width/2;
-const edgeZ = site.depth/2;
+export const site = {width:74, depth:68};
+const edgeX = 24.4;
+const edgeZ = 21.5;
 const bevel = 2.3;
 export const footprint = [
   [-edgeX+bevel,-edgeZ], [edgeX-bevel,-edgeZ], [edgeX,-edgeZ+bevel], [edgeX,edgeZ-bevel],
@@ -11,9 +11,26 @@ export const footprint = [
 ];
 
 export function withinSite([x,z], margin = 0) {
-  return Math.abs(x)<=edgeX-margin && Math.abs(z)<=edgeZ-margin &&
-    Math.abs(x)+Math.abs(z)<=edgeX+edgeZ-bevel-Math.SQRT2*margin;
+  return Math.abs(x)<=site.width/2-margin && Math.abs(z)<=site.depth/2-margin;
 }
+
+const parcelX=34, parcelZ=29;
+export const gate={walkway:-1.8,vehicle:8.5,z:parcelZ};
+export const fenceRuns=[
+  [-parcelX,-parcelZ,parcelX,-parcelZ],[-parcelX,-parcelZ,-parcelX,parcelZ],[parcelX,-parcelZ,parcelX,parcelZ],
+  [-parcelX,parcelZ,-3.3,parcelZ],[-.3,parcelZ,4.9,parcelZ],[12.1,parcelZ,parcelX,parcelZ],
+];
+export function fenceBox([x,z,toX,toZ]) {
+  return [Math.min(x,toX)-.17,Math.min(z,toZ)-.17,Math.max(x,toX)+.17,Math.max(z,toZ)+.17];
+}
+export const planterBoxes=[[-31,-24,-27,-17],[26,-17,31,-6],[-31,8,-27,16],[16,-27,27,-23],
+  [-24,24,-12,27],[20,23,30,27],[-29,20,-27,22]];
+export const outdoorSeats=[[-13.2,23.2],[-17.1,23.2]];
+export const outdoorObstacles=[
+  ...fenceRuns.map(run=>({box:fenceBox(run),height:1.6})),
+  ...planterBoxes.map(box=>({box,height:.5})),
+  ...outdoorSeats.map(([x,z],i)=>({box:[x-.785,z-.265,x+.785,z+.285],height:.94,id:'outdoor-bench-'+i})),
+];
 
 export const doorway = 1.75;
 export const wallThickness = .19;

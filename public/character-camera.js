@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { partitions } from './furnishings.js';
-import { rooms } from './layout.js';
+import { outdoorObstacles, rooms } from './layout.js';
 
 export function createCharacterCamera() {
   const camera=new THREE.PerspectiveCamera(59,1,.10,105);
@@ -12,6 +12,8 @@ export function createCharacterCamera() {
       room.style==='service'?1.22:type==='back'?.88:.56;
     return new THREE.Box3(new THREE.Vector3(left-.12,0,front-.12),new THREE.Vector3(right+.12,height,back+.12));
   }));
+  for (const {box:[left,front,right,back],height} of outdoorObstacles)
+    walls.push(new THREE.Box3(new THREE.Vector3(left-.12,0,front-.12),new THREE.Vector3(right+.12,height,back+.12)));
   const forward=new THREE.Vector3(0,0,-1);
   let yaw=0,pitch=.29,distance=4.1,reach=distance,initialized=false;
 

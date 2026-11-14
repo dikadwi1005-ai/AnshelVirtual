@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { doorway, entrance, footprint, point, roomOutline, rooms } from './layout.js';
+import { doorway, entrance, footprint, outdoorObstacles, point, roomOutline, rooms } from './layout.js';
+import { addOutdoors } from './outdoors.js';
 import { createDisplays } from './displays.js';
 import { furniture, obstaclesFor, partitions, propsFor } from './furnishings.js';
 import { addLounge } from './lounge.js';
@@ -191,6 +192,7 @@ function contactShadows(parent,props,map) {
 }
 
 export async function buildWorld(scene,shadowTexture) {
+  const outdoors=addOutdoors(scene);
   const displays=createDisplays();
   const core=new THREE.Group();
   scene.add(core);
@@ -241,8 +243,8 @@ export async function buildWorld(scene,shadowTexture) {
   for (const group of wings.values()) batchStatic(group);
   batchStatic(core);
   const moveShadow=contactShadows(core,[...propLists.values()].flat(),shadowTexture);
-  const obstacles=rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)));
-  return {errors,warmGlow,obstacles,displays,showDockedControllers:addLounge(scene),
+  const obstacles=[...outdoorObstacles,...rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)))];
+  return {errors,warmGlow,obstacles,outdoors,displays,showDockedControllers:addLounge(scene),
     pickFurniture(ray) {
       const hit=ray.intersectObjects(movable.children,true)[0];
       if (!hit || ray.intersectObjects(scene.children,true).some(other=>

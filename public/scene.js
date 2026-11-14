@@ -13,10 +13,10 @@ import { createOfficeSpatialAudio } from './office-spatial-audio.js';
 import { createOfficeVoice } from './office-voice.js';
 import { buildWorld } from './world.js';
 
-const overview=new THREE.Vector3(30,57,55);
+const overview=new THREE.Vector3(39,72,68);
 const center=new THREE.Vector3(0,.35,0);
 const day={
-  backdrop:'#536572', key:'#ffebd3', sky:'#e2edf4', ground:'#b9a899',
+  backdrop:'#91b3bf', key:'#ffebd3', sky:'#e2edf4', ground:'#b9a899',
   sun:2.22, ambient:1.35, interior:.31, glow:.16, exposure:.97,
 };
 const evening={
@@ -151,7 +151,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const resizeObserver=new ResizeObserver(resize);
   resizeObserver.observe(host);
   camera.position.copy(overview);
-  camera.zoom=1;
+  camera.zoom=.72;
   controls.target.copy(center);
   controls.update();
   resize();
@@ -163,7 +163,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       chase.update(character.root,0,host.clientWidth<650);
       return;
     }
-    cameraMove={target:center.clone(),position:overview.clone(),zoom:1};
+    cameraMove={target:center.clone(),position:overview.clone(),zoom:.72};
   }
 
   function focus(x,z,zoom) {
@@ -247,7 +247,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     interior.intensity=THREE.MathUtils.lerp(day.interior,evening.interior,night);
     atrium.intensity=night*27;
     renderer.toneMappingExposure=THREE.MathUtils.lerp(day.exposure,evening.exposure,night);
-    if (world) world.warmGlow.opacity=THREE.MathUtils.lerp(day.glow,evening.glow,night);
+    if (world) {
+      world.warmGlow.opacity=THREE.MathUtils.lerp(day.glow,evening.glow,night);
+      world.outdoors.lighting(night);
+    }
   }
   const backgroundNight=new THREE.Color(evening.backdrop), sunNight=new THREE.Color(evening.key);
   const skyNight=new THREE.Color(evening.sky), groundNight=new THREE.Color(evening.ground);
@@ -496,19 +499,16 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (now-lastLabelUpdate>=45) {
       updateLabels(width,height);
       lastLabelUpdate=now;
+      host.dataset.drawCalls=String(renderer.info.render.calls);
+      host.dataset.activeEmployees=String(population?.actors.filter(actor=>actor.root.visible).length ?? 0);
     }
   });
 
   return {
     load,reset,focusRoom,focusEmployee,focusDisplay,closeDisplay,
     meeting(value) {
-      if (value && (!loaded || replay || state?.phase==='paused')) return false;
       meeting=value;
       world?.displays.agenda(value?.agenda ?? '');
-      if (value) {
-        shared=null;
-        leading=false;
-      }
       return true;
     },
     chooseFurniture(callback) { chooseFurniture=callback; },
@@ -544,7 +544,6 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       return true;
     },
     layoutActive() { return laidOut; },
-    meetingActive() { return Boolean(meeting); },
     startReplay(frames) {
       if (!loaded || frames.length<2 || replay || meeting) return false;
       closeDisplay();
@@ -584,6 +583,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       renderer.setAnimationLoop(null);
       resizeObserver.disconnect();
       controls.dispose();
+      world?.outdoors.dispose();
       renderer.dispose();
       preview.geometry.dispose();
       preview.material.dispose();
@@ -600,7 +600,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     },
     sharedSnapshot() { return !replay && leading && population?.actors.length===12?population.capture():undefined; },
     sharedOffice(value) {
-      if(!value || replay || laidOut || meeting)return;
+      if(!value || replay || laidOut)return;
       if(!value.leader || !leading || value.resume) restoreOffice(value);
       leading=value.leader;
       shared=value;

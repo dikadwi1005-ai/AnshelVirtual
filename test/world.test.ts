@@ -3,11 +3,11 @@ import { test } from 'node:test';
 import { createStore } from '../server/store.ts';
 import { activities, divisions } from '../public/catalog.js';
 import { activityAnchors, furniture, obstaclesFor, partitions, propBounds, propsFor, station } from '../public/furnishings.js';
-import { doorway, entrance, insideRoom, roomById, rooms, withinSite } from '../public/layout.js';
+import { doorway, entrance, gate, insideRoom, outdoorObstacles, roomById, rooms, withinSite } from '../public/layout.js';
 import { agentRadius, navigation, segmentHits } from '../public/navigation.js';
 import { isGameReaction } from '../public/lounge-game.js';
 
-const obstacles=rooms.flatMap(room=>obstaclesFor(room));
+const obstacles=[...outdoorObstacles,...rooms.flatMap(room=>obstaclesFor(room))];
 const nav=navigation(obstacles);
 const lobby=[0,0];
 const distance=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
@@ -34,7 +34,9 @@ test('satu tapak kantor berisi 12 area divisi, atrium, dan jalur yang terhubung'
     assert.ok(propsFor(room).length>=5);
     if (room.person) assert.ok(nav.route(entrance(room),station(room).approach));
   }
-  assert.equal(nav.route(lobby,[24,21]),null);
+  assert.equal(nav.route(lobby,[37,35]),null);
+  assert.ok(nav.clear([gate.walkway,28],[gate.walkway,30]));
+  assert.equal(nav.clear([-8,28],[-8,30]),false);
 });
 
 test('12 workstation dapat dicapai dari area santai dan divisi lain tanpa memotong penghalang',()=>{

@@ -5,7 +5,7 @@ const ids=new Set(divisions.map(person=>person.id));
 const stages=new Set(['seated','arrived','walking','aligning','sitting','departing','waiting','idle']);
 const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const bounded=(value,limit)=>Number.isFinite(value)&&Math.abs(value)<=limit;
-const pair=value=>Array.isArray(value)&&value.length===2&&value.every(coordinate=>bounded(coordinate,30));
+const pair=value=>Array.isArray(value)&&value.length===2&&bounded(value[0],37)&&bounded(value[1],34);
 const activity=value=>typeof value==='string'&&Object.hasOwn(activities,value);
 const anchor=value=>typeof value==='string'&&/^[a-z0-9-]{1,45}$/.test(value);
 const life=value=>value && typeof value.mood==='string' && value.mood.length<=32 &&

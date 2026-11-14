@@ -1,4 +1,4 @@
-import { doorway, entrance, point, roomById, wallThickness } from './layout.js';
+import { doorway, entrance, gate, outdoorSeats, point, roomById, wallThickness } from './layout.js';
 
 // Width, depth and height in meters. Ground props share these dimensions with navigation.
 export const furniture = {
@@ -186,7 +186,7 @@ export function propsFor(room) {
       put('long',0,1.23);
       for (const x of [-.78,.78]) {
         put('seat',x,.22,{turn:Math.PI,key:x<0?'seat-left':'seat-right'});
-        put('seat',x,2.25);
+        put('seat',x,2.25,{key:x<0?'seat-rear-left':'seat-rear-right'});
       }
       put('laptop',-.77,1.12,{y:.75});
       media(2.59,2.53);
@@ -292,8 +292,15 @@ export function activityAnchors(person,activity) {
     meeting:()=>[-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,.22,Math.PI,'sit','meeting-'+i,{
       height:.42, approach:point(roomById.meeting,x,-.58), support:'meeting-seat-'+(i?'right':'left'),
       conversation:'meeting',center:point(roomById.meeting,0,.22),
-    })),
+    })).concat([-.78,.78].map((x,i)=>localAnchor(roomById.meeting,x,2.25,0,'sit','meeting-'+(i+2),{
+      height:.42,approach:point(roomById.meeting,Math.sign(x)*1.82,1.9),
+      support:'meeting-seat-rear-'+(i?'right':'left'),conversation:'meeting',center:point(roomById.meeting,0,1.23),
+    }))),
     stroll:()=>[-1.18,0,1.18].map((x,i)=>localAnchor(roomById.garden,x,-.50,0,'idle','garden-'+i)),
+    commute:()=>[{id:'gate-'+person.id,point:[gate.walkway+(person.index%3-1)*.8,31.2+Math.floor(person.index/3)*.78],
+      approach:[gate.walkway+(person.index%3-1)*.8,31.2+Math.floor(person.index/3)*.78],angle:Math.PI,height:0,clip:'idle'}],
+    outdoor:()=>outdoorSeats.map(([x,z],i)=>({id:'outdoor-'+i,point:[x,z],approach:[x,z-.78],angle:Math.PI,
+      height:.48,clip:'sit',support:'outdoor-bench-'+i})),
     visit:()=>[roomById.hr,roomById.marketing,roomById.creative].filter(room=>room.id!==person.id)
       .map(room=>localAnchor(room,0,-1.62,room.front===1?Math.PI:0,'emote-yes','visit-'+room.id)),
   };

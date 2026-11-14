@@ -11,7 +11,8 @@ const effects={
   coffee:[1.25,1.45,-.08,.35,.03], rest:[1.04,.53,-.08,1.65,.06],
   read:[.30,1.04,-.10,.95,.53], game:[-.14,-.15,.48,.54,1.7],
   talk:[-.12,-.06,.45,.20,.42], meeting:[-.22,-.22,.35,-.12,-.14],
-  stroll:[.18,.33,-.06,.70,1.02], travel:[-.16,-.10,-.14,-.13,-.13],
+  stroll:[.18,.33,-.06,.70,1.02], outdoor:[.61,.41,-.06,1.02,.34],
+  commute:[.30,.25,.04,.41,.08], travel:[-.16,-.10,-.14,-.13,-.13],
 };
 const choices=['desk','coffee','rest','read','game','stroll'];
 
@@ -159,12 +160,14 @@ export function createLivingOffice({storage,random=Math.random,now=Date.now}={})
         member.values.mood=clamp(member.values.mood+(target-member.values.mood)*Math.min(1,elapsed*.075));
         dirty=true;
       }
+      const commuting=state?.phase==='closed' || state?.phase==='arrival' && clock<12+member.person.index*.9;
       plans[id]={task:remote?.task ?? null,executing:Boolean(remote?.executing),taskLock,
-        activity:taskLock?(remote.executing?'work':'desk'):member.activity,room:member.event?.room};
+        activity:taskLock?(remote.executing?'work':'desk'):commuting?'commute':
+          state?.phase==='lunch' && member.person.index<2?'outdoor':member.activity,room:member.event?.room};
     }
     if (advance) {
       schedule(state?.phase,byId);
-      for (const [id,member] of staff) if (member.event && !plans[id].taskLock) {
+      for (const [id,member] of staff) if (member.event && !plans[id].taskLock && !['commute','outdoor'].includes(plans[id].activity)) {
         plans[id].activity=member.activity;
         plans[id].room=member.event.room;
       }

@@ -27,13 +27,16 @@ export function storyboard(instruction,{events,meetings,tasks,people,now=Date.no
   }
   if (/\b(riset|hasil|artefak)\b/.test(query)) {
     const person=people.find(item=>query.includes(item.employee.toLocaleLowerCase('id').split(' ')[0]));
-    return shots('Hasil kerja tersimpan',tasks.filter(task=>task.status==='completed' &&
-      (person?task.division===person.id:task.division==='research')).slice(0,5)
-      .map(task=>task.description+(task.project?' · '+task.project:'')));
+    const sources=tasks.filter(task=>task.status==='completed' &&
+      (person?task.division===person.id:task.division==='research')).slice(0,5);
+    return {...shots('Hasil kerja tersimpan',sources.map(task=>task.description+(task.project?' · '+task.project:''))),sources};
   }
   const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta'});
-  const today=events.filter(event=>day.format(event.at)===day.format(now));
-  return shots('Aktivitas kantor hari ini',today.slice(-8).map(event=>event.kind==='dialogue'?
+  const week=/\bminggu ini\b/.test(query);
+  const wibDate=new Date(now+7*3600000);
+  const weekStart=Date.UTC(wibDate.getUTCFullYear(),wibDate.getUTCMonth(),wibDate.getUTCDate()-(wibDate.getUTCDay()+6)%7)-7*3600000;
+  const selected=events.filter(event=>week?event.at>=weekStart && event.at<=now:day.format(event.at)===day.format(now));
+  return shots(week?'Aktivitas kantor minggu ini':'Aktivitas kantor hari ini',selected.slice(-8).map(event=>event.kind==='dialogue'?
     'Giliran bicara · '+(people.find(person=>person.id===event.employee)?.employee ?? event.employee):
     event.kind==='meeting'?'Rapat · '+event.action:'Perubahan aktivitas · '+event.count+' pegawai'));
 }

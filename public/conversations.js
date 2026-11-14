@@ -46,7 +46,8 @@ function line(room,round,index,other,office) {
     office?.meeting?.agenda ? 'Agenda kita: '+office.meeting.agenda : other.employee+', '+prompts.meeting[round%2],
     'Boleh. Aku urutkan dulu hal yang perlu kita bahas.',
     'Oke, sisanya kita cek lagi setelah kembali ke meja.',
-  ][index];
+    'Aku cek materi yang tersedia sebelum menambahkan keputusan.',
+  ][index%4];
   if (round%4!==0) {
     const text=casual[round%4-1][index];
     return index===0 ? other.employee+', '+text : text;

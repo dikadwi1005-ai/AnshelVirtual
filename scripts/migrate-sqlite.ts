@@ -7,7 +7,9 @@ import pg from 'pg';
 
 // One-time, non-destructive transfer of the existing local SQLite data.
 // Never upload data/office.sqlite to GitHub or a Vercel deployment.
-const path = resolve(process.argv[2] || 'data/office.sqlite');
+const args=process.argv.slice(2);
+const apply=args.includes('--apply');
+const path = resolve(args.find(arg=>!arg.startsWith('--')) || 'data/office.sqlite');
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('Atur DATABASE_URL secara lokal hanya saat menjalankan migrasi.');
 const details = await stat(path).catch(() => null);
@@ -43,6 +45,33 @@ const pool = new pg.Pool({ connectionString: databaseUrl, max: 1,
 let client;
 try {
   client = await pool.connect();
+  if (!apply) {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const cloud = {
+      setting:(await client.query('SELECT key,value FROM anshel.setting')).rows,
+      tasks:(await client.query(`SELECT ${taskColumns.join(',')} FROM anshel.tasks`)).rows,
+      audit:(await client.query('SELECT * FROM anshel.audit')).rows,
+    };
+    const report={};
+    for (const [table,key] of [['setting','key'],['tasks','id'],['audit','id']]) {
+      const remote=new Map(cloud[table].map(row=>[row[key],row]));
+      const identical=[], localOnly=[], conflicting=[];
+      for (const row of local[table]) {
+        const other=remote.get(row[key]);
+        remote.delete(row[key]);
+        if (!other) localOnly.push(row[key]);
+        else if (isDeepStrictEqual({...row},other)) identical.push(row[key]);
+        else conflicting.push({id:row[key],fields:Object.keys(row).filter(field=>!isDeepStrictEqual(row[field],other[field])),
+          ...(table==='tasks'?{localChecksum:row.sha256,cloudChecksum:other.sha256,localTimestamp:row.created,cloudTimestamp:other.created}:
+            table==='audit'?{localTimestamp:row.at,cloudTimestamp:other.at}:{})});
+      }
+      report[table]={identical:identical.length,localOnly,cloudOnly:[...remote.keys()],conflicting};
+    }
+    const permissions=(await client.query(`SELECT rolname,has_schema_privilege(rolname,'anshel','USAGE') AS can_use
+      FROM pg_roles WHERE rolname IN ('anon','authenticated') ORDER BY rolname`)).rows;
+    await client.query('ROLLBACK');
+    console.log(JSON.stringify({mode:'preview',report,permissions},null,2));
+  } else {
   await client.query('BEGIN');
   await client.query('LOCK TABLE anshel.setting, anshel.tasks, anshel.audit IN SHARE ROW EXCLUSIVE MODE');
   const current = await client.query(`SELECT
@@ -84,6 +113,7 @@ try {
   }
   await client.query('COMMIT');
   console.log('Migrasi selesai:', Object.fromEntries(Object.keys(local).map(name => [name,local[name].length])));
+  }
 } catch (error) {
   if (client) await client.query('ROLLBACK');
   throw error;

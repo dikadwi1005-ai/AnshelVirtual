@@ -168,3 +168,7 @@ Mode pengamat dan **Main sebagai Dika** dapat ditukar dari kontrol kamera. Kamer
 ## Checkpoint Phase 5–7 · Studio kantor
 
 Monitor interaktif, editor tata letak, rapat, riwayat, replay, ekspor video, storyboard, pengingat WIB dan kontrak Nation City dijelaskan dalam [checkpoint Studio](phase-5-7-studio.md).
+
+## Checkpoint Phase 8 · Kampus Anshel
+
+Lingkungan luar, rapat empat peserta, replay tersimpan, perubahan Studio, audit database, dan verifikasi Production yang masih terbuka dicatat dalam [checkpoint Phase 8](phase-8-completion.md).

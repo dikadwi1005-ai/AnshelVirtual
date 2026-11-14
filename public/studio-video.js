@@ -1,6 +1,6 @@
-const formats={webm:['video/webm;codecs=vp8,opus','video/webm'],mp4:['video/mp4']};
+const formats={webm:['video/webm;codecs=vp8,opus','video/webm'],mp4:['video/mp4;codecs=avc1.42001E,mp4a.40.2','video/mp4']};
 
-export function recordReplay(scene,{format,portrait,heading,subtitles,audio,start,end,onProgress}) {
+export function recordReplay(scene,{format,portrait,heading,subtitles,audio,background,start,end,onProgress}) {
   const mime=formats[format]?.find(type=>globalThis.MediaRecorder?.isTypeSupported(type));
   if (!mime) throw new Error('Encoder '+format.toUpperCase()+' belum tersedia di browser ini.');
   const canvas=document.createElement('canvas');
@@ -8,22 +8,29 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,star
   const context=canvas.getContext('2d');
   if (!context || !canvas.captureStream) throw new Error('Perekaman kanvas tidak tersedia.');
   const stream=canvas.captureStream(24);
-  let sound, source, audioStream, recorder;
+  let sound, audioStream, recorder;
+  const sources=[];
   let chunks=[], finished=false, timer;
   const clean=()=>{
     clearTimeout(timer);
     scene.replayOptions({onFrame:null,playing:false,exportAspect:null});
     audio?.pause();
-    if (source && audioStream) source.disconnect(audioStream);
+    background?.pause();
+    for (const source of sources) source.disconnect();
     void sound?.close().catch(()=>{});
     for (const track of stream.getTracks()) track.stop();
   };
   try {
-    if (audio) {
+    if (audio || background) {
       sound=new AudioContext();
-      source=sound.createMediaElementSource(audio);
       audioStream=sound.createMediaStreamDestination();
-      source.connect(audioStream);
+      for (const element of [audio,background].filter(Boolean)) {
+        const source=sound.createMediaElementSource(element);
+        const gain=sound.createGain();
+        gain.gain.value=element===background ? .25 : .9;
+        source.connect(gain).connect(audioStream);
+        sources.push(source,gain);
+      }
       for (const track of audioStream.stream.getAudioTracks()) stream.addTrack(track);
     }
     recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:3000000});
@@ -72,7 +79,7 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,star
     try {
       if (sound) {
         await sound.resume();
-        await audio.play();
+        await Promise.all([audio?.play(),background?.play()]);
       }
       if (finished) return;
       recorder.start(250);

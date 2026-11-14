@@ -6,10 +6,13 @@ import { configuredOfficeBots, dispatchOfficeGroupEvent, dispatchOfficeGroupChec
 import { prepareOfficeNaturalChat, deliverOfficeNaturalChat } from '../server/telegram-natural.ts';
 import { Fault } from '../server/store.ts';
 import { validPresence } from '../server/office-presence.ts';
+import { createNationCity } from '../server/nation-city.ts';
+import { ownerAutomation, runAutomation } from '../server/studio-schedule.ts';
 
 // Server-side only. Credentials must be configured in Vercel Environment Variables.
 let store;
 let dialogue;
+const liveCity=createNationCity(process.env);
 const ttl = 8 * 3600_000;
 const getStore = () => store ||= createCloudStore();
 const getDialogue = () => dialogue ||= createDialogue(process.env);
@@ -86,6 +89,11 @@ async function route(request, injectedStore = null, env = process.env) {
     }
     if (path.startsWith('/api/integrations/') && post) {
       if (!validSecret(env.N8N_TOKEN) || !equal(bearer,env.N8N_TOKEN)) throw new Fault(401,'Token n8n ditolak.');
+      if (path==='/api/integrations/studio-tick') {
+        if (env.STUDIO_SCHEDULER_ENABLED!=='true') throw new Fault(404,'Scheduler Studio belum aktif.');
+        if (Object.keys(await readJson(request)).length) throw new Fault(400,'Pemicu jadwal tidak menerima parameter.');
+        return respond(await runAutomation(office));
+      }
       if (path === '/api/integrations/telegram') {
         const input = await readJson(request);
         try { return respond({reply:await telegram(office,input,env)}); }
@@ -141,6 +149,13 @@ async function route(request, injectedStore = null, env = process.env) {
       ...await office.state(), dialogueEnabled:getDialogue().enabled, dialogueStatus:getDialogue().status,
     });
     if (path === '/api/dialogue' && post) return respond(await getDialogue().generate(await readJson(request)));
+    if (path==='/api/studio/schedule' && (post || request.method==='GET'))
+      return respond({enabled:env.STUDIO_SCHEDULER_ENABLED==='true',
+        plans:await office.studioSchedule(post?ownerAutomation(await readJson(request)):undefined)});
+    if (path === '/api/studio/nation-city' && request.method==='GET')
+      return respond(await (env===process.env?liveCity:createNationCity(env))());
+    if (path === '/api/studio/meetings' && (post || request.method==='GET'))
+      return respond(await office.studioMeeting(post?await readJson(request):undefined));
     if (path === '/api/office-presence' && post) {
       const input=await readJson(request);
       if(!validPresence(input))throw new Fault(400,'Snapshot kantor tidak valid.');
