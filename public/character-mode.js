@@ -62,7 +62,7 @@ export async function createCharacter(scene,nav,shadowMap) {
     return nav.clear(from,to,null,radius) && actors.every(actor=>{
       const {x,z}=actor.root.position;
       const next=(x-to[0])**2+(z-to[1])**2;
-      return next>=characterClearance**2 || next>=(x-from[0])**2+(z-from[1])**2;
+      return next>=(actor.radius ?? characterClearance)**2 || next>=(x-from[0])**2+(z-from[1])**2;
     });
   }
 

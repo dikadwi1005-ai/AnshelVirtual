@@ -34,9 +34,9 @@ export function createNationCity(env,fetcher=fetch,now=Date.now) {
       const snapshot=nationSnapshot(JSON.parse(text));
       if (!snapshot) throw new Error();
       cached={snapshot,at:now()};
-      return {connection:'live',snapshot};
+      return {connection:'live',snapshot,checkedAt:cached.at};
     } catch {
-      return {connection:'offline',snapshot:cached && now()-cached.at<300_000?cached.snapshot:null};
+      return {connection:'offline',snapshot:cached && now()-cached.at<300_000?cached.snapshot:null,checkedAt:now()};
     }
   }
   let last;

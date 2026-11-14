@@ -15,6 +15,7 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
   let savedMinutes='';
   const archive=studioArchive();
   let pendingFrames=[], pendingEvents=[], archived=[], historical=[], archiveDate='', archiveFailed=false;
+  let cloudClips=[], clipQueue=[];
   let liveCity, serverSchedule;
   const storageKey='anshel-layout-v1';
   const reminderKey='anshel-reminders-v1';
@@ -71,13 +72,16 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
           '<li>'+time.format(event.at)+' WIB · '+escape(event.action)+'</li>').join('')+'</ul>';
     }
     if (tab==='replay') {
-      body.innerHTML='<p class="status-text">Rekaman tab terbaru dan arsip browser hingga tujuh hari. '+(archiveFailed?'Arsip lokal tidak tersedia.':'')+'</p>'+
+      body.innerHTML='<p class="status-text">Arsip tersedia hingga tujuh hari. Klip yang disimpan ke cloud berisi pose dan animasi. Dialog dan agenda tersimpan di browser.</p>'+
+        (archiveFailed?'<p class="status-text">Arsip lokal tidak tersedia.</p>':'')+
         '<label>Tanggal arsip WIB<input type="date" id="studio-archive-date" value="'+escape(archiveDate)+'"></label>'+
         '<label>Waktu rekaman<select id="studio-archive"><option value="">Sesi live terbaru</option>'+
-        archived.filter(at=>!archiveDate || new Date(at+7*3600000).toISOString().slice(0,10)===archiveDate)
-          .map(at=>'<option value="'+at+'">'+time.format(at)+' WIB</option>').join('')+'</select></label>'+
+        [...archived.map(at=>[at,'local']),...cloudClips.map(clip=>[clip.start,'cloud'])]
+          .filter(([at])=>!archiveDate || new Date(at+7*3600000).toISOString().slice(0,10)===archiveDate)
+          .map(([at,source])=>'<option value="'+source+':'+at+'">'+time.format(at)+' WIB · '+source+'</option>').join('')+'</select></label>'+
         '<div class="context-actions">'+button('replay-start','Muat rekaman')+button('play','Putar / jeda')+button('replay-stop','Kembali live')+'</div>'+
-        '<div class="context-actions">'+button('archive-clear','Hapus arsip browser')+'</div>'+
+        '<div class="context-actions">'+button('archive-clear','Hapus arsip browser')+button('cloud-save','Simpan arsip lokal ke cloud')+
+        button('cloud-delete','Hapus pilihan cloud')+'</div>'+
         '<label>Timeline<input type="range" id="studio-seek" min="0" max="0" value="0" step=".1"></label><p id="replay-subtitle" role="status"></p>'+
         '<form id="studio-video"><div class="form-grid"><label>Kecepatan<select id="studio-speed"><option>.5</option><option selected>1</option><option>2</option></select></label>'+
         '<label>Kamera<select id="studio-camera"><option value="">Seluruh kantor</option><option value="meeting">Pod Rapat</option>'+
@@ -87,11 +91,15 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
         '<label>Ukuran<select name="ratio"><option value="landscape">16:9</option><option value="portrait">9:16</option></select></label>'+
         '<label>Format<select name="format"><option value="webm">WebM</option><option value="mp4">MP4</option></select></label></div>'+
         '<label>Teks video<input name="heading" maxlength="100"></label>'+
+        '<label>Teks narasi <span>Dipakai sebagai teks video bila tanpa rekaman suara</span><textarea name="narration" maxlength="480"></textarea></label>'+
+        '<div class="context-actions">'+button('narration-draft','Susun teks narasi')+button('narration-preview','Dengarkan narasi')+
+        button('clip-add','Tambah potongan')+button('clip-preview','Preview urutan')+'</div><div id="studio-clips"></div>'+
         '<label>Narasi Bahasa Indonesia<input name="audio" type="file" accept="audio/*"></label>'+
         '<label>Audio latar milik Anda atau berlisensi<input name="background" type="file" accept="audio/*"></label>'+
         '<label class="checkbox"><input name="subtitles" type="checkbox" checked> Subtitle dialog</label>'+
         '<div class="context-actions"><button type="submit">Ekspor video</button>'+button('cancel-video','Batalkan ekspor')+
         '</div><progress id="studio-progress" max="100" value="0"></progress><div id="studio-output"></div></form>';
+      renderQueue();
     }
     if (tab==='plan') {
       body.innerHTML='<form id="studio-plan"><label>Instruksi storyboard<textarea name="instruction" required maxlength="400" placeholder="Jadikan rapat tadi video pendek"></textarea></label>'+
@@ -120,6 +128,7 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
         '<ul class="audit-list">'+(serverSchedule?.plans ?? []).slice().reverse().map(plan=>'<li><strong>'+escape(plan.label)+
           '</strong><p>'+time.format(plan.when)+' WIB · '+escape(plan.status)+' · '+plan.attempts+' percobaan</p>'+
           (plan.result?'<p>'+escape(JSON.stringify(plan.result))+'</p>':'')+
+          (plan.notification?'<p>Telegram '+(plan.notification==='sent'?'terkirim':'perlu diperiksa')+'</p>':'')+
           (plan.status==='disabled'?'<button type="button" data-automation="enable" data-plan-id="'+plan.id+'">Aktifkan</button> ':'')+
           (['disabled','planned'].includes(plan.status)?'<button type="button" data-automation="cancel" data-plan-id="'+plan.id+'">Batalkan</button> ':'')+
           (['disabled','cancelled','failed','completed'].includes(plan.status)?'<button type="button" data-automation="remove" data-plan-id="'+plan.id+'">Hapus</button>':'')+
@@ -128,7 +137,8 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
     if (tab==='city') {
       const snapshot=liveCity?.snapshot ?? city;
       body.innerHTML='<p class="status-text">Koneksi: '+escape(liveCity?.connection==='live'?'Live':liveCity?.connection==='offline'?
-        liveCity.snapshot?'Offline · cache terakhir':'Offline':'Belum dikonfigurasi')+'.</p>'+button('refresh-city','Segarkan status')+
+        liveCity.snapshot?'Offline · cache terakhir':'Offline':'Belum dikonfigurasi')+
+        (Number.isFinite(liveCity?.checkedAt)?' · '+time.format(liveCity.checkedAt)+' WIB':'')+'.</p>'+button('refresh-city','Segarkan status')+
         '<p class="status-text">Impor snapshot lokal bila sumber live belum tersedia.</p>'+
         '<form id="studio-city"><label>Snapshot Nation City<input name="snapshot" type="file" accept=".json,application/json" required></label>'+
         '<button type="submit">Baca snapshot</button></form>'+
@@ -241,9 +251,42 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
   }
   window.addEventListener('pagehide',flushArchive);
   async function inspectArchive() {
-    try { archived=await archive.list(); }
-    catch { archiveFailed=true; }
+    const [local,remote]=await Promise.allSettled([archive.list(),api('studio/replay')]);
+    if (local.status==='fulfilled') archived=local.value;
+    else archiveFailed=true;
+    if (remote.status==='fulfilled') cloudClips=remote.value;
     if (visible && tab==='replay' && !replaying) render();
+  }
+  function renderQueue() {
+    const target=content.querySelector('#studio-clips');
+    if (!target) return;
+    target.innerHTML=clipQueue.map((clip,index)=>'<div class="context-actions"><span>'+time.format(clip.start)+' · '+
+      ((clip.end-clip.start)/1000).toFixed(1)+' dtk</span>'+button('clip-up-'+index,'↑')+
+      button('clip-down-'+index,'↓')+button('clip-remove-'+index,'Hapus')+'</div>').join('');
+  }
+  function playQueue() {
+    if (!replaying || !clipQueue.length) return notice('Tambahkan potongan untuk preview.');
+    let index=0;
+    const list=clipQueue.slice();
+    function nextClip() {
+      const clip=list[index++];
+      if (!clip) {
+        scene().replayOptions({frames:replayFrames,index:0,time:replayFrames[0].at,end:replayFrames.at(-1).at,playing:false,onFrame});
+        return;
+      }
+      scene().replayOptions({frames:clip.frames,index:0,time:clip.start,end:clip.end,playing:true,onFrame(canvas,turn,at,playing) {
+        if (subtitle()) subtitle().textContent=turn?.text ?? '';
+        if (!playing && at>=clip.end) nextClip();
+      }});
+    }
+    nextClip();
+  }
+  function clipRange(form) {
+    if (!replaying) return null;
+    const first=replayFrames[0].at,last=replayFrames.at(-1).at;
+    const start=first+Number(formValue(form,'start'))*1000,end=first+Number(formValue(form,'end'))*1000;
+    if (start<first || end>last || end-start<500 || end-start>90000) return null;
+    return {frames:replayFrames,start,end};
   }
   async function inspectHistory() {
     try { historical=await archive.events(); } catch { archiveFailed=true; }
@@ -336,8 +379,10 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
   async function exportVideo(form) {
     if (!replaying || recording) return notice('Muat replay sebelum ekspor.');
     const first=replayFrames[0].at,last=replayFrames.at(-1).at;
-    const start=first+Number(formValue(form,'start'))*1000,end=first+Number(formValue(form,'end'))*1000;
-    if (start<first || end>last || end-start<500 || end-start>90000) return notice('Pilih rentang 0,5–90 detik dalam rekaman.');
+    const range=clipRange(form);
+    const clips=clipQueue.length?clipQueue.slice():range?[range]:[];
+    if (!clips.length || clips.reduce((sum,clip)=>sum+clip.end-clip.start,0)>90000)
+      return notice('Pilih rentang valid dengan total maksimum 90 detik.');
     const files=[form.elements.audio.files[0],form.elements.background.files[0]];
     if (files.some(file=>file && (!file.type.startsWith('audio/') || file.size>25_000_000)))
       return notice('Pilih berkas audio hingga 25 MB per berkas.');
@@ -347,7 +392,7 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
     const format=formValue(form,'format');
     try {
       recording=recordReplay(scene(),{format,portrait:formValue(form,'ratio')==='portrait',heading:formValue(form,'heading'),
-        subtitles:form.elements.subtitles.checked,audio,background,start,end,onProgress(progress) {
+        subtitles:form.elements.subtitles.checked,audio,background,clips,narration:formValue(form,'narration'),onProgress(progress) {
           const bar=content.querySelector('#studio-progress');
           if (bar) bar.value=progress;
         }});
@@ -366,14 +411,18 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
     finally {
       recording=null;
       for (const url of audioUrls) if (url) URL.revokeObjectURL(url);
-      scene()?.replayOptions({end:last,onFrame,speed:Number(content.querySelector('#studio-speed')?.value ?? 1)});
+      scene()?.replayOptions({frames:replayFrames,time:first,index:0,end:last,onFrame,speed:Number(content.querySelector('#studio-speed')?.value ?? 1)});
     }
   }
   content.addEventListener('change',event=>{
     if (!visible) return;
     const field=event.target;
     if (field.form?.id==='studio-layout' && field.name==='item') selectFurniture(field.value);
-    if (field.id==='studio-archive-date' && !replaying) { archiveDate=field.value; render(); }
+    if (field.id==='studio-archive-date' && !recording) {
+      if (replaying) stopReplay();
+      archiveDate=field.value;
+      render();
+    }
     if (field.id==='studio-speed' && !recording) scene()?.replayOptions({speed:Number(field.value)});
     if (field.id==='studio-camera' && !recording) {
       if (field.value) scene()?.focusRoom(field.value);
@@ -441,14 +490,59 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
       case 'followup': newTask((formValue(control.form,'decisions') || formValue(control.form,'notes') || meeting.agenda).trim(),'Rapat: '+meeting.agenda); break;
       case 'replay-start': {
         if (recording) break;
-        const selected=Number(content.querySelector('#studio-archive').value);
+        const [source,at]=content.querySelector('#studio-archive').value.split(':');
+        const selected=Number(at);
         try {
-          const clip=selected?await archive.get(selected):null;
+          const clip=selected?(source==='cloud'?await api('studio/replay',{action:'read',start:selected}):await archive.get(selected)):null;
           if (visible && tab==='replay') {
             if (selected && !clip) return notice('Rekaman sudah tidak tersedia.');
             startReplay(undefined,clip?.frames);
           }
         } catch { notice('Arsip rekaman tidak dapat dibuka.'); }
+        break;
+      }
+      case 'cloud-save':
+      case 'cloud-delete': {
+        if (recording || replaying) return notice('Kembali live sebelum mengelola arsip.');
+        const [source,at]=content.querySelector('#studio-archive').value.split(':');
+        const start=Number(at);
+        try {
+          if (data.studioAction==='cloud-save' && source==='local') {
+            const clip=await archive.get(start);
+            if (!clip) throw new Error('Klip lokal tidak tersedia.');
+            const result=await api('studio/replay',{action:'save',start,frames:clip.frames.map(({at,actors})=>({at,actors}))});
+            notice(result.ok?'Klip tanpa teks tersimpan di cloud.':'Klip melewati batas retensi.');
+          } else if (data.studioAction==='cloud-delete' && source==='cloud') {
+            if (!window.confirm('Hapus rekaman cloud yang dipilih?')) break;
+            await api('studio/replay',{action:'delete',start});
+          } else return notice('Pilih sumber arsip sesuai tindakan.');
+          await inspectArchive();
+        } catch (error) { notice(error.message); }
+        break;
+      }
+      case 'clip-add': {
+        const clip=clipRange(control.form);
+        if (!clip || clipQueue.length>=8) return notice('Pilih rentang replay yang valid. Maksimum delapan klip.');
+        clipQueue.push(clip); renderQueue(); break;
+      }
+      case 'clip-preview': if (!recording) playQueue(); break;
+      case 'narration-draft': {
+        const turns=(clipQueue.length?clipQueue.flatMap(clip=>clip.frames.filter(frame=>frame.at>=clip.start && frame.at<=clip.end)):
+          replayFrames ?? []).map(frame=>frame.turn?.text).filter(Boolean);
+        control.form.elements.narration.value=[...new Set(turns)].slice(0,4).join(' ').slice(0,480);
+        if (!turns.length) notice('Klip ini tidak memiliki dialog untuk narasi otomatis.');
+        break;
+      }
+      case 'narration-preview': {
+        const speech=window.speechSynthesis;
+        const voice=speech?.getVoices().find(item=>item.localService && /^id\b/i.test(item.lang));
+        const text=formValue(control.form,'narration').trim();
+        if (!voice || !text) return notice('Isi teks dan gunakan suara Indonesia lokal. Ekspor teks memakai subtitle, atau unggah rekaman audio.');
+        speech.cancel();
+        const utterance=new SpeechSynthesisUtterance(text);
+        utterance.lang='id-ID'; utterance.voice=voice;
+        utterance.onerror=()=>notice('Suara gagal diputar. Teks narasi tetap tersedia.');
+        speech.speak(utterance);
         break;
       }
       case 'archive-clear':
@@ -465,6 +559,14 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
           scene().replayOptions({playing:replayPlaying=!replayPlaying});
         }
         break;
+      default: {
+        const match=/^clip-(up|down|remove)-(\d+)$/.exec(data.studioAction ?? '');
+        if (!match || recording) break;
+        const index=Number(match[2]), next=index+(match[1]==='up'?-1:1);
+        if (match[1]==='remove') clipQueue.splice(index,1);
+        else if (clipQueue[index] && clipQueue[next]) [clipQueue[index],clipQueue[next]]=[clipQueue[next],clipQueue[index]];
+        renderQueue();
+      }
     }
   });
   content.addEventListener('submit',async event=>{
@@ -586,6 +688,7 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
       savePlans();
       city=null;
       liveCity=serverSchedule=null;
+      clipQueue=[]; cloudClips=[];
     },
     get replaying() { return replaying; },
     syncMeeting,

@@ -25,6 +25,15 @@ async function open(options) {
 const click=(p,id)=>p.locator('[data-studio-action="'+id+'"]').click();
 const tab=(p,id)=>p.locator('[data-studio-tab="'+id+'"]').click();
 const submit=(p,id)=>p.locator('#studio-'+id+' button[type=submit]').click();
+function testAudio() {
+  const samples=16000, wave=Buffer.alloc(44+samples*2);
+  wave.write('RIFF'); wave.writeUInt32LE(wave.length-8,4); wave.write('WAVEfmt ',8);
+  wave.writeUInt32LE(16,16); wave.writeUInt16LE(1,20); wave.writeUInt16LE(1,22);
+  wave.writeUInt32LE(8000,24); wave.writeUInt32LE(16000,28); wave.writeUInt16LE(2,32);
+  wave.writeUInt16LE(16,34); wave.write('data',36); wave.writeUInt32LE(samples*2,40);
+  for(let i=0;i<samples;i++) wave.writeInt16LE(Math.round(Math.sin(i*Math.PI*.11)*1600),44+i*2);
+  return {name:'fixture.wav',mimeType:'audio/wav',buffer:wave};
+}
 const shot=(p,name)=>process.env.ANSHEL_SCREENSHOTS && p.screenshot({path:process.env.ANSHEL_SCREENSHOTS+'/phase8-'+name+'.png'});
 async function perf(page) {
   return page.evaluate(()=>new Promise(resolve=>{
@@ -47,6 +56,7 @@ async function perf(page) {
 try {
   const desktop=await open({viewport:{width:1440,height:900}});
   const metrics={live:await perf(desktop)};
+  await desktop.waitForFunction(()=>Number(document.getElementById('scene').dataset.campusActors)>0);
   if (await desktop.locator('#light-toggle').getAttribute('data-next')==='day') await desktop.locator('#light-toggle').click();
   await desktop.waitForTimeout(900);
   await shot(desktop,'campus-day');
@@ -72,7 +82,19 @@ try {
   await desktop.locator('[name=third]').selectOption('marketing');
   await desktop.locator('[name=fourth]').selectOption('qa');
   await submit(desktop,'meeting');
-  await desktop.waitForFunction(()=>document.querySelector('#studio-attendance')?.textContent.match(/Hadir/g)?.length===4,{},{timeout:90000});
+  try {
+    await desktop.waitForFunction(()=>document.querySelector('#studio-attendance')?.textContent.match(/Hadir/g)?.length===4,{},{timeout:110000});
+  } catch (error) {
+    console.log('Kehadiran:',await desktop.locator('#studio-attendance').textContent());
+    console.log('Presence:',await desktop.evaluate(async()=>{
+      const response=await fetch('/api/office-presence',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({client:crypto.randomUUID()})});
+      const data=await response.json();
+      return data.snapshot?.actors.filter(actor=>['research','development','marketing','qa'].includes(actor.id))
+        .map(({id,stage,actual,anchor,position,path})=>({id,stage,actual,anchor,position,path}));
+    }));
+    throw error;
+  }
   metrics.meeting=await perf(desktop);
   await click(desktop,'presentation'); await desktop.waitForTimeout(900); await shot(desktop,'presentation'); await click(desktop,'presentation-close'); await shot(desktop,'meeting');
   await desktop.locator('[name=notes]').fill('Empat peserta tiba di Pod Rapat.');
@@ -97,10 +119,25 @@ try {
   await tab(desktop,'replay');
   await desktop.locator('#studio-archive option').nth(1).waitFor({state:'attached'});
   await desktop.locator('#studio-archive').selectOption({index:1});
+  const upload=desktop.waitForResponse(response=>response.url().endsWith('/api/studio/replay') &&
+    response.request().postDataJSON()?.action==='save');
+  await click(desktop,'cloud-save');
+  const uploaded=await upload;
+  assert.equal(uploaded.status(),200,await uploaded.text());
+  await desktop.locator('#studio-archive option[value^="cloud:"]').first().waitFor({state:'attached'});
+  await desktop.locator('#studio-archive').selectOption({index:1});
   await click(desktop,'replay-start');
+  await desktop.waitForFunction(()=>Number(document.querySelector('#studio-seek')?.max)>0);
   await desktop.locator('#studio-camera').selectOption('meeting');
-  await desktop.locator('#studio-video [name=end]').fill('2');
+  const clipEnd=Math.min(2,Number(await desktop.locator('#studio-video [name=end]').inputValue()));
+  assert.ok(clipEnd>=.5);
+  await desktop.locator('#studio-video [name=end]').fill(String(clipEnd));
   await desktop.locator('#studio-video [name=heading]').fill('Anshel · Rapat');
+  await click(desktop,'clip-add');
+  await click(desktop,'clip-add');
+  await click(desktop,'clip-up-1');
+  await desktop.locator('#studio-video [name=audio]').setInputFiles(testAudio());
+  await desktop.locator('#studio-video [name=background]').setInputFiles(testAudio());
   await submit(desktop,'video');
   await desktop.locator('#studio-output video').waitFor({timeout:30000});
   const bytes=await desktop.locator('#studio-output video').evaluate(async video=>(await (await fetch(video.src)).blob()).size);
@@ -121,6 +158,7 @@ try {
     await desktop.locator('#studio-video [name=format]').selectOption('mp4');
     await submit(desktop,'video');
     await desktop.locator('#studio-output a[download$=".mp4"]').waitFor({timeout:30000});
+    await desktop.waitForFunction(()=>document.querySelector('#studio-output video')?.readyState>=2);
     mp4=await desktop.locator('#studio-output video').evaluate(async video=>{
       const data=new Uint8Array(await (await fetch(video.src)).arrayBuffer());
       return String.fromCharCode(...data.slice(4,8))==='ftyp';

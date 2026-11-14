@@ -159,6 +159,8 @@ export function officeHandler(store, env = process.env) {
           ...await store.state(),dialogueEnabled:dialogue.enabled,dialogueStatus:dialogue.status,
         });
         if (path === '/api/dialogue' && post) return respond(await dialogue.generate(await json(req)));
+        if (path==='/api/studio/replay' && (post || req.method==='GET'))
+          return respond(await store.studioReplay(post?await json(req):{action:'list'}));
         if (path==='/api/studio/schedule' && (post || req.method==='GET'))
           return respond({enabled:env.STUDIO_SCHEDULER_ENABLED==='true',
             plans:await store.studioSchedule(post?ownerAutomation(await json(req)):undefined)});

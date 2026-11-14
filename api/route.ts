@@ -2,12 +2,12 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createCloudStore } from '../server/cloud-store.ts';
 import { createDialogue } from '../server/dialogue.ts';
 import { telegram } from '../server/telegram.ts';
-import { configuredOfficeBots, dispatchOfficeGroupEvent, dispatchOfficeGroupCheckin, officeGroupConfig, sendOfficeGroupOwnerMessage } from '../server/telegram-office.ts';
+import { configuredOfficeBots, dispatchOfficeGroupEvent, dispatchOfficeGroupCheckin, officeGroupConfig, sendOfficeBotMessage, sendOfficeGroupOwnerMessage } from '../server/telegram-office.ts';
 import { prepareOfficeNaturalChat, deliverOfficeNaturalChat } from '../server/telegram-natural.ts';
 import { Fault } from '../server/store.ts';
 import { validPresence } from '../server/office-presence.ts';
 import { createNationCity } from '../server/nation-city.ts';
-import { ownerAutomation, runAutomation } from '../server/studio-schedule.ts';
+import { notifyAutomation, ownerAutomation, runAutomation } from '../server/studio-schedule.ts';
 
 // Server-side only. Credentials must be configured in Vercel Environment Variables.
 let store;
@@ -92,7 +92,11 @@ async function route(request, injectedStore = null, env = process.env) {
       if (path==='/api/integrations/studio-tick') {
         if (env.STUDIO_SCHEDULER_ENABLED!=='true') throw new Fault(404,'Scheduler Studio belum aktif.');
         if (Object.keys(await readJson(request)).length) throw new Fault(400,'Pemicu jadwal tidak menerima parameter.');
-        return respond(await runAutomation(office));
+        const result=await runAutomation(office);
+        const notified=env.STUDIO_SCHEDULER_TELEGRAM==='true' && configuredOfficeBots(env).configured.includes('management') &&
+          officeGroupConfig(env).chatId ? await notifyAutomation(office,message=>
+            sendOfficeBotMessage(env,'management',message,{fetchImpl:(url,options)=>fetch(url,{...options,signal:AbortSignal.timeout(4000)})})) : 0;
+        return respond({...result,notified});
       }
       if (path === '/api/integrations/telegram') {
         const input = await readJson(request);
@@ -149,6 +153,8 @@ async function route(request, injectedStore = null, env = process.env) {
       ...await office.state(), dialogueEnabled:getDialogue().enabled, dialogueStatus:getDialogue().status,
     });
     if (path === '/api/dialogue' && post) return respond(await getDialogue().generate(await readJson(request)));
+    if (path==='/api/studio/replay' && (post || request.method==='GET'))
+      return respond(await office.studioReplay(post?await readJson(request):{action:'list'}));
     if (path==='/api/studio/schedule' && (post || request.method==='GET'))
       return respond({enabled:env.STUDIO_SCHEDULER_ENABLED==='true',
         plans:await office.studioSchedule(post?ownerAutomation(await readJson(request)):undefined)});

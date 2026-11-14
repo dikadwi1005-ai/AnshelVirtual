@@ -27,8 +27,12 @@ export function updateAutomation(current=[],input,now) {
     if (action==='claim' && plan.status==='planned' && plan.when<=now && (plan.retryAt ?? 0)<=now)
       return [{...plan,status:'leased',attempts:plan.attempts+1,lease:now+60_000}];
     if (action==='recover' && plan.status==='leased' && plan.lease<=now)
-      return [{...plan,status:plan.attempts<3?'planned':'failed',ended:now,lease:0}];
-    if (['complete','retry'].includes(action) && plan.status==='leased' && plan.lease===input.lease) {
+      return [{...plan,status:plan.attempts<3?'planned':'failed',ended:now,lease:0,result:'Sewa scheduler kedaluwarsa.'}];
+    if (action==='notify-claim' && ['completed','failed'].includes(plan.status) && !plan.notification)
+      return [{...plan,notification:'uncertain',notificationAt:now}];
+    if (action==='notify-confirm' && plan.notification==='uncertain')
+      return [{...plan,notification:'sent',notificationAt:now}];
+    if (['complete','retry'].includes(action) && plan.status==='leased' && plan.lease===input.lease && now<plan.lease) {
       return [{...plan,status:action==='complete'?'completed':plan.attempts<3?'planned':'failed',
         result:input.result,ended:now,retryAt:now+5*60_000,lease:0}];
     }
@@ -65,6 +69,27 @@ export async function runAutomation(store,now=Date.now()) {
     }
   }
   return {processed,phase:state.phase};
+}
+
+export async function notifyAutomation(store,send,now=Date.now()) {
+  let delivered=0;
+  const candidates=(await store.studioSchedule()).filter(plan=>['completed','failed'].includes(plan.status) && !plan.notification &&
+    (!plan.ended || plan.ended>=now-7*86400_000)).slice(0,3);
+  for (const plan of candidates) {
+    try { await store.studioSchedule({id:plan.id,action:'notify-claim'}); }
+    catch (error) { conflict(error); continue; }
+    const report=plan.kind==='report' && plan.status==='completed' && typeof plan.result==='object'?plan.result:null;
+    const message=plan.status==='failed'?'Jadwal Studio gagal setelah '+plan.attempts+' percobaan.':
+      report?'Laporan Studio · '+report.queued+' antre, '+report.running+' berjalan, '+report.completed+
+        ' selesai, '+report.blocked+' terhambat, '+report.failed+' gagal. Worker '+(report.worker?'terhubung.':'offline.'):
+        'Jadwal Studio membuat tugas diagnostik dalam antrean. ID '+plan.result+'.';
+    try {
+      await send(message);
+      await store.studioSchedule({id:plan.id,action:'notify-confirm'});
+      delivered++;
+    } catch { /* An unknown delivery is held for owner review to prevent duplicates. */ }
+  }
+  return delivered;
 }
 
 function conflict(error) {

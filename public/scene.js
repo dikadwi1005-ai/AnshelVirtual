@@ -12,6 +12,7 @@ import { createLipTimeline } from './office-lips.js';
 import { createOfficeSpatialAudio } from './office-spatial-audio.js';
 import { createOfficeVoice } from './office-voice.js';
 import { buildWorld } from './world.js';
+import { campusTraffic } from './campus-traffic.js';
 
 const overview=new THREE.Vector3(39,72,68);
 const center=new THREE.Vector3(0,.35,0);
@@ -72,7 +73,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const shadow=radialTexture();
   const temp=new THREE.Vector3(), offset=new THREE.Vector3(), ray=new THREE.Raycaster();
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
-  let world, population, character, state=null, following=null, selected=null, cameraMove=null, drag=null;
+  let world, population, character, traffic, state=null, following=null, selected=null, cameraMove=null, drag=null;
   let shared=null, leading=false, displayReturn=null, nav, meeting=null, replay=null, laidOut=false;
   let simulationState, previousState, previousMeeting, previousLayout;
   let nextRecording=0, chooseFurniture=null;
@@ -353,7 +354,9 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
     nav=navigation(world.obstacles);
     const liveNav={clear:(...args)=>nav.clear(...args),route:(...args)=>nav.route(...args)};
+    traffic=await campusTraffic(scene,liveNav);
     population=await createActors(scene,liveNav,shadow,state,requestDialogue,storage);
+    population.campus(traffic.obstacles);
     if(shared) restoreOffice(shared);
     else if(state?.phase!=='paused') population.catchUp(42,{...state,dialogueEnabled:false});
     try { character=await createCharacter(scene,liveNav,shadow); }
@@ -461,12 +464,15 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       const steps=Math.max(1,Math.ceil(delta/.05));
       const speechFocus=viewZoom()>2.15 ? viewTarget() : null;
       for (let step=0;step<steps;step++) {
-        if (characterView()) character.update(delta/steps,movement,chase.forward,population.actors);
+        if (characterView()) character.update(delta/steps,movement,chase.forward,
+          traffic?population.actors.concat(traffic.obstacles.filter(item=>item.root.visible)):population.actors);
         if (!shared || leading) population.update(delta/steps,simulationState,
           speechFocus,viewZoom()<1.6,characterActive()?character.root:null);
         else population.followSnapshot(delta/steps);
       }
       world?.showDockedControllers(population.game.players);
+      traffic?.update(Math.min(delta,.06),state,[...population.actors.map(actor=>actor.root),...(character?[character.root]:[])]);
+      if (traffic) host.dataset.campusActors=String(traffic.roots.filter(root=>root.visible).length);
       if (population.actors.length===12 && population.actors[0].root.visible && now>=nextRecording) {
         nextRecording=now+400;
         host.dispatchEvent(new CustomEvent('office-frame',{detail:{...population.replayFrame(),agenda:meeting?.agenda}}));
@@ -584,6 +590,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       resizeObserver.disconnect();
       controls.dispose();
       world?.outdoors.dispose();
+      traffic?.dispose();
       renderer.dispose();
       preview.geometry.dispose();
       preview.material.dispose();

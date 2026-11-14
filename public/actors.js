@@ -193,7 +193,14 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     actor.blocked=0;
   }
 
+  let campus=[];
   function occupied(actor,point,from) {
+    for (const {root,radius} of campus) {
+      if (!root.visible) continue;
+      const {x,z}=root.position;
+      const next=(x-point[0])**2+(z-point[1])**2;
+      if (next<radius**2 && (!from || next<(x-from[0])**2+(z-from[1])**2)) return true;
+    }
     if (player) {
       const {x,z}=player.position;
       const next=(x-point[0])**2+(z-point[1])**2;
@@ -391,7 +398,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       conversations.turns.get('meeting') ?? conversations.turns.values().next().value ?? solo;
     return {
       actors:actors.map(actor=>({
-        position:location(actor),y:actor.root.position.y,angle:actor.root.rotation.y,
+        position:location(actor),y:actor.root.position.y,angle:Math.atan2(Math.sin(actor.root.rotation.y),Math.cos(actor.root.rotation.y)),
         animation:actor.animation,stage:actor.stage,clipTime:actor.action?.time ?? 0,
       })),
       turn:turn?{id:turn.speaker.person.id,text:turn.text}:null,
@@ -496,6 +503,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
 
   return {
     errors,actors,turns:conversations.turns,game,living,
+    campus(obstacles) { campus=obstacles; },
     capture,apply,followSnapshot,replayFrame,replayPose,
     visible(value) {
       for(const actor of actors) actor.root.visible=actor.shadowMesh.visible=value;

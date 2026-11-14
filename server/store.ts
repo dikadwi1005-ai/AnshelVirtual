@@ -4,6 +4,7 @@ import { officeNewsResult } from './bcift-news.ts';
 import { exchangeOfficePresence, officePresenceKey } from './office-presence.ts';
 import { changeMeeting, meetingKey } from './studio-meetings.ts';
 import { automationKey, updateAutomation } from './studio-schedule.ts';
+import { replayKey, replayOperation } from './replay-archive.ts';
 import { divisions, owner } from '../public/catalog.js';
 import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
@@ -85,6 +86,14 @@ export function createStore(path: string, now = Date.now) {
   };
 
   return {
+    studioReplay(input) {
+      const apply=()=>{
+        const outcome=replayOperation(readSetting(replayKey,[]),input,now());
+        if (outcome.entries) writeSetting(replayKey,outcome.entries);
+        return outcome.result;
+      };
+      return ['save','delete'].includes(input.action)?transaction(apply):apply();
+    },
     studioSchedule(input=undefined) {
       if (input===undefined) return readSetting(automationKey,[]);
       return transaction(()=>{
