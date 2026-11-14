@@ -38,6 +38,7 @@ test('SQLite state exposes observed avatar homes but never mistakes estimates fo
   try {
     const client=randomUUID();
     assert.equal(store.state().avatarPresence.fresh,false);
+    store.officePresence({client}); // acquire the simulation lease before uploading a snapshot
     store.officePresence({client,snapshot});
     const state=store.state();
     assert.equal(state.phase,'closed');

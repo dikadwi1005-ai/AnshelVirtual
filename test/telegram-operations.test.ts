@@ -44,7 +44,8 @@ test('monitor uses only actual four-employee avatar and task state, never invent
   assert.equal(result[1].executing,true);
   assert.equal(result[1].task.project,'API');
   assert.equal(result[2].task.hasResult,true);
-  assert.equal(result[0].avatar,'Mengambil kopi');
+  assert.equal(result[0].avatar,'Belum terverifikasi');
+  assert.match(officeActivityReply(state),/belum terverifikasi lokasinya/);
   const text=officeActivityReply(state);
   assert.match(text,/Alya/);
   assert.match(text,/Bima/);
