@@ -9,6 +9,7 @@ Baseline Production yang diverifikasi sebelumnya adalah `fe69de2`. Pekerjaan ini
 - Snapshot presence lama tetap terbaca. Pose dari interior rumah lama dipetakan ke koordinat lokal yang sama di rumah baru. Jalur lama yang mengarah ke rumah dihitung ulang. Batas pose replay diperluas, batas pose kendaraan kampus tetap memakai kontrak lama.
 - Bukti browser tiga hari mengamati **36 keberangkatan dan 36 kepulangan** pada 12 pegawai. Rekaman Alya dan Laras menampilkan perjalanan keluar rumah, menyeberang, menuju dan memasuki kantor, lalu kembali. Rekaman bukti memakai langkah simulasi dipercepat dan mesh serta navigasi aplikasi. Audit final menyimpan 90 tampilan untuk 21 ruang dan 12 rumah.
 - Smoke check desktop dan viewport sentuh menyisakan waktu polling dan interpolasi. Uji ulang mencatat selisih posisi maksimum 0,48 m saat di rumah dan 0,38 m saat keberangkatan. Satu percobaan sebelumnya gagal pada batas sinkronisasi yang sama dengan selisih 4,18 m. Stabilitas antarsesi masih perlu diuji lebih lama pada kondisi jaringan nyata.
+- Follower memperkirakan posisi pejalan kota selama maksimal 0,85 detik sepanjang segmen yang diterima dari leader. Interpolasi berhenti di waypoint dan berjalan dengan interval polling yang sama. Uji antarsesi memisahkan pose tidur yang sudah diam dari pose saat berjalan.
 
 ## Profil kinerja
 

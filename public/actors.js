@@ -592,6 +592,11 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       if (actor.stage==='departing' && !pending) actor.stage='sitting';
       reservations.set(anchor.id,actor);
       if (pending) reservations.set(pending.id,actor);
+      const prior=actor.remote?.position;
+      actor.remoteWalking=Boolean(!resume && prior && Math.abs(value.position[0])>42 &&
+        value.stage==='walking' && value.animation==='walk' && value.path.length &&
+        Math.hypot(value.position[0]-prior[0],value.position[1]-prior[1])>.03);
+      actor.remoteElapsed=0;
       actor.remote=value;
       actor.foodTime=value.foodTime ?? 0;
       if (actor.foodTime) foodParcel(actor);
@@ -617,9 +622,19 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     for(const actor of actors) {
       const value=actor.remote;
       if(!value)continue;
-      const [x,z]=value.position;
-      const jump=Math.hypot(x-actor.root.position.x,z-actor.root.position.z)>4;
-      const t=jump?1:blend;
+      let [x,z]=value.position;
+      const correction=Math.hypot(x-actor.root.position.x,z-actor.root.position.z);
+      if (actor.remoteWalking) {
+        const [nextX,nextZ]=value.path[0], dx=nextX-x, dz=nextZ-z;
+        const remaining=Math.hypot(dx,dz);
+        actor.remoteElapsed=Math.min(.85,actor.remoteElapsed+delta);
+        if (remaining>0) {
+          const fraction=Math.min(1,actor.remoteElapsed*speed/remaining);
+          x+=dx*fraction;
+          z+=dz*fraction;
+        }
+      }
+      const t=correction>4?1:actor.remoteWalking?1-Math.exp(-delta*7):blend;
       actor.root.position.x=THREE.MathUtils.lerp(actor.root.position.x,x,t);
       actor.root.position.y=THREE.MathUtils.lerp(actor.root.position.y,value.y,t);
       actor.root.position.z=THREE.MathUtils.lerp(actor.root.position.z,z,t);

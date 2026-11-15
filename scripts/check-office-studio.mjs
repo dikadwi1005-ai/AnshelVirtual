@@ -540,11 +540,12 @@ async function cityPresenceSmoke() {
   for (const page of sessions) await page.evaluate(()=>{
     document.getElementById('scene').addEventListener('office-frame',event=>{
       window.cityPoses=event.detail.actors.map(actor=>actor.position);
+      window.citySleeping=event.detail.actors.every(actor=>actor.animation==='home-sleep');
     });
   });
   const poses=()=>Promise.all(sessions.map(page=>page.evaluate(()=>window.cityPoses)));
   for (const page of sessions)
-    await page.waitForFunction(()=>window.cityPoses?.every(([x])=>Math.abs(x)>65),null,{timeout:30000});
+    await page.waitForFunction(()=>window.citySleeping && window.cityPoses?.every(([x])=>Math.abs(x)>65),null,{timeout:45000});
   const gap=(a,b)=>Math.max(...a.map(([x,z],i)=>Math.hypot(x-b[i][0],z-b[i][1])));
   async function matchingPoses(limit) {
     // Presence polling and follower interpolation can outlast the first visible frame.
