@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { freemem, totalmem, availableParallelism, platform, arch } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { divisions } from '../public/catalog.js';
+import { runWithLeaseHeartbeat } from './worker-lease.ts';
 
 const office = process.env.OFFICE_URL || 'http://127.0.0.1:4310';
 const ollama = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
@@ -51,19 +52,17 @@ async function draft(task,signal) {
 }
 
 async function execute(task) {
-  const lease = {id:task.id,token:task.token};
-  const controller = new AbortController();
-  const timer = setInterval(async () => {
-    try { await call('heartbeat',lease); }
-    catch (error) { if (error.status === 409) controller.abort(); }
-  },10_000);
-  let result;
-  try {
-    result = {output:task.kind === 'diagnostic' ? diagnostic() : await draft(task,controller.signal)};
-  } catch(error) {
-    result = {error:error.message,unavailable:[404,503].includes(error.status)};
-  } finally { clearInterval(timer); }
-  if (!controller.signal.aborted) await call('finish',{...lease,...result});
+  const lease={id:task.id,token:task.token};
+  const {result,leaseLost}=await runWithLeaseHeartbeat(async signal=>{
+    try {
+      return {output:task.kind==='diagnostic' ? diagnostic() : await draft(task,signal)};
+    } catch(error) {
+      // An abort caused by a revoked lease is not a failed AI draft: the
+      // authoritative task owner should decide whether it is retryable.
+      return {error:error.message,unavailable:[404,503].includes(error.status)};
+    }
+  },{heartbeat:()=>call('heartbeat',lease)});
+  if(!leaseLost)await call('finish',{...lease,...result});
 }
 
 if (!token || token.length < 24) throw new Error('Isi WORKER_TOKEN di .env dengan nilai minimal 24 karakter.');
