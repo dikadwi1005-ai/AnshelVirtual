@@ -167,7 +167,7 @@ export async function addBuildings(scene,loadModel) {
     for (const side of [-1,1]) {
       local(rooms,wall,side*w/2,.43,0,.22,.66,d);
     }
-    local(rooms,'#b89470',-w*.23,.155,1.28,2.64,.023,2.55);
+    local(rooms,homeStyle.trim,-w*.23,.155,1.28,2.64,.023,2.55);
     // Keep the center aisle clear from the door to the rear rooms.
     local(fallback,'#477267',-w*.24,.37,.55,2.22,.58,.94);
     local(fallback,'#e6ded0',w*.24,.38,-d*.28,1.55,.48,2.29);
