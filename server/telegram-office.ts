@@ -309,7 +309,7 @@ export function officeGroupReply(state,input,env) {
       failed+' gagal.'+(details?' Contoh dari daftar tugas terbaru: '+details+'.':
       blocked||failed?' Rincian tugas tersebut tidak terlihat dalam daftar terbaru.':'')+
       backlog+workerSignal+
-      ' Ini catatan tugas dan sinyal worker, bukan bukti seluruh server mati atau sehat.'};
+      ' Ini status tugas dan sinyal worker, bukan diagnosis kondisi server dan bukan bukti seluruh server mati atau sehat.'};
   }
   const check=/^\/cek(?:\s+([A-Za-z0-9_]+))?\s*$/i.exec(msg);
   if (check) {
