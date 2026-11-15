@@ -145,7 +145,10 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
         (serverSchedule?.autoOffice?'Jadwal diperiksa saat Auto Office memanggil server; waktunya mengikuti cron n8n Published.':
           serverSchedule?.enabled?'Pemicu Studio diizinkan, tetapi perlu workflow Studio Scheduler yang Published.':
             'Pemicu server Studio belum diaktifkan.')+
-        ' Jadwal baru mulai dalam keadaan nonaktif. Tugas terjadwal memakai diagnostik dan laporan merangkum status yang tercatat. Tidak ada Gemini berbayar dari jadwal Studio.</p>'+
+        ' Panggilan Auto Office terakhir tercatat: '+
+        (Number.isSafeInteger(serverSchedule?.lastAutoOfficeDispatchAt) && serverSchedule.lastAutoOfficeDispatchAt>0?
+          time.format(serverSchedule.lastAutoOfficeDispatchAt)+' WIB':'belum teramati')+
+        '. Ini hanya bukti pemanggilan endpoint, bukan bukti semua rencana Studio telah dijalankan. Jadwal baru mulai dalam keadaan nonaktif. Tugas terjadwal memakai diagnostik dan laporan merangkum status yang tercatat. Tidak ada Gemini berbayar dari jadwal Studio.</p>'+
         '<form id="studio-server-schedule"><label>Judul<input name="label" maxlength="120" required></label>'+
         '<label>Jenis<select name="kind"><option value="task">Diagnostik</option><option value="report">Laporan</option></select></label>'+
         '<label>Waktu WIB<input name="when" type="datetime-local" required></label><button type="submit">Buat jadwal server</button></form>'+
