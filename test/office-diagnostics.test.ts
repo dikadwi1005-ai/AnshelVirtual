@@ -27,6 +27,8 @@ test('diagnosis request recognizer is scoped to Bima operational questions only'
   assert.equal(isOfficeDiagnosticQuery('Bima, cek status server dan workflow n8n sekarang'),true);
   assert.equal(isOfficeDiagnosticQuery('Bima, buatkan ide konten tentang API'),false);
   assert.equal(isOfficeDiagnosticQuery('Citra, cek tugas IT hari ini'),false);
+  assert.equal(isOfficeDiagnosticQuery('Alya dan Bima, diskusikan status pemeriksaan API terbaru'),false);
+  assert.equal(isOfficeDiagnosticQuery('Bima dan Citra, bahas status IT'),false);
 });
 
 test('Bima actually reads database and last dispatcher pulse and never pretends n8n is connected',async()=>{
