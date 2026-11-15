@@ -4,15 +4,15 @@
 
 Sekarang pesan **Bima, jelaskan kondisi operasional Anshel hari ini dan apa yang perlu diperiksa berikutnya** serta perintah **/diagnosa** memanggil backend secara langsung untuk membaca kondisi database, tugas yang dijeda/gagal, antrean, heartbeat worker dan pemanggilan terakhir Auto Office. Bima mengirim hasil pemeriksaan aktual dan prioritas yang dapat diverifikasi; tidak memakai jawaban rekaan Gemini, tidak membuat tugas, dan tidak menjalankan retry.
 
-### Sambungkan pembacaan n8n Cloud (opsional)
+### Sambungkan pembacaan n8n (Cloud atau host Sumopod Anshel)
 
-Pemeriksaan metadata n8n langsung baru aktif jika pemilik menambahkan tiga variabel rahasia ke Vercel Production:
+Pemeriksaan metadata n8n langsung baru aktif jika tiga variabel berikut tersedia pada Vercel Production. Alamat dan ID workflow bukan rahasia, tetapi API key wajib disimpan privat:
 
-- `N8N_MONITOR_BASE_URL`: hanya origin HTTPS dari instance `*.n8n.cloud` (bukan URL lengkap dengan path atau query).
+- `N8N_MONITOR_BASE_URL`: origin HTTPS dari n8n Cloud atau host Sumopod milik Anshel yang diizinkan tepat `https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id` (tanpa path `/workflow/...`).
 - `N8N_MONITOR_API_KEY`: API key n8n, terpisah dari `N8N_TOKEN` untuk webhook backend; gunakan scope baca saja apabila tersedia.
-- `N8N_MONITOR_WORKFLOW_ID`: ID workflow grup **Anshel · Grup AI Natural Gemini (12 pegawai)**, bukan nama tampilan.
+- `N8N_MONITOR_WORKFLOW_ID`: `dwgeU2zVgzqF2Nu2` untuk workflow **Anshel · Grup AI Natural Gemini (12 pegawai)**.
 
-Tambahkan melalui pengaturan environment Vercel secara privat, jangan masukkan kunci ke GitHub, grup Telegram, atau chat. Deploy ulang Production dari commit main terbaru setelah mengubah variabel. Tanpa konfigurasi, Bima melaporkan bahwa akses baca API n8n belum terhubung. Host custom/self-hosted sengaja belum didukung tanpa meninjau allowlist keamanan.
+Masukkan API key hanya melalui pengaturan environment Vercel, jangan mengirimnya ke GitHub, grup Telegram, atau chat. Deploy ulang Production dari commit main terbaru setelah mengubah variabel. Tanpa API key, Bima melaporkan konfigurasi masih belum lengkap, bukan mengklaim tidak ada error. Hanya host Sumopod yang sudah dipastikan sebagai instance Anshel yang diizinkan secara spesifik; custom domain lainnya tetap ditolak sampai ditinjau.
 
 Pembacaan n8n memakai GET saja ke metadata workflow dan lima execution terakhir dengan timeout 3,5 detik, tidak membaca isi node, payload, output AI, atau kredensial. Jika API tidak mengizinkan akses, memblokir request, atau tidak menyimpan riwayat, Bima melaporkan ketidakpastian; tidak mengatakan sistem sehat. Balasan Telegram tetap dibatasi satu kali per update. Tidak mengubah workflow Published, menambah trigger, me-retry eksekusi gagal, melanjutkan tugas dijeda, atau mengubah jadwal dan kuota Gemini.
 
