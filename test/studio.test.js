@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { narrationCues } from '../public/studio-captions.js';
 import test from 'node:test';
 import { checkLayout, editProp, layoutItems } from '../public/layout-editor.js';
-import { historyEvent, localReminderTime, nationSnapshot, storyboard } from '../public/studio-data.js';
+import { episodeFromReplay, episodeWebVtt, historyEvent, localReminderTime, nationSnapshot, storyboard } from '../public/studio-data.js';
 import { createConversations } from '../public/conversations.js';
 
 test('layout snaps movable props, rejects unsafe placements and protects furniture supports',()=>{
@@ -47,6 +47,34 @@ test('Nation City snapshots retain allowlisted fields and reject invalid or dupl
   assert.deepEqual(nationSnapshot({...snapshot,events:[{...event,private:'discard'}]}),snapshot);
   assert.equal(nationSnapshot({...snapshot,events:[event,event]}),null);
   assert.equal(nationSnapshot({...snapshot,events:[{...event,type:'task.run'}]}),null);
+});
+
+test('prompt episode uses recorded actors, produces valid captions, and never invents missing poses',()=>{
+  const people=[{id:'management',employee:'Alya'},{id:'operations',employee:'Bima'}];
+  const frames=Array.from({length:80},(_,index)=>({
+    at:100000+index*400,
+    actors:[{animation:'desk-work'}, {animation:index<15?'read':'walk'}],
+  }));
+  assert.equal(episodeFromReplay('Bima pulang',frames.slice(0,12),people),null);
+  const shots=episodeFromReplay('Bima pulang dari kantor',frames,people);
+  assert.ok(shots.length>=3 && shots.length<=5);
+  assert.equal(shots[0].camera,'campus');
+  assert.ok(shots.slice(1).every(shot=>shot.camera==='employee-operations'));
+  assert.ok(shots.some(shot=>/Bima sedang berjalan/.test(shot.caption)));
+  assert.ok(shots.every(shot=>shot.end>shot.start && shot.end<=frames.at(-1).at &&
+    shot.frames.length===frames.length));
+  const vtt=episodeWebVtt(shots);
+  const cues=narrationCues(vtt,shots.reduce((sum,shot)=>sum+shot.end-shot.start,0));
+  assert.equal(cues.length,shots.length);
+  assert.equal(cues[0].start,0);
+  assert.equal(cues.at(-1).end,shots.reduce((sum,shot)=>sum+shot.end-shot.start,0));
+  assert.equal(episodeFromReplay('Bima',[
+    {at:0,actors:[]},{at:10500,actors:[]}],people),null);
+  const unknown=episodeFromReplay('status kantor',[
+    {at:0,actors:[{animation:'unknown'}]},
+    {at:11000,actors:[{animation:'unknown'}]}],people);
+  assert.ok(unknown && unknown.every(shot=>!shot.caption.includes('sedang bekerja')));
+  assert.equal(episodeFromReplay('',frames,people),null);
 });
 
 test('reminder time uses WIB and rejects normalized invalid calendar dates',()=>{
