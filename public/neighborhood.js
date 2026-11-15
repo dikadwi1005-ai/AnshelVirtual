@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { districtServices, houseDoor, houseFronts, homes, officeEnvelope } from './layout.js';
 import { batchDistrictModels, openHouseFacade } from './district-models.js';
+import { homeVisualStyle, homeFacadeDetails } from './home-styles.js';
 
 function modelParts(parent) {
   const groups=new Map();
@@ -100,6 +101,7 @@ export async function addBuildings(scene,loadModel) {
     const w=home.width,d=home.depth, height=home.variant===1?3.27:2.77;
     const palette=[['#e4cdae','#796053'],['#d9ddc5','#3e635e'],['#e6bea5','#914f40'],['#cbd5cf','#44586a']];
     const [wall,roof]=palette[home.variant];
+    const homeStyle=homeVisualStyle(home.person.id);
     const local=(builder,color,u,y,v,width,h,depth,rotation=0,shape='box',finish='solid')=>{
       const [x,z]=home.point(u,v);
       builder.add(color,x,y,z,width,h,depth,home.angle+rotation,shape,finish);
@@ -111,7 +113,7 @@ export async function addBuildings(scene,loadModel) {
     const shellSize=[w+.35,home.variant===3?5.7:4.65,d+.4];
     const entry=home.doorOffset, left=entry-houseDoor.width/2, right=entry+houseDoor.width/2;
     placeModel(importedExterior,'district/building-type-'+houseFronts[home.variant].model,[home.x,.06,home.z],
-      shellSize,home.angle+Math.PI,['#ffe6d0','#dbf3ff','#fff1c4','#d7ead8'][home.variant],
+      shellSize,home.angle+Math.PI,homeStyle.facade,
       [entry/shellSize[0],houseDoor.width/shellSize[0],(houseDoor.height+.14)/shellSize[1]]);
     asset('furniture/loungesofa',-w*.24,.145,.55,[2.22,.94,.94]);
     asset('furniture/tablecoffee',-w*.24,.145,2.25,[1.22,.38,.47]);
@@ -132,6 +134,10 @@ export async function addBuildings(scene,loadModel) {
     local(paths,bronze,entry,houseDoor.height+.19,d/2,houseDoor.width+.22,.19,.28);
     local(paths,bronze,entry,houseDoor.height+.34,d/2+.38,houseDoor.width+.55,.13,1.32);
     local(paths,'#ffe0a6',entry,houseDoor.height+.23,d/2+.47,.67,.06,.12,0,'box','glow');
+    // Per-employee facade art pass; overlays never occupy the entrance or
+    // mutate home collisions, parcel assignment or old presence snapshots.
+    for(const detail of homeFacadeDetails(home))
+      local(paths,detail.color,detail.u,detail.y,detail.v,detail.w,detail.h,detail.d);
     local(paths,'#587553',w*.52,.02,0,1.15,.11,d+2.2);
     local(homeParts,wall,0,height/2,-d/2,w,height,.31);
     for(const side of [-1,1]) {
