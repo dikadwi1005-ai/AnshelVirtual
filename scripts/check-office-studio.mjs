@@ -16,7 +16,7 @@ const office=officeServer(store,{OWNER_PASSWORD:password});
 const engineFixture=process.env.ANSHEL_PHASE10_FINAL==='days' && (await build({bundle:true,write:false,format:'esm',platform:'browser',
   stdin:{contents:`export * as THREE from 'three'; export {createActors} from './public/actors.js';
     export {campusTraffic} from './public/campus-traffic.js'; export {navigation} from './public/navigation.js';
-    export {districtObstacles,rooms} from './public/layout.js'; export {obstaclesFor} from './public/furnishings.js';
+    export {districtObstacles,pedestrianOnlyObstacles,rooms} from './public/layout.js'; export {obstaclesFor} from './public/furnishings.js';
     export {radialTexture} from './public/materials.js';`,resolveDir:process.cwd()},
 })).outputFiles[0].text;
 const server=createServer((req,res)=>{
@@ -277,14 +277,15 @@ async function soak() {
 
 async function autonomousDays(page,seedValue) {
   return page.evaluate(async seedValue=>{
-    const {THREE,createActors,campusTraffic,navigation,districtObstacles,rooms,obstaclesFor,radialTexture}=
+    const {THREE,createActors,campusTraffic,navigation,districtObstacles,pedestrianOnlyObstacles,rooms,obstaclesFor,radialTexture}=
       await import('/phase10-fixture.js');
     const previousRandom=Math.random;
     let seed=seedValue;
     Math.random=()=>((seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296);
     const scene=new THREE.Scene();
-    const nav=navigation([...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room))]);
-    const people=await createActors(scene,nav,radialTexture(),{phase:'closed'},null);
+    const obstacles=[...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room))];
+    const nav=navigation(obstacles);
+    const people=await createActors(scene,navigation([...obstacles,...pedestrianOnlyObstacles]),radialTexture(),{phase:'closed'},null);
     const arrivals={}, completed={}, visits={}, road={}, troubles={};
     const tours=new Map(), orders=new Map(), lastAction=new Map();
     let tick=0, priorityFailures=0, collisions=0, propDrift=0, duplicateDeliveries=0;

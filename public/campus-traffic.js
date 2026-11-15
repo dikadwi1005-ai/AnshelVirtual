@@ -204,7 +204,11 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
     const x=root.position.x+dx/length*step,z=root.position.z+dz/length*step;
     const angle=Math.atan2(dx,dz);
     const turn=Math.atan2(Math.sin(angle-root.rotation.y),Math.cos(angle-root.rotation.y));
-    if (!nav.clear([root.position.x,root.position.z],[x,z],null,radius*.56) || jam(people,x,z,radius)) return false;
+    const approaching=people.some(other=>other.visible &&
+      Math.hypot(other.position.x-x,other.position.z-z)<radius &&
+      Math.hypot(other.position.x-x,other.position.z-z)<
+        Math.hypot(other.position.x-root.position.x,other.position.z-root.position.z));
+    if (!nav.clear([root.position.x,root.position.z],[x,z],null,radius*.56) || approaching) return false;
     root.rotation.y+=THREE.MathUtils.clamp(turn,-delta*6,delta*6);
     root.position.x=x; root.position.z=z;
     return true;

@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createActors } from './actors.js';
 import { createCharacter } from './character-mode.js';
 import { createCharacterCamera } from './character-camera.js';
-import { homeByEmployee, insideRoom, rooms, roomById, point, structureView } from './layout.js';
+import { homeByEmployee, insideRoom, pedestrianOnlyObstacles, rooms, roomById, point, structureView } from './layout.js';
 import { furniture } from './furnishings.js';
 import { checkLayout } from './layout-editor.js';
 import { radialTexture } from './materials.js';
@@ -375,9 +375,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     world.displays.sync(state);
     let storage;
     try { storage=window.localStorage; } catch { /* Storage can be denied by browser settings. */ }
-    nav=navigation(world.obstacles);
+    const vehicleNav=navigation(world.obstacles);
+    nav=navigation([...world.obstacles,...pedestrianOnlyObstacles]);
     const liveNav={clear:(...args)=>nav.clear(...args),route:(...args)=>nav.route(...args)};
-    traffic=await campusTraffic(scene,liveNav,(id,asset)=>population?.receiveFood(id,asset));
+    traffic=await campusTraffic(scene,vehicleNav,(id,asset)=>population?.receiveFood(id,asset));
     population=await createActors(scene,liveNav,shadow,state,requestDialogue,storage);
     population.campus(traffic.obstacles);
     if(shared) restoreOffice(shared);

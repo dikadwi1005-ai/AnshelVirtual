@@ -16,6 +16,7 @@ export function withinSite([x,z], margin = 0) {
 
 const parcelX=34, parcelZ=29;
 export const gate={walkway:-1.8,vehicle:8.5,z:parcelZ};
+export const pedestrianOnlyObstacles=[{box:[4.9,parcelZ-.17,12.1,parcelZ+.17]}];
 export const fenceRuns=[
   [-parcelX,-parcelZ,parcelX,-parcelZ],[-parcelX,-parcelZ,-parcelX,parcelZ],[parcelX,-parcelZ,parcelX,parcelZ],
   [-parcelX,parcelZ,-3.3,parcelZ],[-.3,parcelZ,4.9,parcelZ],[12.1,parcelZ,parcelX,parcelZ],
