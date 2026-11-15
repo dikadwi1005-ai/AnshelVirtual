@@ -159,7 +159,7 @@ export async function streamingCity(scene,loadModel,low=false) {
       batch(group,[[0,.27,-.7,.16,.52,.52,'#202a32'],[0,.27,.7,.16,.52,.52,'#202a32'],
         [0,.58,-.05,.43,.42,1.61,index%2?'#258480':'#bb7047'],[0,.85,.55,.67,.10,.13,'#202a32'],
         [0,1.02,-.17,.44,.53,.34,'#3d5269'],[0,1.4,-.083,.32,.33,.32,'#dbb17d']],cube);
-    } else if (asset) group.add(fittedModel(asset,[1.9,index%4===0?1.44:1.88,4.1]));
+    } else if (asset) group.add(fittedModel(asset,[1.9,index%4===0?1.44:1.88,4.1],{fit:'contain'}));
     else {
       const substitute=new THREE.Mesh(cube,material);
       substitute.scale.set(1.8,1.4,4);

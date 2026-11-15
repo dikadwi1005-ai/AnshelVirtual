@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { divisions } from '../public/catalog.js';
@@ -59,5 +59,26 @@ test('workflow memakai rute integrasi terbatas, koneksi node valid, dan zona WIB
     assert.equal(http.parameters.method,'POST');
     assert.equal(http.parameters.genericAuthType,'httpHeaderAuth');
     assert.match(http.parameters.url,/^https:\/\/[^/]+\/api\/integrations\/(telegram|report)$/);
+  }
+});
+
+test('every shipped local 3D model and texture is accounted for in the audited manifest',async()=>{
+  const {assets}=await readJson('ASSETS.json');
+  const manifest=new Set(assets.map(asset=>asset.path));
+  const files=[];
+  async function walk(dir) {
+    for(const entry of await readdir(dir,{withFileTypes:true})) {
+      const path=join(dir,entry.name).replaceAll('\\','/');
+      if(entry.isDirectory())await walk(path);
+      else if(entry.isFile())files.push(path);
+    }
+  }
+  await walk('public/models');
+  assert.deepEqual(files.sort(),[...manifest].sort(),
+    'assets must not be deployed without manifest, source, license and checksum');
+  for(const asset of assets) {
+    assert.match(asset.source,/^https:\/\//);
+    assert.match(asset.sha256,/^[a-f0-9]{64}$/);
+    assert.ok(['GLB','PNG'].includes(asset.format));
   }
 });

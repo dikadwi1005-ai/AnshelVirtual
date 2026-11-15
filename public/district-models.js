@@ -1,9 +1,15 @@
 import * as THREE from 'three';
 
-export function fittedModel(asset,[width,height,depth]) {
+export function fittedModel(asset,[width,height,depth],{fit='stretch'}={}) {
+  if(!['stretch','contain'].includes(fit) ||
+    ![width,height,depth,asset.size.x,asset.size.y,asset.size.z].every(value=>Number.isFinite(value)&&value>0))
+    throw new RangeError('Invalid 3D asset size or fitting mode.');
   const group=new THREE.Group();
   const copy=asset.scene.clone(true);
   const scale=new THREE.Vector3(width/asset.size.x,height/asset.size.y,depth/asset.size.z);
+  // Dynamic vehicles are visual props with a physical aspect ratio. The
+  // default stretch remains for authored building/collision footprints.
+  if(fit==='contain')scale.setScalar(Math.min(scale.x,scale.y,scale.z));
   const center=asset.bounds.getCenter(new THREE.Vector3());
   copy.position.set(-center.x*scale.x,-asset.bounds.min.y*scale.y,-center.z*scale.z);
   copy.scale.copy(scale);
