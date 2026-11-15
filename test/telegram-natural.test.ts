@@ -5,7 +5,7 @@ import { divisions } from '../public/catalog.js';
 import { createStore } from '../server/store.ts';
 import { createCloudApi } from '../api/route.ts';
 import {
-  buildOfficeNaturalRequest,prepareOfficeNaturalChat,deliverOfficeNaturalChat,cleanOfficeNaturalResponse,officeScheduleReply,
+  buildOfficeNaturalRequest,prepareOfficeNaturalChat,deliverOfficeNaturalChat,cleanOfficeNaturalResponse,officeScheduleReply,officeTechnicalBriefing,
 } from '../server/telegram-natural.ts';
 
 const tokens=Object.fromEntries(divisions.map((d,i)=>[d.id,String(100000+i)+':'+('z'.repeat(35))]));
@@ -301,6 +301,66 @@ test('Bima does not call the office normal or deny paused IT tasks',async()=>{
   },env,{updateId:'334467',ticket:'mock',output:incomplete},transport(messages2));
   assert.equal(result2.ai,false);
   assert.match(messages2[0].body.text,/tugas IT dijeda/);
+});
+
+test('Bima proposes concrete priorities and rejects passive IT reply seen in Telegram',async()=>{
+  const question='Bima, jelaskan kondisi operasional Anshel hari ini dan apa yang perlu diperiksa berikutnya.';
+  const passive='Tugas IT lagi dijeda, Pak, dan belum ada laporan error baru. Kalau mau lanjut, tinggal tentukan bagian server atau API mana yang perlu dicek.';
+  const state={now:Date.parse('2026-11-15T09:18:00Z'),worker:false,
+    workerLastSeenAt:Date.parse('2026-11-13T09:40:00Z'),
+    counts:{paused:2,failed:0,blocked:0},tasks:[
+      {division:'operations',status:'paused',description:'Rahasia IT'},
+      {division:'research',status:'paused',description:'Rahasia riset'}],people:{}};
+  assert.equal(cleanOfficeNaturalResponse(passive,'belum diverifikasi',question),'belum diverifikasi');
+  const briefing=officeTechnicalBriefing(state);
+  assert.equal(briefing.pausedIT,1);
+  assert.equal(briefing.totalPaused,2);
+  assert.match(briefing.text,/1 tugas IT dijeda/);
+  assert.match(briefing.text,/2 tugas dijeda di seluruh kantor/);
+  assert.match(briefing.text,/Prioritasku:.*panel Tugas.*n8n Executions/);
+  assert.match(briefing.text,/bukan bukti gangguan/);
+  assert.doesNotMatch(briefing.text,/Rahasia IT|Rahasia riset|berjalan normal|tidak ada error baru/i);
+  const prompt=buildOfficeNaturalRequest('operations',question,state);
+  const facts=JSON.parse(prompt.systemInstruction.parts[0].text.split('DATA KANTOR TERPERCAYA: ')[1]);
+  assert.equal(facts.buktiStatusTeknis.prioritasPemeriksaan.length,2);
+  assert.match(prompt.systemInstruction.parts[0].text,/Jangan hanya meminta pemilik memilih server\/API/);
+  const messages=[];
+  const result=await deliverOfficeNaturalChat({
+    consumeOfficeGroupAI:async()=>({division:'operations',question}),
+    state:async()=>state,rememberOfficeGroupAI:async()=>{},
+  },env,{updateId:'81232',ticket:'mock',output:passive},transport(messages));
+  assert.equal(result.ai,false);
+  assert.match(messages[0].body.text,/1 tugas IT dijeda/);
+  assert.match(messages[0].body.text,/n8n Executions/);
+  assert.doesNotMatch(messages[0].body.text,/belum ada laporan error baru|tentukan bagian server/);
+  assert.equal(messages.length,1);
+});
+
+test('Bima retains a grounded natural answer with actionable checks',async()=>{
+  const question='Bima, jelaskan kondisi operasional Anshel hari ini dan apa yang perlu diperiksa berikutnya.';
+  const answer='Pak, satu tugas IT masih dijeda. Saranku cek alasan tugas yang dijeda di panel Tugas, lalu cek n8n Executions untuk workflow grup. Kondisi layanan lain belum diaudit langsung.';
+  const state={now:Date.parse('2026-11-15T09:18:00Z'),worker:false,
+    counts:{paused:1},tasks:[{division:'operations',status:'paused'}],people:{}};
+  const messages=[];
+  const result=await deliverOfficeNaturalChat({
+    consumeOfficeGroupAI:async()=>({division:'operations',question}),
+    state:async()=>state,rememberOfficeGroupAI:async()=>{},
+  },env,{updateId:'81233',ticket:'mock',output:answer},transport(messages));
+  assert.equal(result.ai,true);
+  assert.equal(messages[0].body.text,answer);
+});
+
+test('Bima changes triage priority when work fails or scheduled heartbeat is late',()=>{
+  const state={now:Date.parse('2026-11-13T06:00:00Z'),worker:false,
+    workerLastSeenAt:Date.parse('2026-11-13T03:00:00Z'),
+    counts:{paused:0,failed:1,blocked:1},
+    tasks:[{division:'operations',status:'failed'}]};
+  const brief=officeTechnicalBriefing(state);
+  assert.equal(brief.pulse.missedScheduledPulse,true);
+  assert.match(brief.text,/1 terhambat dan 1 gagal/);
+  assert.match(brief.text,/tinjau penyebab tugas gagal\/terhambat/);
+  assert.match(brief.text,/heartbeat terlewat saat jadwal/);
+  assert.match(brief.text,/belum hasil audit layanan eksternal/);
 });
 
 test('riwayat pesan lama yang mengarang pemantauan log tidak dijadikan konteks baru',()=>{
