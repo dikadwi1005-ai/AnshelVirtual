@@ -19,6 +19,16 @@ Workflow sumber [Studio Scheduler](../workflows/office_studio_schedule.json) ber
 
 **Nation City — Tested dengan fixture, Pending External Verification.** Adapter hanya mengambil GET HTTPS memakai URL dan token opsional dari server. Flag `NATION_CITY_ENABLED` default nonaktif. Respons dibatasi 64 KB dan empat detik, redirect ditolak, hasil yang sah dicache 30 detik, dan data lama dapat dipakai maksimal lima menit saat offline. Endpoint Nation City yang berizin dapat menyajikan [kontrak JSON versi 1](phase-5-7-studio.md#kontrak-baca-nation-city). Endpoint nyata dan token baca belum tersedia untuk verifikasi. Impor JSON tetap tersedia.
 
+## Opsi Studio Scheduler memakai Auto Office (opt-in, 15 November 2026)
+
+Studio Scheduler kini bisa menggunakan `POST /api/integrations/office-group/dispatch` yang sudah dipanggil workflow Auto Office Published. Ini mengurangi kebutuhan untuk memublikasikan workflow Studio Scheduler kedua. Dua environment flag Production **harus** bernilai `true`: `STUDIO_SCHEDULER_ENABLED` dan `STUDIO_SCHEDULER_USE_AUTO_OFFICE`. Jika salah satu tidak aktif, /dispatch berjalan seperti sebelumnya dan tidak memproses jadwal Studio. Jangan anggap keberadaan nama variabel sebagai bukti nilainya aktif.
+
+- Hanya jadwal yang secara eksplisit diaktifkan pemilik di Studio yang bisa diproses. Jadwal baru tetap `disabled`. Jenis tugas masih berupa `diagnostic` dan laporan masih snapshot; tidak memulai panggilan Gemini baru.
+- Eksekusi memakai claim/lease dan idempotensi yang sudah ada. Jika pemeriksaan Studio gagal, /dispatch tetap bisa menyampaikan notifikasi kantor, dengan status Studio `unavailable` yang tidak menyatakan tugas selesai.
+- Frekuensi bergantung pada cron Auto Office yang **benar-benar Published**, bukan waktu permintaan Studio. Jika cron tiap jam pada 09–17 WIB hari kerja, jadwal diperiksa pada panggilan berikutnya di dalam jendela itu, bukan pada menit yang tepat. Tidak ada jaminan pengiriman saat libur, malam atau ketika n8n berhenti.
+- Pengiriman Telegram khusus Studio tetap memerlukan workflow Studio tick yang terpisah; mode penggunaan ulang ini tidak otomatis mengirim pesan baru dari scheduler dan tidak menambah Telegram Trigger.
+- Syarat rilis: `npm test` dan build lulus; uji owner membuat jadwal nonrahasia, mengaktifkannya, dan amati satu panggilan Auto Office beserta hasil yang tercatat. Jangan aktifkan flag baru tanpa terlebih dahulu memverifikasi cron Production, dampak resource, dan rencana rollback.
+
 ## Data cloud dan AI
 
 **Cloud Verified, baca-saja.** Pada 14 November 2026, Production berisi 13 pengaturan, 12 tugas, 66 event audit dan 8 artefak selesai. Seluruh SHA-256 artefak cocok. Skema dan pembacaan tugas ditolak untuk role `anon` dan `authenticated`. SQLite lokal berisi 2 pengaturan, 0 tugas dan 4 event audit. Production merupakan sumber yang lebih lengkap untuk tugas. Tinjau konflik pengaturan dan audit berdasarkan ID, timestamp, dan field sebelum rekonsiliasi. Importer sekarang memulai dalam mode preview baca-saja. `--apply` mempertahankan syarat target kosong. [Panduan pemulihan](cloud-recovery.md) · [Dokumentasi backup Supabase](https://supabase.com/docs/guides/platform/backups)
