@@ -8,6 +8,7 @@ import { createDisplays } from './displays.js';
 import { furniture, obstaclesFor, partitionHeight, partitions, propsFor } from './furnishings.js';
 import { addLounge } from './lounge.js';
 import { batchDistrictModels } from './district-models.js';
+import { officeInteriorAccents } from './office-interior-accents.js';
 import { layoutItems } from './layout-editor.js';
 import { emission, finish, floorMaterial, objectMaterial, radialTexture } from './materials.js';
 
@@ -257,6 +258,14 @@ export async function buildWorld(scene,shadowTexture) {
     }
     const wing=wings.get(room.wing);
     architecture(wing,room,upperWalls);
+    // Non-interactive finish details are deliberately excluded from collision
+    // geometry, layout-editor handles and the room pathfinding graph.
+    for(const detail of officeInteriorAccents(room)) {
+      const trim=box(wing,[detail.w,detail.h,detail.d],
+        [detail.x,detail.y,detail.z],finish(detail.color,detail.kind==='floor'?.91:.69,.03));
+      trim.castShadow=false;
+      trim.receiveShadow=detail.kind==='wall';
+    }
     const props=propLists.get(room.id);
     jobs.push(...props.map(async (prop,index)=>{
       const id=room.id+':'+index;
