@@ -4,6 +4,7 @@ import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import { observedAvatar } from './office-avatar-status.ts';
 import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert,overdueOfficeQueueSummary,workerPulseEvidence } from './office-monitoring.ts';
 import { parseGroupWorkspaceCommand } from './telegram-workspace.ts';
+import {runOfficeReadOnlyDiagnostics} from './office-diagnostics.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
 // Pilot automation uses the four connected bots only. More workers remain opt-in.
@@ -473,6 +474,14 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const updateId=String(data.updateId);
   const novel=await store.reserveOfficeGroupUpdate(updateId);
   if (!novel)return {duplicate:true};
+  if(/^\/(?:diagnosa|diagnosis|cek-sistem)$/i.test(data.text.trim())) {
+    const report=await runOfficeReadOnlyDiagnostics(store,env,fetchImpl);
+    const connected=configuredOfficeBots(env).configured.includes('operations');
+    const sender=connected?'operations':'management';
+    await sendOfficeBotMessage(env,sender,report.text,{fetchImpl});
+    return {sent:true,division:sender,technicalOwner:'operations',
+      kind:'read-only-diagnosis',n8n:report.n8n.state};
+  }
   if(/^\/(?:kesehatan|health)$/i.test(data.text.trim())) {
     const state=await store.state(); // An actual successful database round trip.
     const last=typeof store.officeDispatchPulse==='function'
