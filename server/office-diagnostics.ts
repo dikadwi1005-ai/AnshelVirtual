@@ -19,17 +19,20 @@ export function isOfficeDiagnosticQuery(text) {
     /\b(?:Anshel|IT|server|sistem|API|n8n|worker|workflow|operasional|endpoint|layanan)\b/i.test(text);
 }
 
-/** Do not accept a URL from Telegram/user input. An admin must supply a
- * Cloud instance origin in Vercel settings. Never follow redirects or return
- * credentials/request URLs in reports. */
+/** The instance origin comes from trusted Vercel Production environment
+ * settings, never from Telegram content. Limit outbound calls to known n8n
+ * hosting domains so user text cannot turn monitoring into an SSRF proxy.
+ * Sumopod is pinned to the owner's exact n8n hostname; no arbitrary hosts. */
 function n8nOrigin(env) {
   const raw=String(env.N8N_MONITOR_BASE_URL||'').trim();
   if(!raw)return null;
   try {
     const u=new URL(raw);
+    const isN8nCloud=/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.n8n\.cloud$/i.test(u.hostname);
+    const isOwnerSumopod=u.hostname==='n8n-s75gjxx8g8lx.jkt6.sumopod.my.id';
     if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash||
-      (u.pathname!=='/'&&u.pathname!=='')||
-      !/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.n8n\.cloud$/i.test(u.hostname))
+      u.port||(u.pathname!=='/'&&u.pathname!=='')||
+      !(isN8nCloud||isOwnerSumopod))
       return null;
     return u.origin;
   }catch{return null;}
@@ -60,7 +63,7 @@ export async function inspectN8nExecutions(env,fetchImpl=fetch) {
   if(!rawBase&&!apiKey&&!workflowId)
     return {state:'unconfigured',text:'API n8n belum terhubung; riwayat execution belum diperiksa.'};
   if(!base||!apiKey||!/^[A-Za-z0-9_-]{1,100}$/.test(workflowId))
-    return {state:'incomplete',text:'Konfigurasi pembacaan n8n belum lengkap atau origin bukan n8n Cloud HTTPS.'};
+    return {state:'incomplete',text:'Konfigurasi pembacaan n8n belum lengkap atau origin bukan alamat n8n HTTPS yang diizinkan.'};
   try {
     const root=base+'/api/v1';
     const [wf,ex]=await Promise.all([
