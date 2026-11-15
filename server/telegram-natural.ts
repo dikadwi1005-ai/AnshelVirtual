@@ -9,6 +9,7 @@ import { isCollectiveCall,requestedOfficeDiscussion,availableOfficeResponders,bu
 import { officeIndonesiaCalendarContext,officeIndonesiaDay } from './office-calendar.ts';
 import { observedAvatar,avatarForConversation } from './office-avatar-status.ts';
 import { isOfficeLocationQuestion,officeLocationReply } from './office-chat-replies.ts';
+import {isOfficeDiagnosticQuery} from './office-diagnostics.ts';
 import {parseGroupWorkspaceCommand,workspacePromptContext} from './telegram-workspace.ts';
 import {loadTelegramMedia,questionForMedia,attachMediaToGeminiRequest} from './telegram-media.ts';
 import {isJihanNewsQuery,readBciftBlogTitles,addJihanNewsGrounding,
@@ -29,7 +30,7 @@ const persona={
   qa:'Kirana: cermat dan blak-blakan tapi sopan, suka contoh langkah reproduksi bug; tidak mengaku sudah testing.',
   finance:'Laras: sistematis, hemat kata, hati-hati dengan angka dan keputusan biaya; tidak mengarang transaksi.',
 };
-const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur|rapat|ingat|lupakan|memori|acara|ingatkan|pengingat|mode|hening|pengaturan|notifikasi|serahkan|revisi|tinjau|setujui|tolak|ulang|jeda|batalkan|kesehatan|health|hasil|sahkan|kembalikan)(?:\s|$)/i;
+const command=/^\/(?:tugas|status|tim|bantuan|help|ringkasan|ringkas|kendala|cek|aktivitas|pegawai|monitor|kalender|libur|rapat|ingat|lupakan|memori|acara|ingatkan|pengingat|mode|hening|pengaturan|notifikasi|serahkan|revisi|tinjau|setujui|tolak|ulang|jeda|batalkan|diagnosa|diagnosis|cek-sistem|kesehatan|health|hasil|sahkan|kembalikan)(?:\s|$)/i;
 const actionClaim=/\b(?:sudah|telah|berhasil)\s+(?:(?:aku|saya|kami|kita)\s+)?(?:mengirim|mempublikasikan|memposting|menghapus|membayar|mentransfer|menginstal|mendeploy)\b/i;
 const validId=x=>/^[0-9]{1,24}$/.test(String(x??''));
 // Only use company-wide totals when the user actually asks about the office as a whole.
@@ -323,6 +324,14 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     (command.test(question.trim())||parseGroupWorkspaceCommand(question)||
       (naturalTask&&!jihanResearch)||parseOwnerTaskAction(question))) {
     const done=await sendOfficeGroupOwnerMessage(store,env,data,fetchImpl);
+    return {mode:'handled',...done};
+  }
+  // IT status/diagnostic questions take an actual, deterministic read-only
+  // path instead of Gemini improvisation. The same update ID is reserved only
+  // once by sendOfficeGroupOwnerMessage and no task is claimed or retried.
+  if(!hasMedia&&!naturalTask&&isOfficeDiagnosticQuery(question)) {
+    const done=await sendOfficeGroupOwnerMessage(store,env,
+      {...data,text:'/diagnosa'},fetchImpl);
     return {mode:'handled',...done};
   }
   const state=await store.state();

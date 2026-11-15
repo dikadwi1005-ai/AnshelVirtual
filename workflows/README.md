@@ -1,5 +1,21 @@
 # n8n Cloud, Gemini, dan Telegram
 
+## Diagnosis Bima secara langsung (read-only)
+
+Sekarang pesan **Bima, jelaskan kondisi operasional Anshel hari ini dan apa yang perlu diperiksa berikutnya** serta perintah **/diagnosa** memanggil backend secara langsung untuk membaca kondisi database, tugas yang dijeda/gagal, antrean, heartbeat worker dan pemanggilan terakhir Auto Office. Bima mengirim hasil pemeriksaan aktual dan prioritas yang dapat diverifikasi; tidak memakai jawaban rekaan Gemini, tidak membuat tugas, dan tidak menjalankan retry.
+
+### Sambungkan pembacaan n8n Cloud (opsional)
+
+Pemeriksaan metadata n8n langsung baru aktif jika pemilik menambahkan tiga variabel rahasia ke Vercel Production:
+
+- `N8N_MONITOR_BASE_URL`: hanya origin HTTPS dari instance `*.n8n.cloud` (bukan URL lengkap dengan path atau query).
+- `N8N_MONITOR_API_KEY`: API key n8n, terpisah dari `N8N_TOKEN` untuk webhook backend; gunakan scope baca saja apabila tersedia.
+- `N8N_MONITOR_WORKFLOW_ID`: ID workflow grup **Anshel · Grup AI Natural Gemini (12 pegawai)**, bukan nama tampilan.
+
+Tambahkan melalui pengaturan environment Vercel secara privat, jangan masukkan kunci ke GitHub, grup Telegram, atau chat. Deploy ulang Production dari commit main terbaru setelah mengubah variabel. Tanpa konfigurasi, Bima melaporkan bahwa akses baca API n8n belum terhubung. Host custom/self-hosted sengaja belum didukung tanpa meninjau allowlist keamanan.
+
+Pembacaan n8n memakai GET saja ke metadata workflow dan lima execution terakhir dengan timeout 3,5 detik, tidak membaca isi node, payload, output AI, atau kredensial. Jika API tidak mengizinkan akses, memblokir request, atau tidak menyimpan riwayat, Bima melaporkan ketidakpastian; tidak mengatakan sistem sehat. Balasan Telegram tetap dibatasi satu kali per update. Tidak mengubah workflow Published, menambah trigger, me-retry eksekusi gagal, melanjutkan tugas dijeda, atau mengubah jadwal dan kuota Gemini.
+
 ## Jihan BCIFT News Hunter + Indra/Hana lintas proyek
 
 **Rilis fitur bersyarat:** perubahan kode GitHub tidak otomatis berlaku ke Production sampai commit baru benar-benar di-deploy ke Vercel. Kode ini tidak mengubah workflow Published di n8n.
