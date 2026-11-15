@@ -13,6 +13,7 @@ const count=x=>Number.isSafeInteger(Number(x))&&Number(x)>=0?Number(x):0;
 export function isOfficeDiagnosticQuery(text) {
   if(typeof text!=='string'||text.length>1500)return false;
   return /^\s*@?Bima\b\s*[,：:]?\s*/i.test(text)&&
+    !/^\s*@?Bima\s+dan\b/i.test(text)&&
     !/\b(?:diskusikan|diskusi|bahas bersama|ajak\s+(?:Alya|Citra|Dara))\b/i.test(text)&&
     /\b(?:cek|periksa|periksa ulang|audit|diagnosa|diagnosis|kesehatan|status|kondisi|operasional|kendala)\b/i.test(text)&&
     /\b(?:Anshel|IT|server|sistem|API|n8n|worker|workflow|operasional|endpoint|layanan)\b/i.test(text);
