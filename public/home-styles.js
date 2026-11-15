@@ -36,7 +36,7 @@ export function homeFacadeDetails(home) {
     {color:style.accent,u:home.doorOffset,y:2.46,v:front+.02,w:1.96,h:.10,d:.10},
   ];
   for(let i=0;i<style.mark;i++) {
-    details.push({color:style.accent,u:-home.width*.39+i*.19,y:2.12,
+    details.push({color:style.accent,u:-home.width*.39+i*.19,y:2.48,
       v:front,w:.12,h:.23,d:.10});
   }
   return details;
