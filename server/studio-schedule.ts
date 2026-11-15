@@ -42,9 +42,14 @@ export function updateAutomation(current=[],input,now) {
   return next;
 }
 
-export async function runAutomation(store,now=Date.now()) {
+export async function runAutomation(store,now=undefined) {
   const change=async input=>{try { return await store.studioSchedule(input); } catch (error) { return conflict(error); }};
   const state=await store.state();
+  // Read the same clock used for the stored schedule and office state. This
+  // avoids time drift between scheduler checks and state snapshots, and makes
+  // tests with an injected clock exercise the actual path.
+  now ??= Number(state.now);
+  if(!Number.isSafeInteger(now) || now<=0) return {processed:0,phase:state.phase,reason:'time-unavailable'};
   const schedules=await store.studioSchedule();
   for (const plan of schedules.filter(plan=>plan.status==='leased'&&plan.lease<=now))
     await change({id:plan.id,action:'recover'});

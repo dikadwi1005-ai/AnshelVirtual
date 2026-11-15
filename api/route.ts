@@ -116,7 +116,20 @@ async function route(request, injectedStore = null, env = process.env) {
       if (path === '/api/integrations/office-group/dispatch') {
         const input=await readJson(request);
         if (Object.keys(input).length) throw new Fault(400,'Pemicu grup tidak menerima parameter.');
-        return respond(await dispatchOfficeGroupEvent(office,env));
+        // Reuse the existing Published Auto Office pulse for *explicitly enabled*
+        // Studio plans. This is opt-in, does not run Gemini, and never touches
+        // paused tasks. A failure here cannot suppress Telegram task alerts.
+        let studio=null;
+        if (env.STUDIO_SCHEDULER_ENABLED==='true' && env.STUDIO_SCHEDULER_USE_AUTO_OFFICE==='true') {
+          try {
+            const {processed,phase}=await runAutomation(office);
+            studio={status:'checked',processed,phase};
+          } catch {
+            studio={status:'unavailable',processed:null};
+          }
+        }
+        const result=await dispatchOfficeGroupEvent(office,env);
+        return respond(studio?{...result,studio}:result);
       }
       if (path === '/api/integrations/office-group/checkin') {
         const input=await readJson(request);
@@ -157,6 +170,7 @@ async function route(request, injectedStore = null, env = process.env) {
       return respond(await office.studioReplay(post?await readJson(request):{action:'list'}));
     if (path==='/api/studio/schedule' && (post || request.method==='GET'))
       return respond({enabled:env.STUDIO_SCHEDULER_ENABLED==='true',
+        autoOffice:env.STUDIO_SCHEDULER_ENABLED==='true' && env.STUDIO_SCHEDULER_USE_AUTO_OFFICE==='true',
         plans:await office.studioSchedule(post?ownerAutomation(await readJson(request)):undefined)});
     if (path === '/api/studio/nation-city' && request.method==='GET')
       return respond(await (env===process.env?liveCity:createNationCity(env))());
