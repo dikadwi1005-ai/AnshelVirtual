@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { districtServices, houseDoor, houseFronts, homes, officeEnvelope } from './layout.js';
 import { batchDistrictModels, openHouseFacade } from './district-models.js';
-import { homeVisualStyle, homeFacadeDetails } from './home-styles.js';
+import { homeVisualStyle, homeFacadeDetails, homeInteriorArt } from './home-styles.js';
 
 function modelParts(parent) {
   const groups=new Map();
@@ -168,6 +168,10 @@ export async function addBuildings(scene,loadModel) {
       local(rooms,wall,side*w/2,.43,0,.22,.66,d);
     }
     local(rooms,homeStyle.trim,-w*.23,.155,1.28,2.64,.023,2.55);
+    // Art hung on each home's rear wall: unique muted color and stripe count.
+    // Decorations are batched, non-interactive, and outside collision footprints.
+    for(const detail of homeInteriorArt(home))
+      local(rooms,detail.color,detail.u,detail.y,detail.v,detail.w,detail.h,detail.d);
     // Keep the center aisle clear from the door to the rear rooms.
     local(fallback,'#477267',-w*.24,.37,.55,2.22,.58,.94);
     local(fallback,'#e6ded0',w*.24,.38,-d*.28,1.55,.48,2.29);
