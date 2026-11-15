@@ -168,10 +168,16 @@ async function route(request, injectedStore = null, env = process.env) {
     if (path === '/api/dialogue' && post) return respond(await getDialogue().generate(await readJson(request)));
     if (path==='/api/studio/replay' && (post || request.method==='GET'))
       return respond(await office.studioReplay(post?await readJson(request):{action:'list'}));
-    if (path==='/api/studio/schedule' && (post || request.method==='GET'))
+    if (path==='/api/studio/schedule' && (post || request.method==='GET')) {
+      const plans=await office.studioSchedule(post?ownerAutomation(await readJson(request)):undefined);
+      // Only the last authenticated /dispatch contact is observable here. Do not
+      // mistake a recorded pulse for proof that an enabled Studio job executed.
+      const pulse=typeof office.officeDispatchPulse==='function'?await office.officeDispatchPulse():null;
+      const lastAutoOfficeDispatchAt=Number.isSafeInteger(pulse)&&pulse>0?pulse:null;
       return respond({enabled:env.STUDIO_SCHEDULER_ENABLED==='true',
         autoOffice:env.STUDIO_SCHEDULER_ENABLED==='true' && env.STUDIO_SCHEDULER_USE_AUTO_OFFICE==='true',
-        plans:await office.studioSchedule(post?ownerAutomation(await readJson(request)):undefined)});
+        lastAutoOfficeDispatchAt,plans});
+    }
     if (path === '/api/studio/nation-city' && request.method==='GET')
       return respond(await (env===process.env?liveCity:createNationCity(env))());
     if (path === '/api/studio/meetings' && (post || request.method==='GET'))
