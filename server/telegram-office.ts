@@ -318,7 +318,7 @@ export function officeGroupReply(state,input,env) {
         ?' Rincian tugas bermasalah tidak terlihat di daftar terbaru.':'')+
       workerSignal+' '+pulse.lastSeenText+'. '+pulse.verdict+' '+
       pulse.scheduleText+' Status ini hanya berdasarkan database dan heartbeat; '+
-      'tidak membuktikan Gemini, n8n, atau server lain sehat.'};
+      'bukan diagnosis kondisi server dan tidak membuktikan Gemini, n8n, atau layanan lain sehat.'};
   }
   const check=/^\/cek(?:\s+([A-Za-z0-9_]+))?\s*$/i.exec(msg);
   if (check) {
@@ -494,7 +494,7 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
       'Tugas bermasalah: '+(Number(counts.blocked)||0)+' terhambat, '+
       (Number(counts.failed)||0)+' gagal, '+(Number(counts.paused)||0)+' dijeda.\n'+
       'Auto Office Telegram: '+dispatcher+' (bukti pemanggilan endpoint, bukan sukses worker).\n'+
-      'Gemini, status Published n8n, dan layanan eksternal belum diuji secara langsung.';
+      'Gemini, status Published n8n, dan layanan eksternal belum diuji langsung.';
     await sendOfficeBotMessage(env,sender,text,{fetchImpl});
     return {sent:true,division:sender,technicalOwner:'operations',kind:'health-evidence'};
   }
