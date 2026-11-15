@@ -124,12 +124,13 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
     if (tab==='plan') {
       body.innerHTML='<form id="studio-plan"><label>Instruksi storyboard<textarea name="instruction" required maxlength="400" placeholder="Jadikan rapat tadi video pendek"></textarea></label>'+
         '<button type="submit">Susun dari riwayat</button>'+button('episode-story','Siapkan episode 3D')+
+        button('episode-story-render','Buat MP4 cepat (dengan teks, tanpa suara)')+
         '</form><div id="studio-storyboard"></div>';
     }
     if (tab==='schedule') {
       const state=office();
       const runs=(state?.audit ?? []).filter(event=>event.action==='scheduled_reserved').slice(0,8);
-      body.innerHTML='<p class="status-text">'+(state?.worker?'Worker terhubung.':'Worker offline.')+
+      body.innerHTML='<p class="status-text">'+(state?.worker?'Ada sinyal worker baru-baru ini.':'Belum ada sinyal worker dalam 40 detik; ini bukan bukti gangguan di luar jadwal.')+
         ' Kuota penjadwalan worker yang sudah ada adalah 3 draf per hari WIB. Pengingat lokal tidak mengeksekusi AI. Kalender kerja dan hari libur ada di Pengaturan.</p>'+
         '<form id="studio-schedule"><label>Nama rencana<input name="label" maxlength="120" required></label>'+
         '<div class="form-grid"><label>Jenis<select name="kind"><option value="task">Tugas</option><option value="report">Laporan</option></select></label>'+
@@ -402,6 +403,18 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
   }
 
   const clipDuration=clips=>clips.reduce((sum,clip)=>sum+clip.end-clip.start,0);
+  async function findEpisodeFrames(topic) {
+    const live=frameList.slice();
+    if (episodeFromReplay(topic,live,divisions)) return live;
+    // Recover local archived replay after a refresh instead of requiring a
+    // new recording. These are real poses from this browser, not sample scenes.
+    const starts=await archive.list();
+    for (const start of starts.slice(0,12)) {
+      const saved=await archive.get(start);
+      if (episodeFromReplay(topic,saved?.frames,divisions)) return saved.frames;
+    }
+    return null;
+  }
   function episodeFiles(form) {
     const files=mediaFields.map((key,index)=>form.elements[key].files[0] ?? draftFiles[index]);
     if (files.slice(0,2).some(file=>file && (!file.type.startsWith('audio/') || file.size>25_000_000)))
@@ -613,12 +626,19 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
         setTimeout(()=>URL.revokeObjectURL(url),2000);
         break;
       }
-      case 'episode-story': {
+      case 'episode-story':
+      case 'episode-story-render': {
+        if (recording || preparing) return notice('Ekspor masih berjalan. Selesaikan atau batalkan dahulu.');
+        const quick=data.studioAction==='episode-story-render';
         const topic=formValue(control.form,'instruction').trim();
         if (!topic) return notice('Isi topik dan arah cerita.');
-        const frames=frameList.slice();
+        let frames;
+        try { frames=await findEpisodeFrames(topic); }
+        catch { return notice('Arsip replay lokal tidak tersedia. Rekam kantor setidaknya sembilan detik.'); }
+        if (!visible || tab!=='plan') break;
+        if (!frames) return notice('Belum ada rekaman 3D minimal sembilan detik, baik sesi ini maupun arsip browser.');
         const shots=episodeFromReplay(topic,frames,divisions);
-        if (!shots) return notice('Biarkan kantor berjalan setidaknya sembilan detik sebelum membuat episode.');
+        if (!shots?.length) return notice('Rekaman belum cukup untuk menyusun adegan yang valid.');
         if (clipQueue.length && !window.confirm('Ganti urutan potongan saat ini? Draf yang tersimpan tetap bisa dibuka.')) break;
         setTab('replay');
         startReplay(undefined,frames);
@@ -629,8 +649,17 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
         form.elements.ratio.value='portrait';
         form.elements.format.value='mp4';
         form.elements.heading.value=topic.slice(0,100);
+        // The shot captions come from recorded poses. No voice audio is
+        // synthesized or claimed for the quick export.
+        form.elements.narration.value='';
         renderQueue();
-        exportStatus('Tiga potongan dan teks siap. Preview urutan, simpan draf, atau tambahkan audio dan WebVTT.');
+        exportStatus(shots.length+' potongan 3D tersedia. '+(quick?
+          'Menyimpan draf lalu mengekspor video dengan teks, tanpa suara narator.':
+          'Preview urutan, simpan draf, atau tambahkan narasi/audio dan WebVTT.'));
+        if (quick) {
+          await episodeDraft(form,true);
+          if (form.isConnected) await exportVideo(form);
+        }
         break;
       }
       case 'draft-save': await episodeDraft(control.form,true); break;
