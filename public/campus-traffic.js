@@ -204,10 +204,15 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
     const x=root.position.x+dx/length*step,z=root.position.z+dz/length*step;
     const angle=Math.atan2(dx,dz);
     const turn=Math.atan2(Math.sin(angle-root.rotation.y),Math.cos(angle-root.rotation.y));
-    const approaching=people.some(other=>other.visible &&
-      Math.hypot(other.position.x-x,other.position.z-z)<radius &&
-      Math.hypot(other.position.x-x,other.position.z-z)<
-        Math.hypot(other.position.x-root.position.x,other.position.z-root.position.z));
+    const wide=root===car || root===roadCar || root===opposingCar;
+    const sideClearance=wide?1.42:radius;
+    const forwardX=dx/length, forwardZ=dz/length;
+    const clearance=(other,px,pz)=>{
+      const rx=other.position.x-px, rz=other.position.z-pz;
+      return ((rx*forwardZ-rz*forwardX)/sideClearance)**2+((rx*forwardX+rz*forwardZ)/radius)**2;
+    };
+    const approaching=people.some(other=>other.visible && clearance(other,x,z)<1 &&
+      clearance(other,x,z)<clearance(other,root.position.x,root.position.z));
     if (!nav.clear([root.position.x,root.position.z],[x,z],null,radius*.56) || approaching) return false;
     root.rotation.y+=THREE.MathUtils.clamp(turn,-delta*6,delta*6);
     root.position.x=x; root.position.z=z;
@@ -229,7 +234,7 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
   for (const root of roots) root.visible=false;
   return {
     roots,
-    obstacles:[{root:car,radius:2.1},{root:guest,radius:.72},{root:scooter,radius:1.12},
+    obstacles:[{root:car,radius:2.1,width:1.05},{root:guest,radius:.72},{root:scooter,radius:1.12},
       {root:roadCar,radius:2.1},{root:opposingCar,radius:2.1}],
     pickup() { return order?.status==='Menunggu pengambilan'?order.id:null; },
     handingOff() { return order?.status==='Menunggu pengambilan' && order.handoff>0; },

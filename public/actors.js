@@ -260,11 +260,16 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     prop.position.copy(actor.root.worldToLocal(gripRight));
   }
   function occupied(actor,point,from) {
-    for (const {root,radius} of campus) {
+    for (const {root,radius,width=radius} of campus) {
       if (!root.visible) continue;
       const {x,z}=root.position;
-      const next=(x-point[0])**2+(z-point[1])**2;
-      if (next<radius**2 && (!from || next<(x-from[0])**2+(z-from[1])**2)) return true;
+      const sin=Math.sin(root.rotation.y), cos=Math.cos(root.rotation.y);
+      const clearance=([px,pz])=>{
+        const dx=px-x, dz=pz-z;
+        return ((dx*cos-dz*sin)/width)**2+((dx*sin+dz*cos)/radius)**2;
+      };
+      const next=clearance(point);
+      if (next<1 && (!from || next<clearance(from))) return true;
     }
     if (player) {
       const {x,z}=player.position;

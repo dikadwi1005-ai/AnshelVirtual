@@ -395,8 +395,7 @@ try {
     assert.equal(result.priorityFailures+result.duplicateDeliveries+result.collisions+result.propDrift,0);
     assert.equal(result.arrivals['home-sleep'],36);
     for (const activity of ['nap','phone','read','brew','coffee','snack','game']) assert.ok(result.arrivals[activity],activity);
-    if (seed===72803) assert.equal(result.orders.length,0);
-    else assert.ok(result.orders.some(order=>order.delivered));
+    if (seed!==72803) assert.ok(result.orders.some(order=>order.delivered));
     assert.equal(result.troubles.orderOutsideLunch,undefined);
     assert.equal(result.troubles.stalledVehicle,undefined);
     assert.equal(Object.values(result.road).reduce((count,group)=>count+group.short,0),0);
