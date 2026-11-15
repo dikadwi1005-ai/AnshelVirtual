@@ -1,5 +1,6 @@
 import { activities, divisions, timezone } from './catalog.js';
 import { createCharacterStick } from './character-input.js';
+import { cityDistricts } from './city-plan.js';
 import { displayModes, displayState, workstationTask } from './display-state.js';
 import { employeeProfile } from './employee-profiles.js';
 import { foodMenu, rooms, roomById, wings } from './layout.js';
@@ -471,7 +472,8 @@ function render() {
   if (panel==='district') {
     title('Anshel Virtual Tech','Kawasan');
     $('panel-content').innerHTML='<div class="context-actions">'+
-      [['area','Seluruh kawasan'],['office','Kantor'],['homes','Perumahan'],['garden','Taman'],['gate','Gerbang']]
+      [['city','Jelajah kota'],['office','Kantor'],['area','Kompleks'],['homes','Rumah pegawai'],['garden','Teras'],['gate','Gerbang'],
+        ...Object.entries(cityDistricts).map(([id,district])=>[id,district.label])]
         .map(([id,label])=>'<button type="button" data-district="'+id+'">'+label+'</button>').join('')+
       '</div><label>Tampilan bangunan<select id="building-mode">'+optionList([['interior','Lihat Interior'],
         ['exterior','Gedung Utuh'],['auto','Otomatis mengikuti kamera']],buildingMode)+'</select></label>'+

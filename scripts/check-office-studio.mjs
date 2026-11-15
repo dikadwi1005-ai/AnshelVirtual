@@ -13,11 +13,13 @@ const store=createStore(':memory:',()=>testClock ?? Date.now());
 const password='local-fixture-password';
 store.settings({mode:'open'});
 const office=officeServer(store,{OWNER_PASSWORD:password});
-const engineFixture=process.env.ANSHEL_PHASE10_FINAL==='days' && (await build({bundle:true,write:false,format:'esm',platform:'browser',
+const engineFixture=['days','city'].includes(process.env.ANSHEL_PHASE10_FINAL) && (await build({bundle:true,write:false,format:'esm',platform:'browser',
   stdin:{contents:`export * as THREE from 'three'; export {createActors} from './public/actors.js';
     export {campusTraffic} from './public/campus-traffic.js'; export {navigation} from './public/navigation.js';
     export {districtObstacles,pedestrianOnlyObstacles,rooms} from './public/layout.js'; export {obstaclesFor} from './public/furnishings.js';
-    export {radialTexture} from './public/materials.js';`,resolveDir:process.cwd()},
+    export {radialTexture} from './public/materials.js'; export {buildWorld,model} from './public/world.js';
+    export {openHouseFacade} from './public/district-models.js';
+    export {houseDoor,houseFronts,homes} from './public/layout.js';`,resolveDir:process.cwd()},
 })).outputFiles[0].text;
 const server=createServer((req,res)=>{
   if (engineFixture && req.url==='/phase10-fixture.js') {
@@ -229,6 +231,55 @@ async function survey(page) {
   }
 }
 
+async function houseWalkthrough(page) {
+  await page.evaluate(async()=>{
+    const {THREE,createActors,buildWorld,navigation,radialTexture,homes}=await import('/phase10-fixture.js');
+    const scene=new THREE.Scene();
+    scene.background=new THREE.Color('#93aeb2');
+    scene.add(new THREE.HemisphereLight('#fff1db','#a1aba8',2.3));
+    const shadow=radialTexture();
+    const world=await buildWorld(scene,shadow);
+    const nav=navigation(world.obstacles);
+    const people=await createActors(scene,nav,shadow,{phase:'closed'},null);
+    const home=homes[0], actor=people.actors[0];
+    const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+    renderer.setSize(1080,660);
+    renderer.domElement.id='house-walk';
+    document.body.replaceChildren(renderer.domElement);
+    const camera=new THREE.PerspectiveCamera(48,1080/660,.1,110);
+    const [x,z]=home.point(7.5,8.5);
+    camera.position.set(x,8.7,z);
+    camera.lookAt(home.x,.9,home.z);
+    const now=Date.parse('2026-11-16T02:10:00Z');
+    const state={phase:'work',now,people:{management:{executing:true}}};
+    window.houseResult=new Promise(resolve=>{
+      let outsideAt, returnedAt, time=0;
+      function step() {
+        people.update(.05,state,null,true);
+        const position=actor.root.position;
+        const depth=(position.x-home.x)*Math.sin(home.angle)+(position.z-home.z)*Math.cos(home.angle);
+        if (!outsideAt && depth>home.depth/2+.9) {
+          outsideAt=performance.now();
+          state.phase='closed';
+          state.people={};
+        }
+        if (outsideAt && actor.actual==='home' && actor.stage==='seated') returnedAt=performance.now();
+        world.buildings.setMode(depth>home.depth/2+.22?'exterior':'interior');
+        renderer.render(scene,camera);
+        time+=.05;
+        if (returnedAt || time>38) resolve({outside:Boolean(outsideAt),returned:Boolean(returnedAt),time});
+        else requestAnimationFrame(step);
+      }
+      window.startHouseWalkthrough=()=>requestAnimationFrame(step);
+    });
+  });
+  const finish=await recordScene(page,'#house-walk');
+  await page.evaluate(()=>window.startHouseWalkthrough());
+  const result=await page.evaluate(()=>window.houseResult);
+  await finish('10-1-house-entry-exit');
+  assert.equal(result.outside&&result.returned,true,JSON.stringify(result));
+}
+
 async function soak() {
   store.settings({mode:'auto'});
   testClock=Date.parse('2026-11-16T02:20:00Z');
@@ -378,7 +429,120 @@ async function autonomousDays(page,seedValue) {
   },seedValue);
 }
 try {
-  if (process.env.ANSHEL_PHASE10_FINAL==='visual') {
+  if (process.env.ANSHEL_PHASE10_FINAL==='city') {
+    testClock=Date.parse('2026-11-16T01:22:00Z');
+    const page=await open({viewport:{width:1440,height:900}});
+    await page.locator('[data-panel=office]').click();
+    await page.locator('[data-room=meeting]').click();
+    await page.locator('#inspector-back').click();
+    await page.waitForTimeout(1100);
+    await shot(page,'10-1-meeting');
+    await orbit(page);
+    await shot(page,'10-1-meeting-reverse');
+    await page.locator('#character-mode').click();
+    await page.waitForTimeout(650);
+    await shot(page,'10-1-dika-office');
+    await page.locator('#character-mode').click();
+    await page.locator('[data-panel=district]').click();
+    for (const id of ['city','business','residential','market','park','services']) {
+      await page.locator('[data-district='+id+']').click();
+      await page.locator('#inspector-back').click();
+      await page.waitForTimeout(1900);
+      assert.ok(Number(await page.locator('#scene').getAttribute('data-city-chunks'))>0);
+      if (id!=='city') {
+        assert.ok(Number(await page.locator('#scene').getAttribute('data-city-vehicles'))>3);
+        assert.ok(Number(await page.locator('#scene').getAttribute('data-city-pedestrians'))>0);
+      }
+      await shot(page,'10-1-'+id);
+      await page.locator('[data-panel=district]').click();
+    }
+    await page.locator('#inspector-back').click();
+    const metrics=await perf(page);
+    const rush=Number(await page.locator('#scene').getAttribute('data-city-vehicles'));
+    const finishTraffic=await recordScene(page);
+    await page.waitForTimeout(9000);
+    await finishTraffic('10-1-district-traffic');
+    testClock=Date.parse('2026-11-16T15:15:00Z');
+    await page.locator('#light-toggle').click();
+    await page.waitForFunction(rush=>Number(document.getElementById('scene').dataset.cityVehicles)<rush,rush);
+    await shot(page,'10-1-services-night');
+    for (const id of ['management','operations','administration','hr']) {
+      await page.locator('[data-panel=district]').click();
+      await page.locator('[data-district='+id+']').click();
+      await page.locator('#inspector-back').click();
+      await page.waitForTimeout(1250);
+      await shot(page,'10-1-home-'+id+'-interior');
+      await page.locator('#building-toggle').click();
+      await page.waitForFunction(()=>document.getElementById('scene').dataset.buildings==='exterior');
+      await shot(page,'10-1-home-'+id+'-exterior');
+      await page.locator('#building-toggle').click();
+      await page.waitForFunction(()=>document.getElementById('scene').dataset.buildings==='interior');
+    }
+    await page.close();
+    testClock=Date.parse('2026-11-16T01:22:00Z');
+    if (process.env.ANSHEL_SCREENSHOTS) {
+      const atlas=await browser.newPage({viewport:{width:1024,height:770}});
+      await atlas.goto(url);
+      await atlas.evaluate(async()=>{
+        const {THREE,model,openHouseFacade,houseDoor,houseFronts,homes}=await import('/phase10-fixture.js');
+        const grid=document.createElement('main');
+        grid.style.cssText='display:grid;grid-template-columns:repeat(4,250px);gap:2px;background:#2e363e';
+        document.body.replaceChildren(grid);
+        const camera=new THREE.OrthographicCamera(-.95,.95,.62,-.62,.01,15);
+        const scene=new THREE.Scene();
+        scene.background=new THREE.Color('#2e363e');
+        scene.add(new THREE.HemisphereLight('#fff3dc','#a1a8b5',2.4));
+        const renderer=new THREE.WebGLRenderer({antialias:true});
+        renderer.setSize(250,155);
+        for (const type of ['a','d','f','i']) {
+          const asset=await model('district/building-type-'+type);
+          scene.add(asset.scene);
+          for (const [side,x,z] of [['+Z',0,3],['-Z',0,-3],['+X',3,0],['-X',-3,0]]) {
+            camera.position.set(x,.95,z);
+            camera.lookAt(0,.41,0);
+            renderer.render(scene,camera);
+            const canvas=document.createElement('canvas');
+            canvas.width=250; canvas.height=185;
+            const ctx=canvas.getContext('2d');
+            ctx.drawImage(renderer.domElement,0,23);
+            ctx.fillStyle='white'; ctx.font='13px sans-serif'; ctx.fillText(type+' '+side,12,16);
+            grid.append(canvas);
+          }
+          asset.scene.removeFromParent();
+        }
+        for (const home of homes) {
+          const asset=await model('district/building-type-'+houseFronts[home.variant].model);
+          const width=home.width+.35, height=home.variant===3?5.7:4.65;
+          const cut=openHouseFacade(asset,home.doorOffset/width,houseDoor.width/width,(houseDoor.height+.14)/height);
+          cut.scene.updateMatrixWorld(true);
+          const center=asset.bounds.getCenter(new THREE.Vector3());
+          const x=center.x-home.doorOffset/width*asset.size.x;
+          for (const y of [.35,1.45,2.05]) {
+            const ray=new THREE.Raycaster(new THREE.Vector3(x,y/height*asset.size.y,asset.bounds.min.z-.015),
+              new THREE.Vector3(0,0,1),0,asset.size.z*.24+.014);
+            if (ray.intersectObject(cut.scene,true).length) throw new Error('GLB menghalangi pintu '+home.id);
+          }
+          cut.scene.traverse(mesh=>{if (mesh.isMesh) mesh.geometry.dispose();});
+        }
+        renderer.dispose();
+      });
+      await shot(atlas,'10-1-house-source-axes');
+      await houseWalkthrough(atlas);
+      await atlas.close();
+    }
+    const mobile=await open({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+    await mobile.locator('[data-panel=district]').tap();
+    await mobile.locator('[data-district=business]').tap();
+    await mobile.waitForTimeout(1600);
+    await mobile.locator('#inspector-back').tap();
+    await shot(mobile,'10-1-mobile');
+    const mobileMetrics=await perf(mobile);
+    await mobile.locator('#character-mode').tap();
+    await mobile.locator('#character-stick').waitFor();
+    await shot(mobile,'10-1-mobile-character');
+    console.log(JSON.stringify({desktop:metrics,mobile:mobileMetrics,errors}));
+    assert.deepEqual(errors,[]);
+  } else if (process.env.ANSHEL_PHASE10_FINAL==='visual') {
     const page=await open({viewport:{width:1440,height:900}});
     await survey(page);
     assert.deepEqual(errors,[]);

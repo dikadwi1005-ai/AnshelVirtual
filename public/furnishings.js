@@ -248,6 +248,12 @@ export function partitions(room) {
   return walls;
 }
 
+export function partitionHeight(room,type) {
+  if (type==='stall') return 1.75;
+  if (room.style==='garden') return .58;
+  return 2.8;
+}
+
 export function propBounds(prop) {
   const [width,depth] = prop.size ?? furniture[prop.type].slice(1);
   const cosine=Math.abs(Math.cos(prop.angle)), sine=Math.abs(Math.sin(prop.angle));

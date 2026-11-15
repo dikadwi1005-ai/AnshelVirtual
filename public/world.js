@@ -5,7 +5,7 @@ import { districtObstacles, doorway, entrance, footprint, point, roomOutline, ro
 import { addBuildings } from './neighborhood.js';
 import { addOutdoors } from './outdoors.js';
 import { createDisplays } from './displays.js';
-import { furniture, obstaclesFor, partitions, propsFor } from './furnishings.js';
+import { furniture, obstaclesFor, partitionHeight, partitions, propsFor } from './furnishings.js';
 import { addLounge } from './lounge.js';
 import { batchDistrictModels } from './district-models.js';
 import { layoutItems } from './layout-editor.js';
@@ -82,28 +82,27 @@ function architecture(parent,room,upperWalls) {
     const [x0,z0,x1,z1]=bounds;
     const x=(x0+x1)/2, z=(z0+z1)/2, width=x1-x0, depth=z1-z0;
     const glazed=room.style==='pod' && type==='front' || type==='back' && room.daylight;
-    const baseHeight=type==='back'?.82:.50;
-    let height=glazed?(type==='back'?.55:.26):baseHeight;
-    if (room.style==='service') height=type==='stall'?1.16:.92;
+    const full=partitionHeight(room,type);
+    const height=room.style==='garden'?full:type==='stall'?.83:glazed?.24:.76;
     box(parent,[width,height,depth],[x,height/2,z],room.style==='garden'?trim:wall);
     box(parent,[width+.035,.054,depth+.035],[x,height+.017,z],type==='back'?panel:trim);
+    if (full<=height) continue;
+    const upper=new THREE.Group();
+    upper.userData={x,z,long:width>depth,room,glazed};
+    upperWalls.add(upper);
     if (!glazed) {
-      if (room.style!=='garden' && type!=='stall') {
-        const wallMesh=box(upperWalls,[width,2.8-height,depth],[x,(2.8+height)/2,z],wall);
-        wallMesh.castShadow=false;
-        wallMesh.userData={x,z,long:width>depth,room};
-      }
+      box(upper,[width,full-height,depth],[x,(full+height)/2,z],wall).castShadow=false;
       continue;
     }
-    const glassHeight=type==='back' && room.daylight?1.24:1.01;
+    const glassHeight=full-height;
     const axis=width>depth ? 'x' : 'z';
     const long=axis==='x'?width:depth;
-    const pane=box(parent,axis==='x'?[width-.045,glassHeight,.038]:[.038,glassHeight,depth-.045],
+    const pane=box(upper,axis==='x'?[width-.045,glassHeight,.038]:[.038,glassHeight,depth-.045],
       [x,height+glassHeight/2,z],glass);
     pane.castShadow=false;
-    box(parent,[width+.032,.064,depth+.032],[x,height+glassHeight,z],trim);
+    box(upper,[width+.032,.064,depth+.032],[x,full-.03,z],trim);
     for (const offset of [-long/2+.04,0,long/2-.04]) {
-      box(parent,[.065,glassHeight,.065],
+      box(upper,[.065,glassHeight,.065],
         [x+(axis==='x'?offset:0),height+glassHeight/2,z+(axis==='z'?offset:0)],trim);
     }
     if (type==='back') {
@@ -114,9 +113,11 @@ function architecture(parent,room,upperWalls) {
 
   if (room.style!=='pod' && room.style!=='service') return;
   const [x,z]=entrance(room);
-  for (const offset of [-doorway/2-.055,doorway/2+.055]) {
-    box(parent,[.11,1.32,.23],[x+offset,.66,z],trim);
-  }
+  for (const offset of [-doorway/2-.055,doorway/2+.055]) box(parent,[.11,2.21,.23],[x+offset,1.105,z],trim);
+  const header=new THREE.Group();
+  header.userData={x,z,long:true,room};
+  box(header,[doorway+.22,.59,.23],[x,2.505,z],trim).castShadow=false;
+  upperWalls.add(header);
   box(parent,[doorway,.018,.43],[x,.026,z],panel).castShadow=false;
 }
 async function placeProp(parent,prop,room,displays) {
@@ -225,11 +226,13 @@ export async function buildWorld(scene,shadowTexture) {
   const furnitureGroups=new Map(), movable=new THREE.Group();
   const editable=new Set(layoutItems.map(item=>item.id));
   const fixtures=new THREE.Group();
+  const mountedFixtures=rooms.filter(room=>!['garden','hub'].includes(room.style) &&
+    (room.style!=='open'||room.daylight)).map(room=>({x:room.x,y:2.63,z:room.z-room.front*(room.depth/2-.12)}));
   const fixture=new THREE.InstancedMesh(new THREE.BoxGeometry(1.25,.043,.085),
-    new THREE.MeshStandardMaterial({color:'#f5ead4',emissive:'#ffd39d',emissiveIntensity:.35}),rooms.length-1);
+    new THREE.MeshStandardMaterial({color:'#f5ead4',emissive:'#ffd39d',emissiveIntensity:.35}),mountedFixtures.length);
   const mount=new THREE.Object3D();
-  rooms.filter(room=>room.id!=='garden').forEach((room,index)=>{
-    mount.position.set(room.x,2.73,room.z+room.depth*.36);
+  mountedFixtures.forEach(({x,y,z},index)=>{
+    mount.position.set(x,y,z);
     mount.updateMatrix();
     fixture.setMatrixAt(index,mount.matrix);
   });
@@ -237,8 +240,8 @@ export async function buildWorld(scene,shadowTexture) {
   fixtures.add(fixture);
   try {
     const housing=await model('district/lampsquareceiling');
-    batchDistrictModels(fixtures,housing,rooms.filter(room=>room.id!=='garden').map(room=>({
-      position:[room.x,2.765,room.z+room.depth*.36],size:[1.28,.14,.34],angle:0,
+    batchDistrictModels(fixtures,housing,mountedFixtures.map(({x,y,z})=>({
+      position:[x,y-.07,z],size:[1.28,.14,.31],angle:0,
     })));
   } catch { /* Keep the emissive strip visible if its housing cannot load. */ }
   scene.add(fixtures);
@@ -275,15 +278,16 @@ export async function buildWorld(scene,shadowTexture) {
   const moveShadow=contactShadows(core,[...propLists.values()].flat(),shadowTexture);
   const obstacles=[...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room,propLists.get(room.id)))];
   return {errors,warmGlow,obstacles,outdoors,buildings,displays,showDockedControllers:addLounge(scene),
-    walls(mode,eye,target,close) {
+    walls(mode,eye,target,close,playerView=false) {
       fixtures.visible=mode==='interior' && close;
       upperWalls.visible=mode==='interior';
       if (!upperWalls.visible) return;
       for(const mesh of upperWalls.children) {
-        const {x,z,long,room}=mesh.userData;
+        const {x,z,long,room,glazed}=mesh.userData;
         const coordinate=long?'z':'x', edge=long?z:x;
-        mesh.visible=close && Math.hypot(room.x-target.x,room.z-target.z)<9 &&
-          (eye[coordinate]-edge)*(room[coordinate]-edge)>0;
+        const front=(eye[coordinate]-edge)*(room[coordinate]-edge)<0;
+        const nearTarget=Math.hypot(room.x-target.x,room.z-target.z)<10;
+        mesh.visible=playerView || glazed || !front || close && !nearTarget;
       }
     },
     fixtureLight(night) { fixture.material.emissiveIntensity=.25+night*.7; },

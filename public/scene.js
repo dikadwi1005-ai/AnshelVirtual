@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createActors } from './actors.js';
 import { createCharacter } from './character-mode.js';
 import { createCharacterCamera } from './character-camera.js';
-import { homeByEmployee, insideRoom, pedestrianOnlyObstacles, rooms, roomById, point, structureView } from './layout.js';
+import { homeByEmployee, insideRoom, pedestrianOnlyObstacles, rooms, roomById, point, structureView, withinSite } from './layout.js';
 import { furniture } from './furnishings.js';
 import { checkLayout } from './layout-editor.js';
 import { radialTexture } from './materials.js';
@@ -11,8 +11,10 @@ import { navigation } from './navigation.js';
 import { createLipTimeline } from './office-lips.js';
 import { createOfficeSpatialAudio } from './office-spatial-audio.js';
 import { createOfficeVoice } from './office-voice.js';
-import { buildWorld } from './world.js';
+import { buildWorld, model } from './world.js';
 import { campusTraffic } from './campus-traffic.js';
+import { cityDistricts, cityEdge } from './city-plan.js';
+import { streamingCity } from './city-world.js';
 
 const overview=new THREE.Vector3(39,72,68);
 const center=new THREE.Vector3(0,.35,0);
@@ -39,17 +41,17 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   host.append(renderer.domElement);
   renderer.domElement.setAttribute('aria-label','Kantor 3D interaktif');
 
-  const camera=new THREE.OrthographicCamera(-32,32,24,-24,.1,220);
+  const camera=new THREE.OrthographicCamera(-32,32,24,-24,.1,3700);
   const exportCamera=new THREE.OrthographicCamera(-32,32,24,-24,.1,220);
   const chase=createCharacterCamera();
   const controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true;
   controls.dampingFactor=.10;
   controls.maxZoom=48;
-  controls.minZoom=.34;
+  controls.minZoom=.085;
   controls.minPolarAngle=.29;
   controls.maxPolarAngle=1.18;
-  controls.maxTargetRadius=61;
+  controls.maxTargetRadius=cityEdge*Math.SQRT2;
   controls.zoomToCursor=true;
   controls.touches.ONE=THREE.TOUCH.ROTATE;
   controls.touches.TWO=THREE.TOUCH.DOLLY_PAN;
@@ -73,7 +75,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   const shadow=radialTexture();
   const temp=new THREE.Vector3(), offset=new THREE.Vector3(), ray=new THREE.Raycaster();
   const pointer=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-.015);
-  let world, population, character, traffic, state=null, following=null, selected=null, cameraMove=null, drag=null;
+  let world, city, population, character, traffic, state=null, following=null, selected=null, cameraMove=null, drag=null;
   let shared=null, leading=false, displayReturn=null, nav, meeting=null, replay=null, laidOut=false;
   let buildingMode='interior', renderedBuildingMode;
   let simulationState, previousState, previousMeeting, previousLayout;
@@ -175,6 +177,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
 
   function focus(x,z,zoom) {
     offset.copy(camera.position).sub(controls.target);
+    offset.setLength(Math.max(overview.length(),54/zoom));
     const target=new THREE.Vector3(x,.48,z);
     cameraMove={target,position:target.clone().add(offset),zoom};
   }
@@ -190,6 +193,9 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     following=null;
     const home=homeByEmployee[id];
     if (home) return focus(home.x,home.z,3.4);
+    const district=Object.hasOwn(cityDistricts,id) && cityDistricts[id];
+    if (district) return focus(district.x,district.z,.45);
+    if (id==='city') return focus(128,36,.10);
     if (id==='gate') return focus(3,27,2.2);
     if (id==='homes') return focus(0,-36,1.15);
     if (id==='garden') return focus(-18.9,11.8,2.35);
@@ -250,6 +256,15 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
           Math.abs(camera.zoom-cameraMove.zoom)<.002) cameraMove=null;
     }
     controls.update();
+    const {x,z}=controls.target;
+    controls.target.x=THREE.MathUtils.clamp(x,-cityEdge,cityEdge);
+    controls.target.z=THREE.MathUtils.clamp(z,-cityEdge,cityEdge);
+    camera.position.x+=controls.target.x-x;
+    camera.position.z+=controls.target.z-z;
+    if (!cameraMove && !displayReturn) {
+      offset.copy(camera.position).sub(controls.target).setLength(Math.max(overview.length(),54/camera.zoom));
+      camera.position.copy(controls.target).add(offset);
+    }
   }
 
   function refreshLighting(delta) {
@@ -269,13 +284,14 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       world.warmGlow.opacity=THREE.MathUtils.lerp(day.glow,evening.glow,night);
       world.fixtureLight(night);
       world.outdoors.lighting(night);
+      city?.lighting(night);
     }
   }
   const backgroundNight=new THREE.Color(evening.backdrop), sunNight=new THREE.Color(evening.key);
   const skyNight=new THREE.Color(evening.sky), groundNight=new THREE.Color(evening.ground);
 
   function updateLabels(width,height) {
-    if (renderedBuildingMode==='exterior') {
+    if (renderedBuildingMode==='exterior' || viewZoom()<.25) {
       for (const {element} of roomLabels) element.hidden=true;
       return;
     }
@@ -371,6 +387,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (loaded) return;
     onMessage('Menyiapkan kantor…');
     world=await buildWorld(scene,shadow);
+    city=await streamingCity(scene,model,low);
     renderedBuildingMode=undefined;
     world.displays.sync(state);
     let storage;
@@ -383,7 +400,13 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     population.campus(traffic.obstacles);
     if(shared) restoreOffice(shared);
     else if(!['paused','arrival'].includes(state?.phase)) population.catchUp(42,{...state,dialogueEnabled:false});
-    try { character=await createCharacter(scene,liveNav,shadow); }
+    const playerNav={clear(from,to,ignore,radius) {
+      const start=withinSite(from,.30), end=withinSite(to,.30);
+      if (start && end) return liveNav.clear(from,to,ignore,radius);
+      const local=start?from:end?to:null;
+      return (!local || liveNav.clear(local,local,ignore,radius)) && city.clear(from,to,radius);
+    }};
+    try { character=await createCharacter(scene,playerNav,shadow); }
     catch (error) { console.error('Avatar Dika gagal dimuat',error); }
     for (const room of rooms) {
       const element=document.createElement('button');
@@ -515,14 +538,21 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       camera.updateMatrixWorld();
     }
     const view=viewCamera(), target=viewTarget(), zoom=viewZoom();
-    const siteMode=displayReturn || replay?'interior':structureView(buildingMode,target,zoom,characterView());
+    const cityState=city?.update(target,zoom,state?.now ?? Date.now(),now,characterView()?character.root.position:null);
+    if (cityState && now-lastLabelUpdate>=45) {
+      host.dataset.cityChunks=String(cityState.chunks);
+      host.dataset.cityVehicles=String(cityState.vehicles);
+      host.dataset.cityPedestrians=String(cityState.pedestrians);
+    }
+    const siteMode=displayReturn || replay?'interior':!withinSite([target.x,target.z])?'exterior':
+      structureView(buildingMode,target,zoom,characterView());
     if (siteMode!==renderedBuildingMode) {
       renderedBuildingMode=siteMode;
       world?.buildings.setMode(siteMode);
       renderer.shadowMap.needsUpdate=true;
       host.dataset.buildings=siteMode;
     }
-    world?.walls(siteMode,view.position,target,zoom>1.5 && zoom<10 && !replay);
+    world?.walls(siteMode,view.position,target,zoom>1.5 && zoom<10 && !replay,characterView());
     refreshLighting(delta);
     const lounge=roomById.gaming;
     const gameVisible=zoom>=2 && Math.hypot(target.x-lounge.x,target.z-lounge.z)<10;
@@ -637,6 +667,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       world?.outdoors.dispose();
       world?.buildings.dispose();
       world?.disposeFixtures();
+      city?.dispose();
       traffic?.dispose();
       renderer.dispose();
       preview.geometry.dispose();

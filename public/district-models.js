@@ -35,3 +35,58 @@ export function batchDistrictModels(parent,asset,placements) {
     parent.add(mesh);
   });
 }
+
+// Subtract the front doorway on authored house meshes while retaining their UVs.
+export function openHouseFacade(asset,entranceFraction,widthFraction,heightFraction) {
+  const scene=asset.scene.clone(true);
+  const center=asset.bounds.getCenter(new THREE.Vector3());
+  const x=center.x-entranceFraction*asset.size.x;
+  const half=asset.size.x*widthFraction/2;
+  const cuts=[[0,x-half,1],[0,x+half,-1],
+    [1,asset.bounds.min.y+asset.size.y*heightFraction,-1],
+    [2,asset.bounds.min.z+asset.size.z*.24,-1]];
+  scene.traverse(node=>{
+    if (!node.isMesh) return;
+    const original=node.geometry;
+    const source=original.index?original.toNonIndexed():original;
+    const keys=['position','normal','uv'].filter(key=>source.hasAttribute(key));
+    const attributes=keys.map(key=>source.getAttribute(key));
+    const result=attributes.map(()=>[]);
+    const vertex=index=>attributes.flatMap(attribute=>Array.from({length:attribute.itemSize},(_,axis)=>attribute.getComponent(index,axis)));
+    function emit(polygon) {
+      for (let i=1;i<polygon.length-1;i++) for (const point of [polygon[0],polygon[i],polygon[i+1]]) {
+        let offset=0;
+        for (const [index,attribute] of attributes.entries()) {
+          result[index].push(...point.slice(offset,offset+attribute.itemSize));
+          offset+=attribute.itemSize;
+        }
+      }
+    }
+    const vertices=source.getAttribute('position').count;
+    for (let i=0;i<vertices;i+=3) {
+      let remaining=[vertex(i),vertex(i+1),vertex(i+2)];
+      for (const [axis,limit,sign] of cuts) {
+        if (!remaining.length) break;
+        const inside=[], outside=[];
+        for (const [index,point] of remaining.entries()) {
+          const next=remaining[(index+1)%remaining.length];
+          const a=(point[axis]-limit)*sign, b=(next[axis]-limit)*sign;
+          (a>=0?inside:outside).push(point);
+          if ((a>=0)!==(b>=0)) {
+            const border=point.map((value,k)=>THREE.MathUtils.lerp(value,next[k],a/(a-b)));
+            inside.push(border);
+            outside.push(border);
+          }
+        }
+        emit(outside);
+        remaining=inside;
+      }
+    }
+    const cut=new THREE.BufferGeometry();
+    keys.forEach((key,index)=>cut.setAttribute(key,new THREE.Float32BufferAttribute(result[index],attributes[index].itemSize)));
+    cut.computeBoundingSphere();
+    node.geometry=cut;
+    if (source!==original) source.dispose();
+  });
+  return {...asset,scene};
+}

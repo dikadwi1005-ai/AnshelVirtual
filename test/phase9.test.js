@@ -23,7 +23,8 @@ test('all homes have distinct points and routes through both pedestrian doors in
         point[0]===waypoint[0] && point[1]===waypoint[1]),home.id);
       assert.deepEqual(route.at(-1),to);
     }
-    assert.equal(nav.clear(home.point(-2,home.depth/2-.8),home.point(-2,home.depth/2+.8)),false);
+    assert.ok(nav.clear(home.point(home.doorOffset,home.depth/2-.8),home.point(home.doorOffset,home.depth/2+.8)));
+    assert.equal(nav.clear(home.point(2,home.depth/2-.8),home.point(2,home.depth/2+.8)),false);
   }
   assert.ok(nav.clear([-1.8,20.7],[-1.8,22.5]));
   assert.equal(nav.clear([6,20.7],[6,22.5]),false);

@@ -33,6 +33,12 @@ export const outdoorObstacles=[
   ...outdoorSeats.map(([x,z],i)=>({box:[x-.785,z-.265,x+.785,z+.285],height:.94,id:'outdoor-bench-'+i})),
 ];
 
+export const houseFronts=[
+  {model:'a',doorOffset:0}, {model:'d',doorOffset:-.13},
+  {model:'f',doorOffset:-.035}, {model:'i',doorOffset:-.28},
+];
+export const houseDoor={width:1.72,height:2.22};
+
 export const homes=divisions.map((person,index)=>{
   const side=index<4?-1:index<8?1:0;
   const x=side?side*47:(index-9.5)*15;
@@ -41,12 +47,14 @@ export const homes=divisions.map((person,index)=>{
   const width=8+(index%3)*.6, depth=7.4+(index%2)*.8;
   const angle=Math.atan2(front[0],front[1]);
   const point=(u,v)=>[x+u*Math.cos(angle)+v*Math.sin(angle),z-u*Math.sin(angle)+v*Math.cos(angle)];
-  const door=point(0,depth/2);
-  const porch=point(0,depth/2+1.3);
+  const variant=index%houseFronts.length;
+  const doorOffset=houseFronts[variant].doorOffset*width;
+  const door=point(doorOffset,depth/2);
+  const porch=point(doorOffset,depth/2+1.3);
   const road=side?[side*39,z]:[x,-34];
   const boulevard=side?[side*39,32]:[x<0?-39:39,32];
   return {id:'home-'+person.id,person,x,z,side,width,depth,angle,point,door,porch,road,boulevard,
-    variant:index%4,sofa:point(-width*.24,.55),bed:point(width*.24,-depth*.28)};
+    variant,doorOffset,sofa:point(-width*.24,.55),bed:point(width*.24,-depth*.28)};
 });
 export const homeByEmployee=Object.fromEntries(homes.map(home=>[home.person.id,home]));
 const wallSegment=(a,b,height=3)=>({box:fenceBox([...a,...b]),height});
@@ -59,7 +67,8 @@ export const officeEnvelope=[
 ];
 export const homeObstacles=homes.flatMap(home=>{
   const w=home.width/2,d=home.depth/2;
-  const walls=[[-w,-d,w,-d],[-w,-d,-w,d],[w,-d,w,d],[-w,d,-.68,d],[.68,d,w,d]]
+  const left=home.doorOffset-houseDoor.width/2,right=home.doorOffset+houseDoor.width/2;
+  const walls=[[-w,-d,w,-d],[-w,-d,-w,d],[w,-d,w,d],[-w,d,left,d],[right,d,w,d]]
     .map(([x,z,tx,tz])=>wallSegment(home.point(x,z),home.point(tx,tz)));
   const furniture=[
     [-home.width*.24,.55,2.22,.94,'sofa'],

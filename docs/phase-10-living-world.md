@@ -41,10 +41,13 @@
 - Jalur dua arah diuji bersama penghalang pejalan kaki. Arus yang berbelok di persimpangan dengan banyak kendaraan dan stabilitas sesi panjang di browser masih terbuka.
 - Snapshot lama tetap diterima. Untuk crash di antara dua sinkronisasi, tampilan dapat mundur ke checkpoint terakhir. Pesanan simulasi dapat diteruskan tanpa kembali ke awal rute.
 - Browser ponsel fisik dan verifikasi integrasi production masih terbuka. Pengujian lokal menggunakan SQLite sementara dan Studio Scheduler dalam kondisi nonaktif.
-- Checkpoint disimpan lokal. Rilis menunggu pengujian visual aktivitas bergerak, lalu lintas dan perumahan yang diwajibkan dalam brief.
+- Rilis Production otomatis untuk `80efb6c` berstatus Ready. Pemeriksaan tanpa login memverifikasi halaman, modul aplikasi dan scene, serta sampel aset GLB tersedia. `/api/state` mengembalikan 401 tanpa sesi. Pemeriksaan ini tidak mencakup alur setelah login di Production.
 
 ## QA akhir
 
+- Build serta 202 tes regresi lulus pada commit rilis. Skenario tiga hari terakhir mencatat 36 kejadian tidur rumah, empat tidur meja, tiga pesanan otomatis selesai, dan 181 perjalanan kendaraan selesai. Pengujian tidak mendeteksi kendaraan diam lebih dari 60 detik, duplikasi pengantaran, kegagalan prioritas tugas, atau kegagalan jarak pegangan prop yang diukur. Pemeriksaan visual seluruh transisi tetap dicatat terpisah dari data simulasi ini.
+- Pengulangan skenario gerbang dengan seed berbeda pada commit rilis juga lulus. Semua 12 pegawai sampai di tempat tidur pada ketiga malam, dua pesanan otomatis selesai, dan satu kendaraan yang tertahan kembali ke titik masuk.
+- Uji ulang Chrome pada commit rilis lulus untuk rapat empat pegawai, Studio, replay, ekspor WebM dan MP4, serta pengalihan pesanan yang sama ke browser kedua. Tidak ada error JavaScript atau penolakan snapshot. Median interval frame overview 11,1 ms pada desktop dan 11,3 ms pada viewport sentuh.
 - Audit Chrome mencakup 90 tampilan. Setiap ruang kantor diperiksa dari dua sudut, dan masing-masing dari 12 rumah diperiksa dari dua sudut untuk interior dan eksterior. Hasil render memperlihatkan model rumah, fondasi, pintu cutaway dan perabot modular. Dinding sisi kamera direndahkan sesuai mode cutaway.
 - Tiga hari virtual memakai mesin aktivitas, rig GLB, navigasi dan traffic aplikasi di Chrome dengan langkah simulasi 50 ms. Waktu WIB dipercepat per fase. Pegawai memilih sendiri aktivitas dan pesanan, sedangkan tugas aktif menjadi masukan pengujian. Karena panjang fase dipercepat, hasil frekuensi tidak mewakili jumlah kegiatan per hari pada layanan produksi.
 - Titik pivot lengan berada pada bahu. Pemeriksaan mesh tangan menemukan offset lama tidak mencapai bagian distal rig. Ponsel, cangkir, kudapan dan paket sekarang memakai titik pegangan pada bagian distal. Hadirnya prop di posisi tersebut diperiksa dalam tiga hari virtual. Rekaman Chrome dari jarak dekat tetap digunakan untuk pemeriksaan visual.

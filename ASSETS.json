@@ -839,6 +839,66 @@
       "path": "public/models/district/pillowblue.glb",
       "validation": "GLB lokal dengan checksum SHA-256",
       "sha256": "8326e018c09cb00c19c2c9b745f521cd7eba1169b755322b04f88440dbfef319"
+    },
+    {
+      "name": "building-skyscraper-a.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/city-kit-commercial",
+      "format": "GLB",
+      "path": "public/models/district/building-skyscraper-a.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "affb365f6e19725e4e53d71191c1ef306df7d65035f8d770ab166aa8bb5c5923"
+    },
+    {
+      "name": "building-skyscraper-c.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/city-kit-commercial",
+      "format": "GLB",
+      "path": "public/models/district/building-skyscraper-c.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "d5a31496b27a5befe83e74e49b3b35e782a1c7ff5718b818deaa284169866478"
+    },
+    {
+      "name": "building-skyscraper-d.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/city-kit-commercial",
+      "format": "GLB",
+      "path": "public/models/district/building-skyscraper-d.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "158729f4bf10d5076532eb00c279bcbf72769dc4a86a77a1b07d3a181b562b2a"
+    },
+    {
+      "name": "taxi.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/car-kit",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/car-kit",
+      "format": "GLB",
+      "path": "public/models/district/taxi.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "c0ead3df92617dbca425e522003e80777cffc5f8987f664abab1363ff786704c"
+    },
+    {
+      "name": "ambulance.glb",
+      "creator": "Kenney",
+      "license": "CC0-1.0",
+      "attribution": "Tidak diwajibkan",
+      "source": "https://kenney.nl/assets/car-kit",
+      "mirror": "https://github.com/Hidencod/tge-assets/tree/main/packs/car-kit",
+      "format": "GLB",
+      "path": "public/models/district/ambulance.glb",
+      "validation": "GLB lokal dengan checksum SHA-256",
+      "sha256": "d35740315ab0560156a3357f70f6d96333734225e4506e21788120811ab0b758"
     }
   ]
 }

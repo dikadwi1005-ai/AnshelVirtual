@@ -1,15 +1,14 @@
 import * as THREE from 'three';
-import { partitions } from './furnishings.js';
+import { partitionHeight, partitions } from './furnishings.js';
 import { districtObstacles, rooms } from './layout.js';
 
 export function createCharacterCamera() {
-  const camera=new THREE.PerspectiveCamera(59,1,.10,105);
+  const camera=new THREE.PerspectiveCamera(59,1,.10,340);
   const focus=new THREE.Vector3(), anchor=new THREE.Vector3(), desired=new THREE.Vector3();
   const boom=new THREE.Vector3(), hit=new THREE.Vector3(), look=new THREE.Vector3();
   const ray=new THREE.Ray();
   const walls=rooms.flatMap(room=>partitions(room).map(({box:[left,front,right,back],type})=>{
-    const height=room.style==='pod' || (type==='back' && room.daylight) ? 1.87 :
-      room.style==='service'?1.22:type==='back'?.88:.56;
+    const height=partitionHeight(room,type);
     return new THREE.Box3(new THREE.Vector3(left-.12,0,front-.12),new THREE.Vector3(right+.12,height,back+.12));
   }));
   for (const {box:[left,front,right,back],height} of districtObstacles)

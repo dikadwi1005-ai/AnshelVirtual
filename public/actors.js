@@ -545,6 +545,28 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       actor.stage=value.stage;
       actor.seatProgress=value.seat;
       actor.path=value.path.map(point=>point.slice());
+      let restoredPosition=value.position;
+      if (resume && actor.stage==='walking' && actor.path.length) {
+        const home=homeByEmployee[actor.person.id];
+        if (!nav.clear(restoredPosition,restoredPosition)) {
+          const dx=restoredPosition[0]-home.x, dz=restoredPosition[1]-home.z;
+          const u=dx*Math.cos(home.angle)-dz*Math.sin(home.angle);
+          const v=dx*Math.sin(home.angle)+dz*Math.cos(home.angle);
+          if (Math.abs(u)<home.width/2 && Math.abs(v-home.depth/2)<.42) {
+            const safe=home.point(u,home.depth/2+(v>=home.depth/2?.48:-.48));
+            if (nav.clear(safe,safe)) restoredPosition=safe;
+          }
+        }
+        let from=restoredPosition;
+        if (actor.path.some(to=>{
+          const blocked=!nav.clear(from,to);
+          from=to;
+          return blocked;
+        })) {
+          actor.path=[];
+          actor.stage='waiting';
+        }
+      }
       actor.wait=actor.blocked=actor.retry=0;
       actor.directTurn=null;
       actor.invitation=resume && value.activity==='meet-dika'?{anchor:pending || anchor,remaining:25}:null;
@@ -555,7 +577,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       actor.foodTime=value.foodTime ?? 0;
       if (actor.foodTime) foodParcel(actor);
       if (resume || !actor.sharedPosition) {
-        actor.root.position.set(value.position[0],value.y,value.position[1]);
+        actor.root.position.set(restoredPosition[0],value.y,restoredPosition[1]);
         actor.root.rotation.y=value.angle;
         actor.sharedPosition=true;
       }

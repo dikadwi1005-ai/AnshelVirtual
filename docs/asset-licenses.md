@@ -21,3 +21,9 @@ Phase 9 memakai ulang tiga model Nature Kit yang sudah ada di repo. Skala dan lo
 Salinan GLB mandiri berasal dari [repositori distribusi tge-assets](https://github.com/Hidencod/tge-assets). Tiga belas berkas disimpan di `public/models/district`, dengan SHA-256 di manifest. Render tidak mengunduh dari sumber luar. Kurir memakai varian rig `character-male-e` dengan helm dan warna jaket simulasi.
 
 Lanjutan Phase 10 memakai `building-type-b.glb` dan `building-type-c.glb` untuk kios serta pos layanan. `lampsquareceiling.glb`, `lampwall.glb`, `books.glb`, dan `pillowblue.glb` dipasang pada kantor dan rumah. Keenam berkas memakai CC0 dan dicatat di manifest yang sama. Bagian lampu yang memancarkan cahaya tetap memakai geometri sederhana agar intensitas dapat diatur per mode pencahayaan. Cangkir, ponsel, makanan, helm dan skuter memakai geometri lokal yang mengikuti ukuran dan rig chibi saat berinteraksi.
+
+## Phase 10.1
+
+Pusat bisnis memakai `building-skyscraper-a.glb`, `building-skyscraper-c.glb`, dan `building-skyscraper-d.glb`. Lalu lintas menambah `taxi.glb` dan `ambulance.glb`. Kelimanya disajikan lokal dan memiliki SHA-256 di manifest. [Kenney City Kit Commercial](https://kenney.nl/assets/city-kit-commercial) · [Kenney Car Kit](https://kenney.nl/assets/car-kit)
+
+Empat model rumah Phase 10 masih memakai UV dan material Kenney. Geometri fasad di sekitar pintu dipotong saat aplikasi memuat rumah agar bukaan mengikuti denah dan collision. Dinding interior, ambang, kanopi, perkerasan, pejalan kaki latar, motor dan pengendaranya, serta model jarak jauh kota dibentuk dari geometri lokal.

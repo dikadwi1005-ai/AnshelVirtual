@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { districtServices, homes, officeEnvelope } from './layout.js';
-import { batchDistrictModels } from './district-models.js';
+import { districtServices, houseDoor, houseFronts, homes, officeEnvelope } from './layout.js';
+import { batchDistrictModels, openHouseFacade } from './district-models.js';
 
 function modelParts(parent) {
   const groups=new Map();
@@ -49,11 +49,11 @@ export async function addBuildings(scene,loadModel) {
   const assets=new Map(), fallbackInterior=new THREE.Group();
   interior.add(fallbackInterior);
   const fallback=modelParts(fallbackInterior);
-  function placeModel(parent,name,position,size,angle=0,tint) {
+  function placeModel(parent,name,position,size,angle=0,tint,opening) {
     if (!assets.has(name)) assets.set(name,new Map());
     const sets=assets.get(name);
     if (!sets.has(parent)) sets.set(parent,[]);
-    sets.get(parent).push({position,size,angle,tint});
+    sets.get(parent).push({position,size,angle,tint,opening});
   }
   const [plaster,bronze,steel]=['#e5d8bc','#936746','#253e48'];
   function window(x,z,y,width,angle) {
@@ -108,8 +108,11 @@ export async function addBuildings(scene,loadModel) {
       const [x,z]=home.point(u,v);
       placeModel(importedInterior,name,[x,y,z],size,home.angle+rotation);
     };
-    placeModel(importedExterior,'district/building-type-'+['a','d','f','i'][home.variant],[home.x,.06,home.z],
-      [w+.35,home.variant===3?5.7:4.65,d+.4],home.angle,['#ffe6d0','#dbf3ff','#fff1c4','#d7ead8'][home.variant]);
+    const shellSize=[w+.35,home.variant===3?5.7:4.65,d+.4];
+    const entry=home.doorOffset, left=entry-houseDoor.width/2, right=entry+houseDoor.width/2;
+    placeModel(importedExterior,'district/building-type-'+houseFronts[home.variant].model,[home.x,.06,home.z],
+      shellSize,home.angle+Math.PI,['#ffe6d0','#dbf3ff','#fff1c4','#d7ead8'][home.variant],
+      [entry/shellSize[0],houseDoor.width/shellSize[0],(houseDoor.height+.14)/shellSize[1]]);
     asset('furniture/loungesofa',-w*.24,.145,.55,[2.22,.94,.94]);
     asset('furniture/tablecoffee',-w*.24,.145,2.25,[1.22,.38,.47]);
     asset('district/bedsingle',w*.24,.145,-d*.28,[1.55,.71,2.29]);
@@ -117,23 +120,30 @@ export async function addBuildings(scene,loadModel) {
     asset('district/bathroomcabinet',-w*.25,.145,-d*.30,[1.11,.93,.78]);
     asset('furniture/toilet',-w*.39,.145,-d*.18,[.48,.69,.52],Math.PI/2);
     asset('furniture/lamproundfloor',-w*.45,.145,1.18,[.31,1.39,.31]);
-    asset('district/doorwayopen',0,.14,d/2,[1.48,2.14,.15]);
     asset('furniture/plantsmall2',w*.41,.145,-d*.36,[.43,.62,.43]);
     asset('district/pillowblue',-w*.24+.54,.49,.69,[.36,.16,.25],.18);
     asset('district/books',-w*.24,.53,2.25,[.24,.07,.17],-.19);
     asset('district/lampwall',w*.34,.82,-d/2+.17,[.28,.35,.16]);
     local(paths,'#a7aa92',0,.025,0,w+1,.14,d+.95);
-    local(paths,'#a9a891',0,.043,d/2+.82,2.05,.12,1.71);
+    local(paths,'#a9a891',entry,.043,d/2+.82,2.28,.12,1.71);
+    for (const x of [left-.055,right+.055]) {
+      local(paths,steel,x,houseDoor.height/2+.12,d/2,.11,houseDoor.height,.23);
+    }
+    local(paths,bronze,entry,houseDoor.height+.19,d/2,houseDoor.width+.22,.19,.28);
+    local(paths,bronze,entry,houseDoor.height+.34,d/2+.38,houseDoor.width+.55,.13,1.32);
+    local(paths,'#ffe0a6',entry,houseDoor.height+.23,d/2+.47,.67,.06,.12,0,'box','glow');
     local(paths,'#587553',w*.52,.02,0,1.15,.11,d+2.2);
     local(homeParts,wall,0,height/2,-d/2,w,height,.31);
     for(const side of [-1,1]) {
       local(homeParts,wall,side*w/2,.55,0,.28,1.1,d);
       local(homeParts,wall,side*w/2,height-.36,0,.28,.72,d);
-      local(homeParts,wall,side*w*.27,.55,d/2,w*.44,1.1,.29);
-      local(homeParts,wall,side*w*.27,height-.34,d/2,w*.44,.68,.29);
-      local(homeParts,wall,side*.79,1.5,d/2,.27,3,.29);
     }
-    local(homeParts,steel,0,2.21,d/2,1.42,.14,.28);
+    for (const [start,end] of [[-w/2,left],[right,w/2]]) {
+      local(homeParts,wall,(start+end)/2,height/2,d/2,end-start,height,.29);
+      local(rooms,wall,(start+end)/2,.43,d/2,end-start,.66,.22);
+    }
+    local(homeParts,wall,entry,(height+houseDoor.height+.12)/2,d/2,
+      houseDoor.width,height-houseDoor.height-.12,.29);
     if (home.variant===1 || home.variant===2) {
       local(homeParts,roof,0,height+.31,0,w*.64,.87,d+1.08,0,'roof');
       local(homeParts,steel,0,height,0,w+.63,.20,d+.78);
@@ -150,7 +160,6 @@ export async function addBuildings(scene,loadModel) {
     local(rooms,wall,0,.66,-d/2,w,1.19,.23);
     for (const side of [-1,1]) {
       local(rooms,wall,side*w/2,.43,0,.22,.66,d);
-      local(rooms,wall,side*w*.28,.43,d/2,w*.43,.66,.22);
     }
     local(rooms,'#b89470',-w*.23,.155,1.28,2.64,.023,2.55);
     // Keep the center aisle clear from the door to the rear rooms.
@@ -192,10 +201,18 @@ export async function addBuildings(scene,loadModel) {
   shell.build(); rooms.build(); paths.build(); homeParts.build(); fallback.build();
   const loaded=await Promise.allSettled([...assets].map(async ([name,placements])=>[await loadModel(name),placements]));
   const missing=loaded.some(result=>result.status==='rejected');
+  const adjustedGeometry=new Set();
   if (!missing) {
     for(const result of loaded) {
       const [asset,sets]=result.value;
-      for(const [group,placements] of sets) batchDistrictModels(group,asset,placements);
+      for(const [group,placements] of sets) {
+        if (!placements[0].opening) batchDistrictModels(group,asset,placements);
+        else for(const part of placements) {
+          const restored=openHouseFacade(asset,...part.opening);
+          restored.scene.traverse(mesh=>{if (mesh.isMesh) adjustedGeometry.add(mesh.geometry);});
+          batchDistrictModels(group,restored,[part]);
+        }
+      }
     }
   }
   homeShell.visible=fallbackInterior.visible=missing;
@@ -224,6 +241,7 @@ export async function addBuildings(scene,loadModel) {
         });
       }
       texture.dispose();
+      for (const geometry of adjustedGeometry) geometry.dispose();
       for(const resource of resources) resource.dispose();
     },
   };
