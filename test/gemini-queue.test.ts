@@ -56,6 +56,8 @@ test('manual trigger mengambil hanya satu draf sesuai prioritas lalu menyimpan a
   try {
     const low = store.create({ division: 'finance', description: 'Draf anggaran', kind: 'draft', priority: 0, urgent: true });
     const high = store.create({ division: 'management', description: 'Tiga agenda rapat', kind: 'draft', priority: 2, urgent: true });
+    const paused = store.create({ division: 'research', description: 'Draf yang dijeda', kind: 'draft', priority: 2, urgent: true });
+    store.action(paused.id,'pause');
     assert.equal((await call('worker/claim', { kinds: ['draft'] }, false)).status, 401);
     const response = await call('worker/claim', { kinds: ['draft'] });
     assert.equal(response.status, 200);
@@ -75,6 +77,9 @@ test('manual trigger mengambil hanya satu draf sesuai prioritas lalu menyimpan a
     const stored = store.state().tasks.find(row => row.id === high.id);
     assert.equal(stored.status, 'completed');
     assert.equal(stored.sha256, createHash('sha256').update(result.output).digest('hex'));
+    assert.equal(store.decideOfficeArtifact(high.id,'approved','Fixture review').sha256,stored.sha256);
+    assert.equal(store.officeArtifactReview(high.id).review,'approved');
+    assert.equal(store.state().tasks.find(row=>row.id===paused.id).status,'paused');
     assert.equal(store.state().tasks.find(row => row.id === low.id).status, 'queued');
     assert.equal(workflow.nodes.find(node => node.name === 'Simpan hasil').parameters.jsonBody.includes("Periksa hasil"), true);
     const second = await (await call('worker/claim', { kinds: ['draft'] })).json();

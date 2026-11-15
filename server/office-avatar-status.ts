@@ -13,11 +13,13 @@ export function officeAvatarPresence(record,now) {
   if(fresh) for(const actor of record.snapshot.actors) {
     if(!actor||!ids.has(actor.id)||!Array.isArray(actor.position)||
       !Number.isFinite(actor.position[0])||!Number.isFinite(actor.position[1]))continue;
-    const inHome=actor.actual==='home'&&['seated','arrived'].includes(actor.stage);
-    const goingHome=actor.activity==='home'&&!inHome;
-    const goingToOffice=actor.activity==='commute'||
-      (actor.actual==='home'&&actor.activity!=='home');
+    const atHomeActivity=['home','home-sleep'].includes(actor.actual);
+    const inHome=atHomeActivity&&['seated','arrived'].includes(actor.stage);
+    const goingHome=['home','home-sleep'].includes(actor.activity)&&!inHome;
     const [x,z]=actor.position;
+    const onCityCommute=record.snapshot.cityHomes===1 && actor.stage==='walking' && Math.abs(x)>42;
+    const goingToOffice=actor.activity==='commute'||
+      ((atHomeActivity || onCityCommute)&&!['home','home-sleep'].includes(actor.activity));
     const inBuilding=Math.abs(x)<25.5&&Math.abs(z)<22.5;
     const location=inHome?'Di rumah':goingHome?'Dalam perjalanan pulang':
       goingToOffice?'Dalam perjalanan ke kantor':

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fenceRuns, gate, outdoorSeats, planterBoxes } from './layout.js';
+import { avenueHalfWidth, avenueOffset, campusSidewalkZ, chunkSize, sidewalkWidth } from './city-plan.js';
 const treeSites=[[-29,-22,2],[-28,-18,1.4],[28,-15,2.2],[29,-8,1.3],[-29,11,2.5],[-28,14,1.65],
   [18,-25,2.3],[23,-25,1.5],[-22,25.5,2],[-16,25.5,1.65],[22,25,1.8],[28,25,2.1]];
 
@@ -15,8 +16,9 @@ export function addOutdoors(scene,loadModel) {
   const ground=(color,x,z,w,d,y=-.015)=>piece(color,x,y-.035,z,w,.07,d,0,terrain);
   ground('#596c5b',0,0,360,340,-.09);
   ground('#657e51',0,0,68,58,-.025);
-  ground('#384554',0,36,176,10);
-  ground('#a1a498',0,31.1,155,1.65);
+  ground('#344454',0,avenueOffset,chunkSize,avenueHalfWidth*2,-.0325);
+  for (const [start,end] of [[-64,-38.25],[-35.55,35.55],[38.25,64]])
+    ground('#a1a795',(start+end)/2,campusSidewalkZ,end-start,sidewalkWidth,-.0105);
   ground('#87928b',gate.walkway,25.7,2.65,14.5);
   ground('#474f59',gate.vehicle,27.3,7.0,11.7);
   ground('#474f59',13.4,24.2,16.8,4.7);
@@ -25,7 +27,9 @@ export function addOutdoors(scene,loadModel) {
   ground('#7c8981',-25.4,1,1.5,44);
   ground('#7c8981',25.4,-1,1.5,44);
   ground('#829184',0,-22.7,50,1.5);
-  for(let x=-72;x<76;x+=6) ground('#c8a464',x,36,2.5,.105,.034);
+  for(let x=-60;x<=60;x+=8) ground('#cad0be',x,avenueOffset,3,.12,.0);
+  for(const side of [-1,1]) for(const offset of [-.95,-.35,.35,.95])
+    ground('#dbddce',side*36.9+offset,campusSidewalkZ,.24,1.55,.028);
   for(let x=14;x<21;x+=2.6) ground('#bbbbb0',x,24.6,.065,3.45,.034);
   for(let x=5.45;x<12;x+=.65) ground('#dbddce',x,30.3,.25,1.45,.028);
   for(const [x1,z1,x2,z2] of planterBoxes) {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { avenueOffset, chunkSize, cityBlock, cityChunks, cityEdge, cityRoadRoute, plotBounds } from './city-plan.js';
+import { avenueHalfWidth, avenueOffset, chunkSize, cityBlock, cityChunks, cityEdge, cityRoadRoute, citySidewalkZ,
+  localStreetHalfWidth, localStreetOffset, plotBounds, sidewalkWidth, staffPlot, streetSpans } from './city-plan.js';
 import { segmentHits } from './navigation.js';
 import { batchDistrictModels, fittedModel } from './district-models.js';
 
@@ -51,33 +52,48 @@ export async function streamingCity(scene,loadModel,low=false) {
     const surface=(x,z,w,d,color,y=-.055)=>part(x,y,z,w,.045,d,color);
     const modelPlacements=new Map();
     if (zone!=='campus') {
+      const hasLocal=zone==='residential'||zone==='business';
+      const crossings=[[avenueOffset,avenueHalfWidth]];
+      if (hasLocal) crossings.push([localStreetOffset,localStreetHalfWidth]);
+      const horizontal=(at,width,color,y,spans)=>{
+        for (const [start,end] of spans) surface(x+(start+end)/2,z+at,end-start,width,color,y);
+      };
+      const vertical=(at,width,color,y,spans)=>{
+        for (const [start,end] of spans) surface(x+at,z+(start+end)/2,width,end-start,color,y);
+      };
+      const asphalt=streetSpans([[0,avenueHalfWidth]]);
+      const sidewalk=streetSpans([[0,avenueHalfWidth+sidewalkWidth]]);
+      const crossStreets=streetSpans(crossings);
       surface(x,z,chunkSize,chunkSize,surfaces[0],-.125);
-      surface(x,roadZ,chunkSize,9,surfaces[1]);
-      surface(x,z,9,chunkSize,surfaces[1]);
-      if (zone==='residential'||zone==='business') {
-        surface(x,z-29,chunkSize,5.6,surfaces[1]);
-        for (const side of [-1,1]) surface(x,z-29+side*3.35,chunkSize,1.1,surfaces[2],-.031);
-      }
+      surface(x,z,avenueHalfWidth*2,chunkSize,surfaces[1]);
+      horizontal(avenueOffset,avenueHalfWidth*2,surfaces[1],-.055,asphalt);
+      if (hasLocal) horizontal(localStreetOffset,localStreetHalfWidth*2,surfaces[1],-.055,asphalt);
       for (const side of [-1,1]) {
-        surface(x,roadZ+side*5.45,chunkSize,1.7,surfaces[2],-.033);
-        surface(x+side*5.45,z,1.7,chunkSize,surfaces[2],-.033);
+        const center=side*(avenueHalfWidth+sidewalkWidth/2);
+        horizontal(avenueOffset+center,sidewalkWidth,surfaces[2],-.033,sidewalk);
+        vertical(center,sidewalkWidth,surfaces[2],-.033,crossStreets);
+        if (hasLocal) horizontal(localStreetOffset+side*(localStreetHalfWidth+.55),1.1,surfaces[2],-.033,sidewalk);
       }
       for (let i=-56;i<=56;i+=8) {
         if (Math.abs(i)>6) surface(x+i,roadZ,3,.12,surfaces[3],-.024);
-        if (Math.abs(i-avenueOffset)>6) surface(x,z+i,.12,3,surfaces[3],-.024);
+        if (crossings.every(([center,half])=>Math.abs(i-center)>half+1.5))
+          surface(x,z+i,.12,3,surfaces[3],-.024);
       }
       for (const side of [-1,1]) for (const offset of [-3.4,-2.2,-1,1,2.2,3.4]) {
         surface(x+side*7.1,roadZ+offset,1.65,.48,surfaces[3],-.022);
       }
+      for (const offset of [-3.6,-2.4,-1.2,0,1.2,2.4,3.6])
+        surface(x+offset,roadZ-avenueHalfWidth-sidewalkWidth/2,.48,1.55,surfaces[3],-.022);
       for (const plot of plots) {
+        if (staffPlot(plot)) continue;
         const color=['#776254','#687e84','#867962','#536777'][plot.color];
-        const modeled=(zone==='business'?towerModels[plot.variant%towerModels.length]:
+        const modeled=(plot.townhouse?`building-type-${homeModels[plot.variant]}`:zone==='business'?towerModels[plot.variant%towerModels.length]:
           zone==='residential'?`building-type-${homeModels[plot.variant]}`:
           zone==='market'||zone==='services'?`building-type-${plot.variant%2?'b':'c'}`:null);
         if (detail && modeled && available.has(modeled)) {
           if (!modelPlacements.has(modeled)) modelPlacements.set(modeled,[]);
           modelPlacements.get(modeled).push({position:[plot.x,0,plot.z],size:[plot.width,plot.height,plot.depth],
-            angle:plot.angle+(zone==='residential'?Math.PI:0)});
+            angle:plot.angle+(zone==='residential' || plot.townhouse?Math.PI:0)});
         } else {
           part(plot.x,plot.height/2,plot.z,plot.width,plot.height,plot.depth,color);
           part(plot.x,plot.height,plot.z,plot.width+.42,.28,plot.depth+.43,surfaces[6]);
@@ -130,7 +146,9 @@ export async function streamingCity(scene,loadModel,low=false) {
     batch(group,crowns,treeGeometry);
     batch(group,lighting,cube,lampMaterial);
     for (const [name,placements] of modelPlacements) batchDistrictModels(group,available.get(name),placements);
-    return {group,detail,obstacles:plots.map(plotBounds)};
+    group.updateMatrixWorld(true);
+    group.traverse(node=>{ node.matrixAutoUpdate=false; });
+    return {group,detail,obstacles:plots.filter(plot=>!staffPlot(plot)).map(plotBounds)};
   }
 
   const cars=Array.from({length:low?8:16},(_,index)=>{
@@ -188,7 +206,7 @@ export async function streamingCity(scene,loadModel,low=false) {
     intersections.clear();
   }
 
-  function update(target,zoom,at,elapsed,player) {
+  function update(target,zoom,at,elapsed,player,employees=[]) {
     stream(target,zoom);
     const [ix,iz]=anchor;
     const hour=new Date(at+7*3600000).getUTCHours();
@@ -252,9 +270,13 @@ export async function streamingCity(scene,loadModel,low=false) {
       const approachingCrosswalk=(crosswalkX-positionX)*dx;
       const yields=east && footCrossing && Math.abs(positionZ-(iz*chunkSize+avenueOffset))<4 &&
         approachingCrosswalk>1.9 && approachingCrosswalk<8;
+      const distanceToStaffCrossing=(iz*chunkSize+citySidewalkZ-positionZ)*dz;
+      const staffCrossing=!east && distanceToStaffCrossing>2.1 && distanceToStaffCrossing<9 &&
+        employees.some(({root})=>Math.abs(root.position.x-x)<8 &&
+          Math.abs(root.position.z-(iz*chunkSize+citySidewalkZ))<1.35);
       const playerAhead=player && (player.x-positionX)*dx+(player.z-positionZ)*dz>0 &&
         Math.hypot(player.x-positionX,player.z-positionZ)<5.4;
-      if (!holding && !queue && !yields && !playerAhead) trip.distance+=delta*(east?8.2:7.1);
+      if (!holding && !queue && !yields && !staffCrossing && !playerAhead) trip.distance+=delta*(east?8.2:7.1);
     }
     people.count=zoom>=.28 && (ix||iz)?Math.round(pedestrianCount*density)*4:0;
     for (let index=0;index<people.count/4;index++) {
@@ -287,7 +309,7 @@ export async function streamingCity(scene,loadModel,low=false) {
       const ix=Math.round(a[0]/chunkSize), iz=Math.round(a[1]/chunkSize);
       for (let x=ix-1;x<=ix+1;x++) for (let z=iz-1;z<=iz+1;z++) {
         if (Math.abs(a[0]-x*chunkSize)>chunkSize/2+2 || Math.abs(a[1]-z*chunkSize)>chunkSize/2+2) continue;
-        const obstacles=chunks.get(`${x}:${z}`)?.obstacles ?? cityBlock(x,z).plots.map(plotBounds);
+        const obstacles=chunks.get(`${x}:${z}`)?.obstacles ?? cityBlock(x,z).plots.filter(plot=>!staffPlot(plot)).map(plotBounds);
         if (obstacles.some(box=>segmentHits(a,b,box,radius))) return false;
       }
       return !cars.some(car=>car.visible && Math.hypot(car.position.x-b[0],car.position.z-b[1])<2.1 &&

@@ -310,6 +310,7 @@ export async function buildWorld(scene,shadowTexture) {
         const next=changes.get(id) ?? prop;
         group.position.set(next.at[0],next.y+.016,next.at[1]);
         group.rotation.y=next.angle;
+        group.updateMatrix();
         moveShadow(prop,next);
       }
     }};

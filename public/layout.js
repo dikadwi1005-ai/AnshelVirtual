@@ -1,4 +1,5 @@
 import { divisions } from './catalog.js';
+import { campusSidewalkZ, chunkSize, cityBlock, citySidewalkZ, plotBounds, staffPlot, staffPlotIds } from './city-plan.js';
 
 // One world unit equals one meter. Ground is y=0.
 export const site = {width:114, depth:106};
@@ -39,22 +40,30 @@ export const houseFronts=[
 ];
 export const houseDoor={width:1.72,height:2.22};
 
-export const homes=divisions.map((person,index)=>{
-  const side=index<4?-1:index<8?1:0;
-  const x=side?side*47:(index-9.5)*15;
-  const z=side?-20+(index%4)*13:-43;
-  const front=side?[ -side,0 ]:[0,1];
+function makeHome(person,index,x,z,angle,properties={}) {
   const width=8+(index%3)*.6, depth=7.4+(index%2)*.8;
-  const angle=Math.atan2(front[0],front[1]);
   const point=(u,v)=>[x+u*Math.cos(angle)+v*Math.sin(angle),z-u*Math.sin(angle)+v*Math.cos(angle)];
   const variant=index%houseFronts.length;
   const doorOffset=houseFronts[variant].doorOffset*width;
-  const door=point(doorOffset,depth/2);
-  const porch=point(doorOffset,depth/2+1.3);
-  const road=side?[side*39,z]:[x,-34];
-  const boulevard=side?[side*39,32]:[x<0?-39:39,32];
-  return {id:'home-'+person.id,person,x,z,side,width,depth,angle,point,door,porch,road,boulevard,
-    variant,doorOffset,sofa:point(-width*.24,.55),bed:point(width*.24,-depth*.28)};
+  return {id:'home-'+person.id,person,x,z,width,depth,angle,point,
+    door:point(doorOffset,depth/2),porch:point(doorOffset,depth/2+1.3),
+    variant,doorOffset,sofa:point(-width*.24,.55),bed:point(width*.24,-depth*.28),...properties};
+}
+
+export const legacyHomes=Object.fromEntries(divisions.map((person,index)=>{
+  const side=index<4?-1:index<8?1:0;
+  const x=side?side*47:(index-9.5)*15;
+  const z=side?-20+(index%4)*13:-43;
+  return [person.id,makeHome(person,index,x,z,Math.atan2(-side,side?0:1))];
+}));
+
+export const homes=divisions.map((person,index)=>{
+  const plotId=staffPlotIds[person.id];
+  const [ix,iz]=plotId.split('/')[0].split(':').map(Number);
+  const plot=cityBlock(ix,iz).plots.find(item=>item.id===plotId);
+  const home=makeHome(person,index,plot.x,plot.z,plot.angle,{plotId});
+  home.road=[home.porch[0],citySidewalkZ];
+  return home;
 });
 export const homeByEmployee=Object.fromEntries(homes.map(home=>[home.person.id,home]));
 const wallSegment=(a,b,height=3)=>({box:fenceBox([...a,...b]),height});
@@ -86,7 +95,9 @@ export const districtServices=[
   {name:'Kios lingkungan',model:'building-type-b',x:-17.5,z:46.5,width:8.6,depth:6.5,height:4.7},
   {name:'Pos layanan',model:'building-type-c',x:17,z:46.5,width:8.2,depth:6.5,height:4.2},
 ];
-export const districtObstacles=[...outdoorObstacles,...officeEnvelope,...homeObstacles,...districtServices.map(service=>({
+const commuteBlocks=[-2,-1,1,2].flatMap(ix=>cityBlock(ix,0).plots);
+const cityBuildings=commuteBlocks.filter(plot=>!staffPlot(plot)).map(plot=>({box:plotBounds(plot),height:plot.height}));
+export const districtObstacles=[...outdoorObstacles,...officeEnvelope,...homeObstacles,...cityBuildings,...districtServices.map(service=>({
   id:service.model,height:service.height,
   box:[service.x-service.width/2,service.z-service.depth/2,service.x+service.width/2,service.z+service.depth/2],
 }))];
@@ -95,21 +106,34 @@ export const vestibule=[-1.8,21.65];
 export const foodStop=[-.95,22.85];
 export const foodMenu=['Nasi ayam','Nasi uduk','Gado-gado'];
 
-export function commuteWaypoints(home) {
-  const corner=home.side?[]:[[home.boulevard[0],-34]];
+export function commuteWaypoints(home,towardHome=false) {
   const offset=((home.person.index%3)-1)*.66;
-  return [home.porch,home.road,...corner,home.boulevard,[pedestrianGate[0]+offset,32],
+  const side=Math.sign(home.x);
+  const lane=citySidewalkZ+side*(towardHome?-.42:.42);
+  const crossings=[];
+  for (let x=side*chunkSize; Math.abs(x)<Math.abs(home.x); x+=side*chunkSize) {
+    crossings.unshift([x-side*5.6,lane]);
+    crossings.unshift([x+side*5.6,lane]);
+  }
+  return [home.porch,[home.road[0],lane],...crossings,[side*64,lane],[side*42,campusSidewalkZ],
+    [pedestrianGate[0]+offset,campusSidewalkZ],
     [pedestrianGate[0]+offset,pedestrianGate[1]],[vestibule[0]+offset,vestibule[1]]];
 }
 export function districtRoute(nav,from,to,home) {
-  const inCampus=([x,z])=>Math.abs(x)<34 && z>-29 && z<29;
-  if (inCampus(from)===inCampus(to)) return nav.route(from,to);
-  const chain=commuteWaypoints(home);
-  const fromHome=Math.hypot(from[0]-home.x,from[1]-home.z)<7;
-  const toHome=Math.hypot(to[0]-home.x,to[1]-home.z)<7;
-  const points=inCampus(from)?
-    (toHome?chain.slice().reverse():chain.slice(-2).reverse()):
-    (fromHome?chain:chain.slice(-2));
+  const nearHome=point=>Math.hypot(point[0]-home.x,point[1]-home.z)<8;
+  const onDriveway=([x,z])=>Math.abs(x-home.porch[0])<2 && z>=home.z && z<=citySidewalkZ+.8;
+  const outside=([x,z])=>Math.abs(x)>42 && Math.abs(z-citySidewalkZ)<4;
+  const fromHome=nearHome(from), toHome=nearHome(to);
+  if ((fromHome || onDriveway(from)) && toHome ||
+      !fromHome && !toHome && !outside(from) && !onDriveway(from)) return nav.route(from,to);
+  const chain=commuteWaypoints(home,toHome);
+  let points=toHome?chain.slice().reverse():chain;
+  if (onDriveway(from) && !toHome) points=points.slice(1);
+  if (outside(from) && !onDriveway(from)) {
+    const index=points.findIndex(point=>toHome?
+      Math.abs(point[0])>Math.abs(from[0])+.05:Math.abs(point[0])<Math.abs(from[0])-.05);
+    points=index<0?[]:points.slice(index);
+  }
   const route=[];
   for (const target of [...points,to]) {
     if (Math.hypot(from[0]-target[0],from[1]-target[1])<.05) continue;

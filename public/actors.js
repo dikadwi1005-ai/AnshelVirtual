@@ -5,7 +5,7 @@ import { employeeFigure, handGrip } from './employee-look.js';
 import { employeeMouth } from './employee-mouth.js';
 import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, conversationAnchors, station } from './furnishings.js';
-import { districtRoute, homeByEmployee, roomById } from './layout.js';
+import { districtRoute, homeByEmployee, legacyHomes, roomById } from './layout.js';
 import { gamepad } from './lounge.js';
 import { isGameReaction } from './lounge-game.js';
 import { characterClearance } from './character-mode.js';
@@ -74,6 +74,24 @@ function chooseAnchor(actor,activity,reservations,nav,room) {
 }
 
 function location(actor) { return [actor.root.position.x,actor.root.position.z]; }
+
+export function migrateHomePose(value) {
+  const {id,position,angle,stage,actual}=value;
+  const old=legacyHomes[id], home=homeByEmployee[id];
+  const dx=position[0]-old.x, dz=position[1]-old.z;
+  const u=dx*Math.cos(old.angle)-dz*Math.sin(old.angle);
+  const v=dx*Math.sin(old.angle)+dz*Math.cos(old.angle);
+  const atOldHome=Math.abs(u)<=old.width/2+.15 && v>=-old.depth/2-.15 && v<=old.depth/2+1.5;
+  const homeActivity=actual==='home' || actual==='home-sleep';
+  if (!atOldHome && !homeActivity) return value;
+  const needsRoute=stage==='walking' || stage==='aligning' && !atOldHome;
+  return {...value,
+    position:atOldHome?home.point(u,v):position,
+    angle:atOldHome?angleDifference(angle+home.angle-old.angle,0):angle,
+    stage:needsRoute?'waiting':stage,
+    path:needsRoute?[]:value.path,
+  };
+}
 
 export async function createActors(scene,nav,shadowMap,initial,requestDialogue,storage) {
   const shadow=new THREE.MeshBasicMaterial({map:shadowMap,transparent:true,depthWrite:false,opacity:.70,toneMapped:false});
@@ -483,7 +501,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
 
   function capture() {
     const turn=actors.find(actor=>actor.directTurn)?.directTurn ?? conversations.turns.values().next().value;
-    return {actors:actors.map(actor=>({
+    return {cityHomes:1,actors:actors.map(actor=>({
       id:actor.person.id,position:location(actor),y:actor.root.position.y,
       angle:angleDifference(actor.root.rotation.y,0),stage:actor.stage,activity:actor.activity,actual:actor.actual,
       anchor:actor.anchor.id,pending:actor.pending?.id,pendingActivity:actor.pendingActivity,room:actor.requestedRoom,
@@ -531,8 +549,9 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     if (!snapshot) return;
     reservations.clear();
     for (const actor of actors) {
-      const value=snapshot.actors.find(item=>item.id===actor.person.id);
-      if (!value) continue;
+      const original=snapshot.actors.find(item=>item.id===actor.person.id);
+      if (!original) continue;
+      const value=snapshot.cityHomes===1?original:migrateHomePose(original);
       const options=activity=>activity==='meet-dika'?conversationAnchors[0]:activityAnchors(actor.person,activity);
       const anchor=options(value.actual).find(item=>item.id===value.anchor) ?? station(roomById[actor.person.id]);
       const pending=value.pending && options(value.pendingActivity).find(item=>item.id===value.pending);
@@ -573,6 +592,11 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       if (actor.stage==='departing' && !pending) actor.stage='sitting';
       reservations.set(anchor.id,actor);
       if (pending) reservations.set(pending.id,actor);
+      const prior=actor.remote?.position;
+      actor.remoteWalking=Boolean(!resume && prior && Math.abs(value.position[0])>42 &&
+        value.stage==='walking' && value.animation==='walk' && value.path.length &&
+        Math.hypot(value.position[0]-prior[0],value.position[1]-prior[1])>.03);
+      actor.remoteElapsed=0;
       actor.remote=value;
       actor.foodTime=value.foodTime ?? 0;
       if (actor.foodTime) foodParcel(actor);
@@ -598,9 +622,19 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     for(const actor of actors) {
       const value=actor.remote;
       if(!value)continue;
-      const [x,z]=value.position;
-      const jump=Math.hypot(x-actor.root.position.x,z-actor.root.position.z)>4;
-      const t=jump?1:blend;
+      let [x,z]=value.position;
+      const correction=Math.hypot(x-actor.root.position.x,z-actor.root.position.z);
+      if (actor.remoteWalking) {
+        const [nextX,nextZ]=value.path[0], dx=nextX-x, dz=nextZ-z;
+        const remaining=Math.hypot(dx,dz);
+        actor.remoteElapsed=Math.min(.85,actor.remoteElapsed+delta);
+        if (remaining>0) {
+          const fraction=Math.min(1,actor.remoteElapsed*speed/remaining);
+          x+=dx*fraction;
+          z+=dz*fraction;
+        }
+      }
+      const t=correction>4?1:actor.remoteWalking?1-Math.exp(-delta*7):blend;
       actor.root.position.x=THREE.MathUtils.lerp(actor.root.position.x,x,t);
       actor.root.position.y=THREE.MathUtils.lerp(actor.root.position.y,value.y,t);
       actor.root.position.z=THREE.MathUtils.lerp(actor.root.position.z,z,t);

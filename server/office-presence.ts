@@ -1,5 +1,6 @@
 import { divisions, activities } from '../public/catalog.js';
 import { foodMenu } from '../public/layout.js';
+import { cityEdge } from '../public/city-plan.js';
 
 export const officePresenceKey='office_presence_v1';
 const ids=new Set(divisions.map(person=>person.id));
@@ -8,6 +9,8 @@ const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const bounded=(value,limit)=>Number.isFinite(value)&&Math.abs(value)<=limit;
 const between=(value,limit)=>bounded(value,limit)&&value>=0;
 const pair=value=>Array.isArray(value)&&value.length===2&&bounded(value[0],57)&&bounded(value[1],53);
+const actorPoint=value=>Array.isArray(value)&&value.length===2&&
+  (pair(value) || bounded(value[0],cityEdge) && bounded(value[1],cityEdge));
 const activity=value=>typeof value==='string'&&Object.hasOwn(activities,value);
 const anchor=value=>typeof value==='string'&&/^[a-z0-9-]{1,45}$/.test(value);
 const life=value=>value && typeof value.mood==='string' && value.mood.length<=32 &&
@@ -25,13 +28,14 @@ export function validPresence(input) {
   if(snapshot===undefined)return true;
   if(!Array.isArray(snapshot?.actors)||snapshot.actors.length!==ids.size||
       new Set(snapshot.actors.map(actor=>actor?.id)).size!==ids.size)return false;
-  return snapshot.actors.every(actor=>actor&&ids.has(actor.id)&&pair(actor.position)&&bounded(actor.y,1)&&actor.y>=0&&
+  return (snapshot.cityHomes===undefined || snapshot.cityHomes===1) &&
+    snapshot.actors.every(actor=>actor&&ids.has(actor.id)&&actorPoint(actor.position)&&bounded(actor.y,1)&&actor.y>=0&&
     bounded(actor.angle,4)&&stages.has(actor.stage)&&activity(actor.activity)&&activity(actor.actual)&&
     anchor(actor.anchor)&&(!actor.pending||anchor(actor.pending))&&(!actor.pendingActivity||activity(actor.pendingActivity))&&
     (!actor.room||anchor(actor.room))&&typeof actor.animation==='string'&&/^[a-z-]{1,25}$/.test(actor.animation)&&
     (!actor.life||life(actor.life))&&between(actor.seat,1)&&
     (actor.foodTime===undefined || between(actor.foodTime,28))&&
-    Array.isArray(actor.path)&&actor.path.length<=160&&actor.path.every(pair)) &&
+    Array.isArray(actor.path)&&actor.path.length<=160&&actor.path.every(actorPoint)) &&
     (!snapshot.turn||ids.has(snapshot.turn.id)&&typeof snapshot.turn.text==='string'&&snapshot.turn.text.length<=320) &&
     (snapshot.traffic===undefined || validTraffic(snapshot.traffic));
 }

@@ -57,19 +57,20 @@ test('Nation City is opt-in, streams a bounded response and keeps a short last-g
     calls++;
     assert.equal(url.hostname,'api.example.org');
     assert.equal(options.redirect,'error');
+    assert.equal(options.headers.Authorization,'Bearer fixture');
     return new Response(valid?JSON.stringify(snapshot):'x'.repeat(64001),{headers:{'Content-Type':'application/json'}});
   };
-  const env={NATION_CITY_READ_URL:'https://api.example.org/snapshot'};
-  assert.equal((await createNationCity(env,fetcher)()).connection,'unconfigured');
+  const env={NATION_CITY_READ_URL:'https://api.example.org/snapshot',NATION_CITY_READ_TOKEN:'fixture'};
+  assert.deepEqual(await createNationCity(env,fetcher)(),{connection:'unconfigured',health:'not_configured',snapshot:null});
   const read=createNationCity({...env,NATION_CITY_ENABLED:'true'},fetcher,()=>now);
-  assert.deepEqual(await read(),{connection:'live',snapshot,checkedAt:0});
+  assert.deepEqual(await read(),{connection:'live',health:'connected',snapshot,checkedAt:0,lastGoodAt:0});
   await read();
   assert.equal(calls,1);
   valid=false;
   now=31000;
-  assert.deepEqual(await read(),{connection:'offline',snapshot,checkedAt:31000});
+  assert.deepEqual(await read(),{connection:'offline',health:'degraded',snapshot,checkedAt:31000,lastGoodAt:0});
   now=310000;
-  assert.deepEqual(await read(),{connection:'offline',snapshot:null,checkedAt:310000});
+  assert.deepEqual(await read(),{connection:'offline',health:'offline',snapshot:null,checkedAt:310000,lastGoodAt:0});
 });
 
 test('cloud Studio stays private and scheduler token cannot bypass the disabled flag',async()=>{

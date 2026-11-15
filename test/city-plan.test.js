@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { avenueOffset, chunkSize, cityBlock, cityChunks, cityDistricts, cityEdge, cityRoadRoute, zoneAt } from '../public/city-plan.js';
+import { avenueHalfWidth, avenueOffset, chunkSize, cityBlock, cityChunks, cityDistricts, cityEdge, cityRoadRoute,
+  localStreetHalfWidth, localStreetOffset, streetSpans, zoneAt } from '../public/city-plan.js';
+
+test('sidewalk spans stop at each asphalt crossing and extend to adjoining blocks',()=>{
+  const crossings=[[avenueOffset,avenueHalfWidth],[localStreetOffset,localStreetHalfWidth]];
+  assert.deepEqual(streetSpans(crossings),[
+    [-chunkSize/2,localStreetOffset-localStreetHalfWidth],
+    [localStreetOffset+localStreetHalfWidth,avenueOffset-avenueHalfWidth],
+    [avenueOffset+avenueHalfWidth,chunkSize/2],
+  ]);
+  assert.deepEqual(streetSpans([[0,3],[2,3]]),[[-64,-3],[5,64]]);
+});
 
 test('city parcels are stable, face road access, and fit in their own block',()=>{
   assert.ok(cityEdge*2>=2000);
