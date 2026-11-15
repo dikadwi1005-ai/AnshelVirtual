@@ -75,6 +75,40 @@ test('n8n public API read-only metadata is verifiable without reading credential
   assert.doesNotMatch(result.text,/test-secret-do-not-display/);
 });
 
+test('Sumopod n8n custom hosting is allowed only for the exact supplied workflow origin',async()=>{
+  const cfg={...env,N8N_MONITOR_BASE_URL:'https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id',
+    N8N_MONITOR_API_KEY:'mock-key',N8N_MONITOR_WORKFLOW_ID:'dwgeU2zVgzqF2Nu2'};
+  const urls=[];
+  const fetchImpl=async(url,options)=>{
+    urls.push(url);
+    assert.equal(options.method,'GET');
+    assert.equal(options.redirect,'error');
+    if(url.endsWith('/workflows/dwgeU2zVgzqF2Nu2'))
+      return new Response(JSON.stringify({id:'dwgeU2zVgzqF2Nu2',active:true}),{status:200});
+    if(url.includes('/executions?workflowId=dwgeU2zVgzqF2Nu2&limit=5'))
+      return new Response(JSON.stringify({data:[{id:'8795',status:'error',
+        startedAt:'2026-11-15T08:30:37Z'}]}),{status:200});
+    throw new Error('Unexpected outbound URL');
+  };
+  const result=await inspectN8nExecutions(cfg,fetchImpl);
+  assert.equal(result.state,'verified');
+  assert.equal(result.latest.id,'8795');
+  assert.equal(urls.length,2);
+  assert.ok(urls.every(url=>url.startsWith('https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id/api/v1/')));
+  for(const hostileUrl of [
+    'http://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id',
+    'https://other.jkt6.sumopod.my.id',
+    'https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id.evil.example',
+    'https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id@evil.example',
+    'https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id/workflow/dwgeU2zVgzqF2Nu2',
+    'https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id:8080',
+  ]) {
+    const forbidden=await inspectN8nExecutions({...cfg,N8N_MONITOR_BASE_URL:hostileUrl},
+      async()=>{throw new Error('Must not fetch hostile URL');});
+    assert.equal(forbidden.state,'incomplete',hostileUrl);
+  }
+});
+
 test('n8n connection failure is unknown, not a fabricated zero-error status',async()=>{
   const cfg={...env,N8N_MONITOR_BASE_URL:'https://anshel.app.n8n.cloud',
     N8N_MONITOR_API_KEY:'dummy',N8N_MONITOR_WORKFLOW_ID:'abc-123'};
