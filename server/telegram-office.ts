@@ -306,7 +306,7 @@ export function officeGroupReply(state,input,env) {
     const issues=blocked+failed+paused+overdue.count;
     const prefix=issues
       ?'Dari catatan tugas Anshel: '+blocked+' terhambat, '+failed+' gagal, '+paused+' dijeda.'
-      :'Di catatan tugas Anshel tidak ada tugas terhambat, gagal, atau dijeda.';
+      :'Di catatan tugas Anshel tidak ada tugas terhambat, gagal, atau dijeda; ini belum memastikan sistem bebas masalah.';
     const backlog=overdue.count
       ?' '+overdue.count+' tugas masih antre sedikitnya dua jam.'
       :' Tidak ada antrean yang melewati dua jam.';
