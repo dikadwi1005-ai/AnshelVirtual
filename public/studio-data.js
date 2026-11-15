@@ -2,25 +2,55 @@ export const maxFrames=900;
 export const maxEvents=240;
 
 export function episodeFromReplay(topic,frames,people) {
-  const end=frames.at(-1)?.at;
-  if (!end || end-frames[0].at<9000) return null;
-  const start=Math.max(frames[0].at,end-18000);
-  const duration=(end-start)/3;
+  // Only recorded poses are used as evidence. Never invent an employee action.
+  if(typeof topic!=='string' || !topic.trim() || !Array.isArray(frames) ||
+     !Array.isArray(people) || !people.length) return null;
+  const valid=frames.filter(frame=>Number.isSafeInteger(frame?.at) &&
+    Array.isArray(frame.actors) && frame.actors.length>0).sort((a,b)=>a.at-b.at);
+  const first=valid[0]?.at, end=valid.at(-1)?.at;
+  if(!Number.isSafeInteger(first)||!Number.isSafeInteger(end)||end-first<9000)return null;
+  const start=Math.max(first,end-27000);
+  const duration=end-start;
+  const count=Math.min(5,Math.max(3,Math.floor(duration/5000)));
   const name=topic.toLocaleLowerCase('id');
-  const preferred=people.findIndex(person=>name.includes(person.employee.toLocaleLowerCase('id')));
+  const preferred=people.findIndex(person=>typeof person?.employee==='string' &&
+    name.includes(person.employee.toLocaleLowerCase('id')));
   const descriptions={walk:'sedang berjalan',speak:'sedang berbicara','seated-speak':'sedang berbicara',
-    'desk-work':'sedang bekerja','home-sleep':'sedang tidur',read:'sedang membaca',drink:'sedang minum',
-    phone:'sedang menggunakan ponsel','game-play':'sedang bermain'};
-  return Array.from({length:3},(_,i)=>{
-    const from=Math.round(start+i*duration), to=Math.round(start+(i+1)*duration);
-    const frame=frames.find(item=>item.at>=(from+to)/2);
-    const featured=frame.actors.findIndex(actor=>Object.hasOwn(descriptions,actor.animation));
-    const index=preferred>=0?preferred:featured;
-    const person=people[index], actor=frame.actors[index];
-    return {frames,start:from,end:to,camera:i===0?'campus':person?'employee-'+person.id:'',
-      caption:i===0?'Kita mulai dari kawasan Anshel Virtual Tech.':
-        person && Object.hasOwn(descriptions,actor?.animation)?person.employee+' '+descriptions[actor.animation]+'.':
-        'Rekaman memperlihatkan suasana di kawasan Anshel.'};
+    'desk-work':'sedang bekerja','home-sleep':'sedang beristirahat di rumah',
+    read:'sedang membaca',drink:'sedang minum',phone:'sedang menggunakan ponsel',
+    'game-play':'sedang bermain'};
+  const actionWords=[
+    [/jalan|berangkat|pulang|perjalanan|menyeberang/,['walk']],
+    [/rapat|diskusi|berbicara|ngobrol/,['speak','seated-speak']],
+    [/bekerja|kerja|tugas|kantor/,['desk-work']],
+    [/rumah|tidur|istirahat/,['home-sleep']],
+    [/baca|riset/,['read']],
+    [/minum|kopi/,['drink']],
+    [/ponsel|telepon/,['phone']],
+    [/game|main|ps5/,['game-play']],
+  ];
+  const wanted=actionWords.filter(([pattern])=>pattern.test(name)).flatMap(([,actions])=>actions);
+  return Array.from({length:count},(_,i)=>{
+    const from=Math.round(start+i*duration/count);
+    const to=i===count-1?end:Math.round(start+(i+1)*duration/count);
+    const middle=(from+to)/2;
+    const frame=valid.find(entry=>entry.at>=middle) ?? valid.at(-1);
+    const actorList=frame.actors;
+    const candidates=actorList.map((actor,index)=>({actor,index})).filter(({actor,index})=>
+      actor && people[index] && Object.hasOwn(descriptions,actor.animation));
+    const matched=candidates.find(({actor,index})=>index===preferred && wanted.includes(actor.animation)) ??
+      candidates.find(({actor})=>wanted.includes(actor.animation)) ??
+      candidates.find(({index})=>index===preferred) ?? candidates[i%candidates.length];
+    const index=matched?.index ?? (preferred>=0 && actorList[preferred]?preferred:-1);
+    const person=index>=0?people[index]:null;
+    const actor=index>=0?actorList[index]:null;
+    const action=actor && Object.hasOwn(descriptions,actor.animation)?descriptions[actor.animation]:null;
+    const caption=person && action?person.employee+' '+action+'.':
+      'Cuplikan aktivitas yang terekam di Anshel Virtual Tech.';
+    const homeCamera=actor?.animation==='home-sleep' && person;
+    return {frames:valid,start:from,end:to,camera:i===0?'campus':
+      homeCamera?'home-'+person.id:person?'employee-'+person.id:'campus',
+      caption};
   });
 }
 
