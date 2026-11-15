@@ -2,7 +2,7 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import { observedAvatar } from './office-avatar-status.ts';
-import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert,overdueOfficeQueueSummary } from './office-monitoring.ts';
+import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert,overdueOfficeQueueSummary,workerPulseEvidence } from './office-monitoring.ts';
 import { parseGroupWorkspaceCommand } from './telegram-workspace.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
@@ -284,32 +284,41 @@ export function officeGroupReply(state,input,env) {
     return {division:'management',text:'Ringkasan status tugas Anshel saat ini (seluruh divisi): '+
       number('queued')+' antre, '+number('running')+' dikerjakan, '+
       number('completed')+' selesai, '+number('blocked')+' terhambat, '+
-      number('failed')+' gagal. Ini akumulasi status tugas yang tercatat, bukan hanya aktivitas hari ini. '+
+      number('failed')+' gagal, '+number('paused')+' dijeda. Ini akumulasi status tugas yang tercatat, bukan hanya aktivitas hari ini. '+
       'Kalau mau lihat kendala, kirim /kendala.'};
   }
   if (/^\/kendala$/i.test(msg)) {
     const c=state.counts||{};
     const blocked=Number(c.blocked)||0;
     const failed=Number(c.failed)||0;
+    const paused=Number(c.paused)||0;
     const overdue=overdueOfficeQueueSummary(state);
-    const backlog=overdue.count?' '+overdue.count+' tugas masih antre sedikitnya dua jam.':'';
-    const workerSignal=state.worker===false?' Worker belum terlihat aktif dalam 40 detik terakhir.':'';
-    if(!blocked&&!failed&&!overdue.count) return {division:'operations',
-      text:'Di catatan tugas Anshel saat ini belum ada yang berstatus terhambat atau gagal, '+
-      'dan tidak terlihat antrean lewat dua jam.'+workerSignal+
-      ' Ini bukan hasil pemeriksaan server, jadi belum memastikan sistem bebas masalah.'};
-    const recent=(state.tasks||[]).filter(t=>t.status==='blocked'||t.status==='failed').slice(0,3);
+    const pulse=workerPulseEvidence(state);
+    const recent=(state.tasks||[]).filter(t=>
+      ['blocked','failed','paused'].includes(t.status)).slice(0,3);
     const details=recent.map(t=>{
-      const worker=divisions.find(d=>d.id===t.division);
-      const who=worker?.employee||'Divisi tidak dikenal';
+      const person=divisions.find(d=>d.id===t.division);
+      const who=person?.employee||'Divisi tidak dikenal';
       const project=clean(t.project)||'tanpa nama proyek';
-      return who+' ('+project+'): '+(t.status==='blocked'?'terhambat':'gagal');
+      const label={blocked:'terhambat',failed:'gagal',paused:'dijeda'}[t.status];
+      return who+' ('+project+'): '+label;
     }).join('; ');
-    return {division:'operations',text:'Dari catatan tugas Anshel: '+blocked+' terhambat, '+
-      failed+' gagal.'+(details?' Contoh dari daftar tugas terbaru: '+details+'.':
-      blocked||failed?' Rincian tugas tersebut tidak terlihat dalam daftar terbaru.':'')+
-      backlog+workerSignal+
-      ' Ini status tugas dan sinyal worker, bukan diagnosis kondisi server dan bukan bukti seluruh server mati atau sehat.'};
+    const issues=blocked+failed+paused+overdue.count;
+    const prefix=issues
+      ?'Dari catatan tugas Anshel: '+blocked+' terhambat, '+failed+' gagal, '+paused+' dijeda.'
+      :'Di catatan tugas Anshel tidak ada tugas terhambat, gagal, atau dijeda; ini belum memastikan sistem bebas masalah.';
+    const backlog=overdue.count
+      ?' '+overdue.count+' tugas masih antre sedikitnya dua jam.'
+      :' Tidak ada antrean yang melewati dua jam.';
+    const workerSignal=state.worker===true
+      ?' Worker memiliki heartbeat dalam 40 detik terakhir.'
+      :' Worker belum terlihat aktif dalam 40 detik terakhir.';
+    return {division:'operations',text:prefix+backlog+
+      (details?' Contoh: '+details+'.':blocked+failed+paused
+        ?' Rincian tugas bermasalah tidak terlihat di daftar terbaru.':'')+
+      workerSignal+' '+pulse.lastSeenText+'. '+pulse.verdict+' '+
+      pulse.scheduleText+' Status ini hanya berdasarkan database dan heartbeat; '+
+      'bukan diagnosis kondisi server dan tidak membuktikan Gemini, n8n, atau layanan lain sehat.'};
   }
   const check=/^\/cek(?:\s+([A-Za-z0-9_]+))?\s*$/i.exec(msg);
   if (check) {
@@ -474,13 +483,18 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
       :elapsed+' menit sejak panggilan /dispatch terakhir';
     const itConnected=configuredOfficeBots(env).configured.includes('operations');
     const sender=itConnected?'operations':'management';
+    const pulse=workerPulseEvidence(state);
+    const counts=state.counts||{};
     const text=(itConnected?'Bima · Laporan teknis IT Anshel:\n':
       'Alya · Meneruskan status IT (bot Bima belum terhubung):\n')+
       'API dan database: permintaan ini berhasil dibaca.\n'+
-      'Worker: '+(state.worker?'heartbeat teramati dalam 40 detik':'tidak ada heartbeat terbaru')+'.\n'+
-      'Integrasi Auto Office: '+dispatcher+'.\n'+
-      'Gemini, n8n Published, Vercel deployment, dan layanan eksternal: belum diuji langsung oleh pemeriksaan ini. ' +
-      'Pemeriksaan kesehatan menyeluruh memerlukan sumber eksternal yang belum terhubung.';
+      'Worker: '+(state.worker?'heartbeat dalam 40 detik terakhir':'belum ada heartbeat dalam 40 detik terakhir')+
+      '. '+pulse.lastSeenText+'.\n'+
+      'Jadwal worker: '+pulse.scheduleText+' '+pulse.verdict+'\n'+
+      'Tugas bermasalah: '+(Number(counts.blocked)||0)+' terhambat, '+
+      (Number(counts.failed)||0)+' gagal, '+(Number(counts.paused)||0)+' dijeda.\n'+
+      'Auto Office Telegram: '+dispatcher+' (bukti pemanggilan endpoint, bukan sukses worker).\n'+
+      'Gemini, status Published n8n, dan layanan eksternal belum diuji langsung.';
     await sendOfficeBotMessage(env,sender,text,{fetchImpl});
     return {sent:true,division:sender,technicalOwner:'operations',kind:'health-evidence'};
   }

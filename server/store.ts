@@ -325,6 +325,7 @@ export function createStore(path: string, now = Date.now) {
       return {
         now:now(), phase:officePhase, mode:mode(), schedule:schedule(),
         worker: now() - readSetting('worker_at', -Infinity) < 40_000,
+        workerLastSeenAt: readSetting('worker_at',null),
         capabilities: readSetting('worker_kinds',[]),
         tasks:all('SELECT * FROM tasks ORDER BY created DESC,rowid DESC LIMIT 150').map(publicTask),
         overdueQueueByDivision,

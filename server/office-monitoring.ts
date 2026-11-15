@@ -14,6 +14,40 @@ const localParts=time=>Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
 const minutes=value=>{const [h,m]=String(value||'').split(':').map(Number);return h*60+m;};
 const safeProject=s=>String(s||'tanpa nama proyek').replace(/[\r\n\t@<>]/g,' ').trim().slice(0,45);
 
+/**
+ * A recent claim/heartbeat is evidence that the draft worker contacted the API,
+ * not evidence of successful Gemini execution or a healthy deployment.
+ * n8n's repository schedule is Mon-Fri, every 20 minutes 09.00-16.40 WIB.
+ * The Published schedule may differ and is deliberately not asserted as verified.
+ */
+export function workerPulseEvidence(state) {
+  const now=Number(state.now);
+  const validNow=Number.isFinite(now)&&now>0;
+  const parts=validNow?localParts(now):null;
+  const weekdays={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+  const day=parts?weekdays[parts.weekday]:null;
+  const moment=parts?Number(parts.hour)*60+Number(parts.minute):NaN;
+  const scheduledDay=day!==null&&day>=1&&day<=5;
+  const inSchedule=scheduledDay&&moment>=9*60&&moment<=16*60+40;
+  // Allow an initial 45-minute window after 09.00 for the 20-minute scheduler.
+  const shouldHavePulse=scheduledDay&&moment>=9*60+45&&moment<=16*60+40;
+  const observed=Number(state.workerLastSeenAt);
+  const validSeen=Number.isFinite(observed)&&observed>0&&validNow&&observed<=now;
+  const lastSeenText='Heartbeat worker terakhir: '+(validSeen
+    ?new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',year:'numeric',
+      month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
+      .format(new Date(observed))+' WIB'
+    :'belum ada waktu yang terverifikasi');
+  const missedScheduledPulse=shouldHavePulse&&state.worker!==true&&
+    (!validSeen||now-observed>45*60_000);
+  const verdict=!validNow?'Waktu pemeriksaan tidak tersedia.':
+    missedScheduledPulse?'Perlu diperiksa: tidak ada heartbeat sesuai interval terjadwal (>45 menit) saat jam worker.':
+    inSchedule?'Sedang dalam jam worker terjadwal; jeda heartbeat 40 detik saja bukan bukti gangguan.':
+    'Sekarang di luar jadwal worker draf di repo; heartbeat yang tidak baru bukan bukti gangguan.';
+  return {missedScheduledPulse,inSchedule,lastSeenText,verdict,
+    scheduleText:'Acuan jadwal worker draf di repo: Senin-Jumat, 09.00-16.40 WIB tiap 20 menit (status n8n Published belum diverifikasi).'};
+}
+
 export function officeEmployeeOverview(state,configured=pilotDivisions) {
   const enabled=new Set(configured);
   return [...pilotDivisions,'marketing','research','social'].filter(id=>enabled.has(id)).map(id=>{
@@ -100,11 +134,11 @@ export function overdueOfficeQueueSummary(state,allowed=divisions.map(person=>pe
 
 export function officeQueueDelayAlert(state,allowed=pilotDivisions) {
   const now=Number(state.now);
-  if(!Number.isFinite(now)||state.worker||!['work','review','open'].includes(state.phase))return null;
+  if(!Number.isFinite(now)||!['work','review','open'].includes(state.phase))return null;
   const stale=overdueOfficeQueueSummary(state,allowed);
-  if(!stale.count)return null;
+  if(!stale.count||!workerPulseEvidence(state).missedScheduledPulse)return null;
   const names=stale.divisions.map(id=>labels[id]||id);
   return 'Bima · Peringatan antrean: '+stale.count+' tugas pada '+names.join(', ')+
-    ' telah menunggu sedikitnya dua jam. Worker belum terlihat aktif dalam 40 detik terakhir. '+
-    'Ini indikasi antrean perlu dicek, BUKAN bukti layanan mati. Periksa dashboard Anshel atau /kendala.';
+    ' telah menunggu sedikitnya dua jam. Heartbeat worker terjadwal tidak terlihat dalam lebih dari 45 menit. '+
+    'Ini indikasi antrean dan worker perlu dicek di n8n Executions, BUKAN bukti layanan mati. Periksa dashboard Anshel atau /kendala.';
 }

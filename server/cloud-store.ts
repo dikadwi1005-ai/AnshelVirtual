@@ -363,6 +363,7 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         now: now(), phase: officePhase, mode: await readSetting('mode', 'auto'),
         schedule: await readSetting('schedule', defaults),
         worker: now() - await readSetting('worker_at', -Infinity) < 40_000,
+        workerLastSeenAt: await readSetting('worker_at',null),
         capabilities: await readSetting('worker_kinds', []),
         tasks: taskRows.map(publicTask), running,
         overdueQueueByDivision:Object.fromEntries(overdueCounts.map(row=>[row.division,row.count])),

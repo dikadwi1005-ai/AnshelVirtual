@@ -8,10 +8,11 @@ import {requestedOfficeDiscussion} from '../server/telegram-group.ts';
 import {
   parseOwnerNaturalTask,officeGroupReply,dispatchOfficeGroupEvent,
   officeVirtualCheckin,dispatchOfficeGroupCheckin,automaticOfficeDivisions,
+  sendOfficeGroupOwnerMessage,
 } from '../server/telegram-office.ts';
 import {
   officeEmployeeOverview,officeActivityReply,officeSummaryDue,officeDailySummary,
-  officeQueueDelayAlert,
+  officeQueueDelayAlert,workerPulseEvidence,
 } from '../server/office-monitoring.ts';
 
 const base=Date.parse('2026-11-13T03:00:00Z'); // Friday, 10 AM WIB
@@ -107,6 +108,57 @@ test('Bima /kendala includes overdue queued tasks even when blocked and failed a
   assert.match(officeGroupReply({...state,worker:true},'/kendala',env).text,/2 tugas masih antre/);
   const cleared={...state,worker:true,tasks:state.tasks.map(t=>({...t,created:day(12)}))};
   assert.doesNotMatch(officeGroupReply(cleared,'/kendala',env).text,/tugas masih antre/);
+});
+
+test('worker schedule evidence ignores a 40-second lapse and weekend silence',()=>{
+  const recent=workerPulseEvidence({now:day(10),worker:false,
+    workerLastSeenAt:day(9,40)});
+  assert.equal(recent.missedScheduledPulse,false);
+  assert.match(recent.verdict,/jeda heartbeat 40 detik saja bukan bukti gangguan/i);
+  const overdue=workerPulseEvidence({now:day(13),worker:false,
+    workerLastSeenAt:day(10)});
+  assert.equal(overdue.missedScheduledPulse,true);
+  assert.match(overdue.verdict,/lebih dari 45 menit|>45 menit/);
+  const sunday=Date.parse('2026-11-15T08:00:00Z');
+  const weekend=workerPulseEvidence({now:sunday,worker:false,
+    workerLastSeenAt:day(16,40)});
+  assert.equal(weekend.missedScheduledPulse,false);
+  assert.match(weekend.verdict,/di luar jadwal worker/);
+  assert.equal(officeQueueDelayAlert({phase:'work',now:sunday,worker:false,
+    tasks:[{division:'operations',status:'queued',created:day(9)}]}),null);
+});
+
+test('Bima /kendala reports paused tasks without inventing runtime failures',()=>{
+  const sunday=Date.parse('2026-11-15T08:00:00Z');
+  const response=officeGroupReply({now:sunday,worker:false,
+    workerLastSeenAt:day(16,40),
+    counts:{paused:2,blocked:0,failed:0},
+    tasks:[{division:'operations',status:'paused',project:'API',
+      description:'Private secret'},
+    {division:'research',status:'paused',project:'Riset'}]},
+  '/kendala',env);
+  assert.equal(response.division,'operations');
+  assert.match(response.text,/2 dijeda/);
+  assert.match(response.text,/Bima \(API\): dijeda/);
+  assert.match(response.text,/di luar jadwal worker/);
+  assert.doesNotMatch(response.text,/Private secret|server sehat/);
+});
+
+test('Bima /kesehatan includes last heartbeat, scheduled context and task pauses',async()=>{
+  const store=createStore(':memory:',()=>day(10));
+  sent.length=0;
+  try{
+    store.claim(['draft']); // Authenticated worker poll is a heartbeat even when idle.
+    store.recordOfficeDispatchPulse();
+    const out=await sendOfficeGroupOwnerMessage(store,env,msg(16001,'/kesehatan'),fakeTelegram);
+    assert.equal(out.kind,'health-evidence');
+    const report=sent.at(-1).body.text;
+    assert.match(report,/Heartbeat worker terakhir:/);
+    assert.match(report,/Jadwal worker:/);
+    assert.match(report,/Auto Office Telegram:/);
+    assert.match(report,/0 dijeda/);
+    assert.doesNotMatch(report,/seluruh server sehat|Gemini berhasil/i);
+  }finally{store.close();}
 });
 
 test('full database queue count finds an old task excluded from the latest 150 rows',()=>{
