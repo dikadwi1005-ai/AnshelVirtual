@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { characterFigure } from './employee-look.js';
+import { characterFigure, handGrip } from './employee-look.js';
 import { model } from './world.js';
 import { foodMenu, foodStop } from './layout.js';
 import { fittedModel } from './district-models.js';
@@ -18,6 +18,7 @@ const busy=(state,id)=>{
   return person?.executing || (person?.task?.status==='queued' && state.worker && state.capabilities?.includes(person.task.kind));
 };
 const mealCooldown=20*60_000;
+const mealDecisionMin=24, mealDecisionRange=22;
 const mealPreference=['Gado-gado','Nasi ayam','Nasi uduk','Gado-gado','Nasi ayam','Gado-gado',
   'Nasi uduk','Nasi uduk','Gado-gado','Nasi uduk','Nasi ayam','Nasi ayam'];
 
@@ -168,7 +169,7 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
   const roots=[car,guest,scooter,roadCar,opposingCar];
   let cycle='', vehicle=null, pedestrian=null, lastTime=0, order=null, lastOrder='', scooterTrip=null, requested=null;
   let following=false, remoteActive=false;
-  let decisionTime=12, cooldowns={};
+  let decisionTime=mealDecisionMin, cooldowns={};
   const hand=new THREE.Vector3(), targetHand=new THREE.Vector3();
   function play(next) {
     if (next===action) return;
@@ -207,6 +208,19 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
     root.rotation.y+=THREE.MathUtils.clamp(turn,-delta*6,delta*6);
     root.position.x=x; root.position.z=z;
     return true;
+  }
+  function gateTraffic(root,trip) {
+    const next=trip.route[trip.index];
+    if (!next) return [];
+    const blockers=[];
+    for (const lane of trafficLanes) {
+      if (!lane.root.visible) continue;
+      const edge=lane.trip?.route[0][1];
+      const current=root.position.z;
+        const crosses=(next[1]-edge)*(current-edge)<=0;
+      if (crosses && Math.abs(current-edge)>.9) blockers.push(lane.root);
+    }
+    return blockers;
   }
   for (const root of roots) root.visible=false;
   return {
@@ -304,7 +318,7 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
       }
       const now=state.now ?? Date.now();
       if (mixer && needsFor && !requested && !order && state.phase==='lunch' && (decisionTime-=delta)<=0) {
-        decisionTime=24+Math.random()*22;
+        decisionTime=mealDecisionMin+Math.random()*mealDecisionRange;
         requested=chooseFoodOrder({...state,now},employees,needsFor,cooldowns);
         if (requested) cooldowns[requested.id]=now;
       }
@@ -327,7 +341,10 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
           }
         }
         if (!lane.trip) continue;
-        const moving=move(lane.root,lane.trip,delta,index?5.5:6.2,lane.trip.radius,[...people,car,scooter]);
+        // Cross-traffic already inside the lane clears it before the next car proceeds.
+        const crossing=[car,scooter].filter(root=>Math.abs(root.position.z-start[1])<=.9);
+        const blocked=jam(crossing,lane.root.position.x,lane.root.position.z,3.1);
+        const moving=!blocked && move(lane.root,lane.trip,delta,index?5.5:6.2,lane.trip.radius,people);
         lane.trip.wait=moving?0:lane.trip.wait+delta;
         if (lane.root===roadCar && roadScooter.visible) roadRiderMixer?.update(delta);
         if (lane.trip.index>=lane.trip.route.length || lane.trip.wait>30) { lane.trip=null; lane.root.visible=false; }
@@ -384,7 +401,7 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
           return;
         }
         if (scooterTrip) {
-          move(scooter,scooterTrip,delta,3.5,1.08,[...people,roadCar,opposingCar]);
+          move(scooter,scooterTrip,delta,3.5,1.08,people.concat(gateTraffic(scooter,scooterTrip)));
           if (scooterTrip.index>=scooterTrip.route.length) {
             if (scooterTrip.returning) {
               endOrder();
@@ -426,13 +443,13 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
                 if (reach) play(reach);
                 guest.rotation.y=Math.atan2(receiver.root.position.x-guest.position.x,receiver.root.position.z-guest.position.z);
                 guest.updateMatrixWorld();
-                if (courierHand) courierHand.localToWorld(hand.set(-.13,-.075,.04));
+                if (courierHand) handGrip(courierHand,-1,hand);
                 else guest.localToWorld(hand.set(.26,.91,.36));
-                if (receiver.hands?.[0]) receiver.hands[0].localToWorld(targetHand.set(.13,-.07,.03));
+                if (receiver.hands?.[0]) handGrip(receiver.hands[0],1,targetHand);
                 else receiver.root.localToWorld(targetHand.set(-.22,.9,.36));
                 guest.worldToLocal(hand.lerp(targetHand,Math.min(1,order.handoff/.65)));
                 box.position.copy(hand);
-              } else box.position.set(.26,.91,.36);
+              }
               if (order.handoff>=.65 || pedestrian.wait>70) {
                 order.delivered=order.handoff>=.65;
                 if (order.delivered) onHandoff(order.id,packageModel);
@@ -443,10 +460,12 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
               }
             }
           }
-          if (walking && box.visible && courierHand) {
-            courierHand.localToWorld(hand.set(-.13,-.075,.04));
+          mixer.update(delta);
+          if (box.visible && !order.handoff && courierHand) {
+            handGrip(courierHand,-1,hand);
             box.position.copy(guest.worldToLocal(hand));
           }
+          return;
         }
         mixer.update(delta);
         return;
@@ -469,7 +488,14 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
       }
       lastTime+=delta;
       if (vehicle) {
-        move(car,vehicle,delta,vehicle.returning?1.9:2.7,2.3,[...people,guest,roadCar,opposingCar]);
+        const moving=move(car,vehicle,delta,vehicle.returning?1.9:2.7,2.3,people.concat(guest,gateTraffic(car,vehicle)));
+        if (vehicle.index<vehicle.route.length) {
+          vehicle.wait=moving?0:vehicle.wait+delta;
+          if (!vehicle.returning && vehicle.wait>15) {
+            vehicle={route:[[car.position.x,car.position.z],...vehicle.route.slice(0,vehicle.index).reverse()],
+              index:1,wait:0,returning:true};
+          }
+        }
         if (vehicle.index>=vehicle.route.length) {
           if (vehicle.returning) { car.visible=false; vehicle=null; }
           else if ((vehicle.wait+=delta)>8) vehicle={...vehicle,route:vehicle.route.slice().reverse(),index:1,returning:true};
@@ -488,7 +514,7 @@ export async function campusTraffic(scene,nav,onHandoff=()=>{},loadModel=model) 
           }
         }
       }
-      if (lastTime>95) { vehicle=pedestrian=null; car.visible=guest.visible=false; }
+      if (lastTime>95 && pedestrian) { pedestrian=null; guest.visible=false; }
     },
     dispose() {
       mixer?.stopAllAction();

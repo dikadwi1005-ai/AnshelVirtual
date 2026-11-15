@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { divisions } from './catalog.js';
 import { chooseConversationAnchor, createConversations, createMonologues } from './conversations.js';
-import { employeeFigure } from './employee-look.js';
+import { employeeFigure, handGrip } from './employee-look.js';
 import { employeeMouth } from './employee-mouth.js';
 import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, conversationAnchors, station } from './furnishings.js';
@@ -99,6 +99,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   const biteGeometry=new THREE.BoxGeometry(.09,.049,.073);
   const biteMaterial=new THREE.MeshStandardMaterial({color:'#d59452',roughness:.84});
   const gripLeft=new THREE.Vector3(), gripRight=new THREE.Vector3();
+  const trafficClearance=1.25;
   let solo=null, replanCooldown=0, office=null, lastState, lastPlans, player=null;
   let sharedTurn=null;
   const actors=[];
@@ -220,8 +221,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
   function foodParcel(actor,asset=foodAsset) {
     if (asset && !actor.parcel) {
       actor.parcel=fittedModel(asset,[.29,.24,.27]);
-      actor.parcel.position.set(-.23,.77,.35);
       actor.root.add(actor.parcel);
+      hold(actor.parcel,actor,0);
     }
   }
   function receiveFood(id,asset) {
@@ -238,24 +239,24 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     actor.bite.visible=animation==='snack';
     if (actor.parcel) {
       actor.parcel.visible=actor.foodTime>0 && animation!=='snack';
-      if (actor.parcel.visible) hold(actor.parcel,actor,0,[.13,-.075,.04]);
+      if (actor.parcel.visible) hold(actor.parcel,actor,0);
     }
     if (actor.phone.visible) {
-      hold(actor.phone,actor,1,[-.12,-.075,.06]);
+      hold(actor.phone,actor,1);
       actor.phone.rotation.x=.46;
     }
-    if (actor.cup.visible) hold(actor.cup,actor,1,[-.138,-.075,.030]);
-    if (actor.bite.visible) hold(actor.bite,actor,1,[-.138,-.075,.03]);
+    if (actor.cup.visible) hold(actor.cup,actor,1);
+    if (actor.bite.visible) hold(actor.bite,actor,1);
     if (actor.book.visible) {
-      actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.025));
-      actor.hands[1].localToWorld(gripRight.set(-.138,-.080,.025));
+      handGrip(actor.hands[0],1,gripLeft);
+      handGrip(actor.hands[1],-1,gripRight);
       actor.book.position.copy(actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5)));
       actor.book.position.y+=.032;
       actor.book.rotation.x=.32;
     }
   }
-  function hold(prop,actor,hand,offset) {
-    actor.hands[hand].localToWorld(gripRight.set(...offset));
+  function hold(prop,actor,hand) {
+    handGrip(actor.hands[hand],hand===0?1:-1,gripRight);
     prop.position.copy(actor.root.worldToLocal(gripRight));
   }
   function occupied(actor,point,from) {
@@ -293,6 +294,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     const ahead=Math.min(.58,distance);
     const lookAhead=[here[0]+forward[0]*ahead,here[1]+forward[1]*ahead];
     const obstructed=occupied(actor,next,here);
+    const throughGate=Math.abs(here[0]+1.8)<2.4 && here[1]>18 && here[1]<32;
+    const crossing=throughGate && actor.actual==='home-sleep';
     if (obstructed || occupied(actor,lookAhead,here)) {
       actor.wait+=delta;
       actor.blocked+=delta;
@@ -306,6 +309,14 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
             blockers.push([root.position.x,root.position.z]);
         const commuting=['home','home-sleep'].includes(actor.actual) || Math.abs(here[0])>=34 || Math.abs(here[1])>=29;
         const localGoal=commuting?actor.path[0]:actor.anchor.approach;
+        if (crossing && actor.path.length>1 && blockers.some(point=>Math.hypot(point[0]-localGoal[0],point[1]-localGoal[1])<.73)) {
+          const onward=nav.route(here,actor.path[1],blockers);
+          if (onward) {
+            actor.path=[...onward,...actor.path.slice(2)];
+            actor.wait=0;
+            return;
+          }
+        }
         const detour=nav.route(here,localGoal,blockers);
         if (detour) {
           actor.path=commuting?[...detour,...actor.path.slice(1)]:detour;
@@ -314,7 +325,8 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         }
         if (obstructed) {
           for (const side of [1,-1]) {
-            const gap=[here[0]-forward[1]*.82*side,here[1]+forward[0]*.82*side];
+            const clearance=crossing?trafficClearance:.82;
+            const gap=[here[0]-forward[1]*clearance*side,here[1]+forward[0]*clearance*side];
             if (occupied(actor,gap,here) || !nav.clear(here,gap)) continue;
             const onward=nav.route(gap,localGoal,blockers);
             if (!onward) continue;

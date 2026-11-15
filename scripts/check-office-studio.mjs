@@ -5,11 +5,26 @@ import { officeServer } from '../server/http.ts';
 import { createStore } from '../server/store.ts';
 import { divisions } from '../public/catalog.js';
 import { activityAnchors } from '../public/furnishings.js';
+import { homes, rooms } from '../public/layout.js';
+import { build } from 'esbuild';
+import { createServer } from 'node:http';
 let testClock=null;
 const store=createStore(':memory:',()=>testClock ?? Date.now());
 const password='local-fixture-password';
 store.settings({mode:'open'});
-const server=officeServer(store,{OWNER_PASSWORD:password});
+const office=officeServer(store,{OWNER_PASSWORD:password});
+const engineFixture=process.env.ANSHEL_PHASE10_FINAL==='days' && (await build({bundle:true,write:false,format:'esm',platform:'browser',
+  stdin:{contents:`export * as THREE from 'three'; export {createActors} from './public/actors.js';
+    export {campusTraffic} from './public/campus-traffic.js'; export {navigation} from './public/navigation.js';
+    export {districtObstacles,rooms} from './public/layout.js'; export {obstaclesFor} from './public/furnishings.js';
+    export {radialTexture} from './public/materials.js';`,resolveDir:process.cwd()},
+})).outputFiles[0].text;
+const server=createServer((req,res)=>{
+  if (engineFixture && req.url==='/phase10-fixture.js') {
+    res.setHeader('content-type','text/javascript');
+    res.end(engineFixture);
+  } else office.emit('request',req,res);
+});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const url='http://127.0.0.1:'+server.address().port;
 const browser=await chromium.launch({executablePath:process.env.ANSHEL_CHROME_PATH,headless:true,args:['--enable-webgl','--enable-unsafe-swiftshader']});
@@ -22,6 +37,9 @@ async function open(options) {
   });
   page.on('pageerror',error=>errors.push(String(error)));
   page.on('response',response=>{
+    if (response.url().endsWith('.glb') && !response.ok() && response.status()!==304) {
+      errors.push('GLB gagal dimuat: '+new URL(response.url()).pathname+' '+response.status());
+    }
     if (response.url().endsWith('/api/office-presence') && response.status()===400) {
       const {snapshot}=response.request().postDataJSON();
       errors.push('Snapshot presence ditolak: '+JSON.stringify({delivery:snapshot?.traffic?.delivery,
@@ -174,7 +192,214 @@ async function perf(page) {
     requestAnimationFrame(sample);
   }));
 }
+async function orbit(page) {
+  const {width,height}=await page.locator('#scene canvas').boundingBox();
+  await page.mouse.move(width*.49,height*.50);
+  await page.mouse.down();
+  await page.mouse.move(width*.67,height*.53,{steps:8});
+  await page.mouse.up();
+  await page.waitForTimeout(440);
+}
+
+async function survey(page) {
+  for (const room of rooms) {
+    await page.locator('[data-panel=office]').click();
+    await page.locator('[data-room='+room.id+']').click();
+    await page.locator('#inspector-back').click();
+    await page.waitForTimeout(850);
+    await shot(page,'final-room-'+room.id+'-a');
+    await orbit(page);
+    await shot(page,'final-room-'+room.id+'-b');
+  }
+  for (const {person} of homes) {
+    await page.locator('[data-panel=district]').click();
+    await page.locator('[data-district='+person.id+']').click();
+    await page.locator('#inspector-back').click();
+    await page.waitForTimeout(850);
+    await shot(page,'final-house-'+person.id+'-interior-a');
+    await orbit(page);
+    await shot(page,'final-house-'+person.id+'-interior-b');
+    await page.locator('#building-toggle').click();
+    await page.waitForFunction(()=>document.getElementById('scene').dataset.buildings==='exterior');
+    await shot(page,'final-house-'+person.id+'-exterior-a');
+    await orbit(page);
+    await shot(page,'final-house-'+person.id+'-exterior-b');
+    await page.locator('#building-toggle').click();
+    await page.waitForFunction(()=>document.getElementById('scene').dataset.buildings==='interior');
+  }
+}
+
+async function soak() {
+  store.settings({mode:'auto'});
+  testClock=Date.parse('2026-11-16T02:20:00Z');
+  const desktop=await open({viewport:{width:1440,height:900}});
+  const mobile=await open({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+  const renderer=await desktop.evaluate(()=>{
+    const gl=document.querySelector('#scene canvas').getContext('webgl2');
+    const debug=gl.getExtension('WEBGL_debug_renderer_info');
+    return debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+  });
+  const samples=[];
+  await desktop.evaluate(()=>{
+    window.observedClips=new Set();
+    document.getElementById('scene').addEventListener('office-frame',event=>{
+      for (const actor of event.detail.actors) window.observedClips.add(actor.animation);
+    });
+  });
+  const finish=await recordScene(desktop);
+  for (let index=0;index<=6;index++) {
+    const sample={minute:index,desktop:await perf(desktop),mobile:await perf(mobile)};
+    assert.equal(sample.desktop.employees,12);
+    assert.equal(sample.mobile.employees,12);
+    samples.push(sample);
+    if (index===6) break;
+    if (index===1) testClock=Date.parse('2026-11-16T05:10:00Z');
+    if (index===3) testClock=Date.parse('2026-11-16T07:30:00Z');
+    if (index===5) testClock=Date.parse('2026-11-16T15:00:00Z');
+    await desktop.locator('[data-panel=district]').click();
+    await desktop.locator('[data-district='+homes[index].person.id+']').click();
+    await desktop.locator('#inspector-back').click();
+    await orbit(desktop);
+    if (index===2 || index===4) {
+      await mobile.locator('#character-mode').tap();
+      await mobile.locator('#character-mode').tap();
+    }
+    await desktop.locator('[data-camera=reset]').click();
+    await desktop.waitForTimeout(54500);
+  }
+  const clips=await desktop.evaluate(()=>Array.from(window.observedClips));
+  await finish('final-autonomous-live');
+  assert.deepEqual(errors,[]);
+  await mobile.close();
+  await desktop.close();
+  return {renderer,samples,clips,errors};
+}
+
+async function autonomousDays(page,seedValue) {
+  return page.evaluate(async seedValue=>{
+    const {THREE,createActors,campusTraffic,navigation,districtObstacles,rooms,obstaclesFor,radialTexture}=
+      await import('/phase10-fixture.js');
+    const previousRandom=Math.random;
+    let seed=seedValue;
+    Math.random=()=>((seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296);
+    const scene=new THREE.Scene();
+    const nav=navigation([...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room))]);
+    const people=await createActors(scene,nav,radialTexture(),{phase:'closed'},null);
+    const arrivals={}, completed={}, visits={}, road={}, troubles={};
+    const tours=new Map(), orders=new Map(), lastAction=new Map();
+    let tick=0, priorityFailures=0, collisions=0, propDrift=0, duplicateDeliveries=0;
+    const traffic=await campusTraffic(scene,nav,(id,asset)=>{
+      const order=traffic.snapshot().delivery.order;
+      const result=orders.get(order.orderId);
+      if (!result || result.delivered || id!==result.id) duplicateDeliveries++;
+      else result.delivered=true;
+      people.receiveFood(id,asset);
+    });
+    people.campus(traffic.obstacles);
+    for (let day=16;day<=18;day++) {
+      for (const [phase,hour,duration,range] of [['closed',23,255,420],['arrival',8.75,195,15],['briefing',9,80,15],
+        ['work',9.25,260,165],['lunch',12,230,60],['work',13,260,210],['review',16.5,85,30],['closed',18,150,180]]) {
+        const time=Date.UTC(2026,10,day)+3600000*(hour-7);
+        for (let step=0;step<duration*20;step++,tick++) {
+          const active=phase==='work' && step>=1100 && step<1900;
+          const state={phase,now:Math.round(time+step*range*60000/(duration*20)),people:active?{management:{executing:true}}:{}};
+          people.update(.05,state,null,true);
+          traffic.update(.05,state,people.actors.map(actor=>actor.root),people.actors,id=>people.living.needs(id));
+          people.pickup(traffic.pickup(),traffic.handingOff());
+          if (step%5!==0) continue;
+          const snapshot=traffic.snapshot();
+          const order=snapshot.delivery.order;
+          if (order && !orders.has(order.orderId)) {
+            if (phase!=='lunch') troubles.orderOutsideLunch=true;
+            orders.set(order.orderId,{id:order.id,phase,delivered:false});
+          }
+          if (active && step>=1400 && people.actors[0].activity!=='work') priorityFailures++;
+          for (const [index,root] of traffic.roots.entries()) {
+            if (index===1 || index===2) continue;
+            const tour=tours.get(index);
+            if (root.visible) {
+              if (!tour) tours.set(index,{phase,x:root.position.x,z:root.position.z,moving:0,lastMoved:tick});
+              else {
+                const distance=Math.hypot(root.position.x-tour.x,root.position.z-tour.z);
+                tour.moving+=distance;
+                if (distance>.005) tour.lastMoved=tick;
+                tour.x=root.position.x; tour.z=root.position.z;
+                if (tick-tour.lastMoved>1200) troubles.stalledVehicle={index,x:tour.x,z:tour.z};
+              }
+              if (people.actors.some(actor=>Math.hypot(actor.root.position.x-root.position.x,actor.root.position.z-root.position.z)<.58)) collisions++;
+            } else if (tour) {
+              const key=tour.phase+':'+index;
+              const result=road[key] ??= {trips:0,short:0};
+              result.trips++;
+              const returnedToEntry=index===0 && Math.hypot(tour.x-19,tour.z-36)<1;
+              if (tour.moving<(index===0?30:95) && !returnedToEntry) {
+                result.short++;
+                (result.shortEnds ??= []).push([Number(tour.moving.toFixed(1)),Number(tour.x.toFixed(1)),Number(tour.z.toFixed(1))]);
+              }
+              if (returnedToEntry && tour.moving<30) result.yields=(result.yields ?? 0)+1;
+              tours.delete(index);
+            }
+          }
+          for (const actor of people.actors) {
+            const {id}=actor.person;
+            if (!['seated','arrived'].includes(actor.stage)) continue;
+            const before=lastAction.get(id);
+            if (before?.activity!==actor.actual) {
+              arrivals[actor.actual]=(arrivals[actor.actual] ?? 0)+1;
+              if (before) (completed[before.activity] ??= []).push((tick-before.tick)/20);
+              lastAction.set(id,{activity:actor.actual,tick});
+              (visits[id] ??= new Set()).add(actor.actual);
+            }
+            if (actor.actual==='home-sleep' && (phase!=='closed' || hour!==23)) {
+              // Arrival may start while the employee is still waking up.
+              if (phase!=='arrival' || step>600) troubles.sleepOutsideNight=true;
+            }
+            for (const [prop,hand] of [[actor.phone,1],[actor.bite,1],[actor.cup,1],[actor.parcel,0]]) {
+              if (prop?.visible) {
+                const local=actor.hands[hand].worldToLocal(prop.getWorldPosition(new THREE.Vector3()));
+                if (Math.abs(local.x*(hand===0?1:-1)-.244)>.025 || Math.abs(local.y+.027)>.025 || Math.abs(local.z-.064)>.025) propDrift++;
+              }
+            }
+          }
+        }
+        if (hour===23) {
+          const missing=people.actors.filter(actor=>actor.actual!=='home-sleep' || actor.stage!=='seated');
+          troubles['night'+day]=missing.map(actor=>({id:actor.person.id,activity:actor.actual,stage:actor.stage,
+            position:[actor.root.position.x,actor.root.position.z],next:actor.path[0],goal:actor.anchor.id}));
+        }
+      }
+    }
+    const duration=Object.fromEntries(Object.entries(completed).map(([activity,list])=>[activity,{count:list.length,
+      below3:list.filter(value=>value<3).length,median:list.sort((a,b)=>a-b)[Math.floor(list.length/2)]}]));
+    Math.random=previousRandom;
+    return {days:3,employees:people.actors.length,arrivals,duration,diversity:Object.fromEntries(Object.entries(visits).map(([id,values])=>[id,values.size])),
+      road,orders:[...orders.values()],priorityFailures,duplicateDeliveries,collisions,propDrift,troubles};
+  },seedValue);
+}
 try {
+  if (process.env.ANSHEL_PHASE10_FINAL==='visual') {
+    const page=await open({viewport:{width:1440,height:900}});
+    await survey(page);
+    assert.deepEqual(errors,[]);
+    console.log(JSON.stringify({rooms:rooms.length,houses:homes.length,views:rooms.length*2+homes.length*4,errors}));
+  } else if (process.env.ANSHEL_PHASE10_FINAL==='soak') {
+    console.log(JSON.stringify(await soak()));
+  } else if (process.env.ANSHEL_PHASE10_FINAL==='days') {
+    const page=await open({viewport:{width:1280,height:800}});
+    const seed=Number(process.env.ANSHEL_PHASE10_SEED ?? 72803);
+    const result=await autonomousDays(page,seed);
+    console.log(JSON.stringify(result));
+    assert.deepEqual(errors,[]);
+    assert.equal(result.employees,12);
+    assert.equal(result.priorityFailures+result.duplicateDeliveries+result.collisions+result.propDrift,0);
+    assert.equal(result.arrivals['home-sleep'],36);
+    for (const activity of ['nap','phone','read','brew','coffee','snack','game']) assert.ok(result.arrivals[activity],activity);
+    if (seed===72803) assert.equal(result.orders.length,0);
+    else assert.ok(result.orders.some(order=>order.delivered));
+    assert.equal(result.troubles.orderOutsideLunch,undefined);
+    assert.equal(result.troubles.stalledVehicle,undefined);
+    assert.equal(Object.values(result.road).reduce((count,group)=>count+group.short,0),0);
+  } else {
   const metrics={};
   let bytes=0, mp4=false;
   if (!process.env.ANSHEL_PHASE10_FOCUS) {
@@ -429,6 +654,7 @@ try {
   }
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({videoBytes:bytes,mp4,metrics,errors}));
+  }
 } finally {
   await browser.close();
   await new Promise(resolve=>server.close(resolve));

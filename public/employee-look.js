@@ -4,6 +4,11 @@ import { employeeProfile } from './employee-profiles.js';
 
 const fabricMaps=new Map();
 
+export function handGrip(bone,side,target) {
+  // The GLB arm bone starts at the shoulder. Its distal mesh occupies x=.21–.28 in bone space.
+  return bone.localToWorld(target.set(side*.244,-.027,.064));
+}
+
 function fabricMap(map, profile) {
   const key=map.uuid+':'+profile.dye+':'+profile.fabricTile.join(',');
   if (fabricMaps.has(key)) return fabricMaps.get(key);

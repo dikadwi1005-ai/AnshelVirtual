@@ -42,3 +42,11 @@
 - Snapshot lama tetap diterima. Untuk crash di antara dua sinkronisasi, tampilan dapat mundur ke checkpoint terakhir. Pesanan simulasi dapat diteruskan tanpa kembali ke awal rute.
 - Browser ponsel fisik dan verifikasi integrasi production masih terbuka. Pengujian lokal menggunakan SQLite sementara dan Studio Scheduler dalam kondisi nonaktif.
 - Checkpoint disimpan lokal. Rilis menunggu pengujian visual aktivitas bergerak, lalu lintas dan perumahan yang diwajibkan dalam brief.
+
+## QA akhir
+
+- Audit Chrome mencakup 90 tampilan. Setiap ruang kantor diperiksa dari dua sudut, dan masing-masing dari 12 rumah diperiksa dari dua sudut untuk interior dan eksterior. Hasil render memperlihatkan model rumah, fondasi, pintu cutaway dan perabot modular. Dinding sisi kamera direndahkan sesuai mode cutaway.
+- Tiga hari virtual memakai mesin aktivitas, rig GLB, navigasi dan traffic aplikasi di Chrome dengan langkah simulasi 50 ms. Waktu WIB dipercepat per fase. Pegawai memilih sendiri aktivitas dan pesanan, sedangkan tugas aktif menjadi masukan pengujian. Karena panjang fase dipercepat, hasil frekuensi tidak mewakili jumlah kegiatan per hari pada layanan produksi.
+- Titik pivot lengan berada pada bahu. Pemeriksaan mesh tangan menemukan offset lama tidak mencapai bagian distal rig. Ponsel, cangkir, kudapan dan paket sekarang memakai titik pegangan pada bagian distal. Hadirnya prop di posisi tersebut diperiksa dalam tiga hari virtual. Rekaman Chrome dari jarak dekat tetap digunakan untuk pemeriksaan visual.
+- Nilai pemilihan membaca dan ponsel disesuaikan karena keduanya hampir tidak pernah terpilih pada pengujian awal. Urutan gerak dijalankan oleh mesin yang sama seperti kantor biasa.
+- Pengujian menggunakan server lokal, tanpa transaksi nyata. Perubahan produksi tidak mencakup skema database, kontrak presence, workflow, atau scheduler. Lisensi dan SHA-256 aset yang dipakai tetap tercatat di `ASSETS.json`.
