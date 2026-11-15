@@ -41,3 +41,22 @@ export function homeFacadeDetails(home) {
   }
   return details;
 }
+
+// A lightweight framed art piece on the interior rear wall. Use the home-local
+// coordinate frame shared by the furniture and navigation system. Decorative
+// overlays are above occupant height and are not registered as obstacles.
+export function homeInteriorArt(home) {
+  const style=homeVisualStyle(home.person.id);
+  const u=-home.width*.235;
+  const v=-home.depth/2+.215;
+  const arts=[
+    {color:style.trim,u,y:1.92,v,w:1.15,h:.69,d:.052},
+    {color:style.facade,u,y:1.92,v:v+.035,w:1.00,h:.54,d:.045},
+  ];
+  // Stable number of fine vertical marks matches the exterior identity.
+  for(let i=0;i<style.mark;i++) {
+    arts.push({color:style.accent,u:u-(style.mark-1)*.115+i*.23,
+      y:1.92,v:v+.072,w:.10,h:.32,d:.038});
+  }
+  return arts;
+}
