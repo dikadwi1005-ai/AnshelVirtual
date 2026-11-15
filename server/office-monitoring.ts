@@ -78,12 +78,18 @@ export function officeDailySummary(state,allowed=pilotDivisions) {
     'Ini ringkasan catatan sistem, bukan bukti hasil sudah ditinjau atau dipublikasikan.';
 }
 
+export function overdueOfficeQueue(state,allowed=divisions.map(person=>person.id)) {
+  const now=Number(state.now);
+  if(!Number.isFinite(now))return [];
+  return (state.tasks||[]).filter(task=>allowed.includes(task.division) &&
+    task.status==='queued' && Number.isFinite(Number(task.created)) &&
+    Number(task.created)>0 && now-Number(task.created)>=2*60*60_000);
+}
+
 export function officeQueueDelayAlert(state,allowed=pilotDivisions) {
   const now=Number(state.now);
   if(!Number.isFinite(now)||state.worker||!['work','review','open'].includes(state.phase))return null;
-  const stale=(state.tasks||[]).filter(t=>allowed.includes(t.division) &&
-    t.status==='queued' && Number.isFinite(Number(t.created))&&
-    now-Number(t.created)>=2*60*60_000 && now-Number(t.created)<=48*60*60_000);
+  const stale=overdueOfficeQueue(state,allowed);
   if(!stale.length)return null;
   const names=[...new Set(stale.map(t=>labels[t.division]))];
   return 'Bima · Peringatan antrean: '+stale.length+' tugas pada '+names.join(', ')+

@@ -2,7 +2,7 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import { observedAvatar } from './office-avatar-status.ts';
-import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert } from './office-monitoring.ts';
+import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert,overdueOfficeQueue } from './office-monitoring.ts';
 import { parseGroupWorkspaceCommand } from './telegram-workspace.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
@@ -291,9 +291,13 @@ export function officeGroupReply(state,input,env) {
     const c=state.counts||{};
     const blocked=Number(c.blocked)||0;
     const failed=Number(c.failed)||0;
-    if(!blocked&&!failed) return {division:'operations',
-      text:'Di catatan tugas Anshel saat ini belum ada yang berstatus terhambat atau gagal. '+
-      'Ini bukan hasil pemeriksaan server, jadi belum memastikan sistem bebas masalah.'};
+    const overdue=overdueOfficeQueue(state);
+    const backlog=overdue.length?' '+overdue.length+' tugas masih antre sedikitnya dua jam.':'';
+    const workerSignal=state.worker===false?' Worker belum terlihat aktif dalam 40 detik terakhir.':'';
+    if(!blocked&&!failed&&!overdue.length) return {division:'operations',
+      text:'Di catatan tugas Anshel saat ini belum ada yang berstatus terhambat atau gagal, '+
+      'dan tidak terlihat antrean lewat dua jam.'+workerSignal+
+      ' Ini bukan hasil pemeriksaan server, jadi belum memastikan sistem bebas masalah.'};
     const recent=(state.tasks||[]).filter(t=>t.status==='blocked'||t.status==='failed').slice(0,3);
     const details=recent.map(t=>{
       const worker=divisions.find(d=>d.id===t.division);
@@ -303,8 +307,9 @@ export function officeGroupReply(state,input,env) {
     }).join('; ');
     return {division:'operations',text:'Dari catatan tugas Anshel: '+blocked+' terhambat, '+
       failed+' gagal.'+(details?' Contoh dari daftar tugas terbaru: '+details+'.':
-      ' Rincian tugas tersebut tidak terlihat dalam daftar terbaru.')+
-      ' Ini status tugas, bukan diagnosis kondisi server.'};
+      blocked||failed?' Rincian tugas tersebut tidak terlihat dalam daftar terbaru.':'')+
+      backlog+workerSignal+
+      ' Ini catatan tugas dan sinyal worker, bukan bukti seluruh server mati atau sehat.'};
   }
   const check=/^\/cek(?:\s+([A-Za-z0-9_]+))?\s*$/i.exec(msg);
   if (check) {

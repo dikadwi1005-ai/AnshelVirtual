@@ -93,6 +93,22 @@ test('Bima flags an observed long queue without declaring the server broken',()=
     {division:'operations',status:'queued',created:day(12)}]}),null);
 });
 
+test('Bima /kendala includes overdue queued tasks even when blocked and failed are zero',()=>{
+  const state={phase:'work',now:day(13),worker:false,counts:{queued:2,blocked:0,failed:0},tasks:[
+    {division:'operations',status:'queued',created:day(10),project:'API',description:'Private'},
+    {division:'research',status:'queued',created:day(10)-3*24*60*60_000,project:'Research'},
+  ]};
+  const response=officeGroupReply(state,'/kendala',env);
+  assert.equal(response.division,'operations');
+  assert.match(response.text,/2 tugas masih antre sedikitnya dua jam/);
+  assert.match(response.text,/Worker belum terlihat aktif dalam 40 detik terakhir/);
+  assert.doesNotMatch(response.text,/Private/);
+  assert.match(officeQueueDelayAlert(state),/1 tugas/);
+  assert.match(officeGroupReply({...state,worker:true},'/kendala',env).text,/2 tugas masih antre/);
+  const cleared={...state,worker:true,tasks:state.tasks.map(t=>({...t,created:day(12)}))};
+  assert.doesNotMatch(officeGroupReply(cleared,'/kendala',env).text,/tugas masih antre/);
+});
+
 test('store sends at most one summary and one queue alert per WIB day, resets next day',()=>{
   let now=day(12);
   const store=createStore(':memory:',()=>now);
