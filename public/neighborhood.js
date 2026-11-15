@@ -182,7 +182,6 @@ export async function addBuildings(scene,loadModel) {
   }
   paths.add('#46525c',0,-.018,-31.55,76.5,.07,3.05);
   paths.add('#a0a79d',0,-.007,-34,80,.075,1.88);
-  paths.add('#a0a79d',0,-.007,32,80,.075,1.68);
   for(const side of [-1,1]) {
     paths.add('#57655e',side*34.95,.001,-.7,.24,.038,60);
     for(let z=-25;z<25;z+=8) paths.add('#465753',side*34.95,.026,z,.34,.026,.57);

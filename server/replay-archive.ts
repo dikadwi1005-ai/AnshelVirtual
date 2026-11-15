@@ -1,5 +1,6 @@
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { Fault } from './store.ts';
+import { cityEdge } from '../public/city-plan.js';
 
 export const replayKey='studio_private_replay_v1';
 const ttl=7*86400_000;
@@ -26,7 +27,7 @@ export function replayOperation(current,input,now) {
     previous=frame.at;
     const actors=frame.actors.map(actor=>{
       if (!Array.isArray(actor?.position) || actor.position.length!==2 ||
-          !validNumber(actor.position[0],-57,57) || !validNumber(actor.position[1],-53,53) ||
+          !validNumber(actor.position[0],-cityEdge,cityEdge) || !validNumber(actor.position[1],-cityEdge,cityEdge) ||
           !validNumber(actor.y,0,1) || !validNumber(actor.angle,-100,100) || !validNumber(actor.clipTime,0,60) ||
           typeof actor.animation!=='string' || !/^[a-z-]{1,25}$/.test(actor.animation)) throw new Fault(400,'Pose replay tidak valid.');
       return {position:actor.position,y:actor.y,angle:actor.angle,clipTime:actor.clipTime,animation:actor.animation};

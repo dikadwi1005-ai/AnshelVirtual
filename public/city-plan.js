@@ -6,6 +6,8 @@ export const avenueHalfWidth=4.5;
 export const localStreetOffset=-29;
 export const localStreetHalfWidth=2.8;
 export const sidewalkWidth=1.7;
+export const citySidewalkZ=avenueOffset-avenueHalfWidth-sidewalkWidth/2;
+export const campusSidewalkZ=citySidewalkZ;
 export const cityDistricts={
   business:{label:'Pusat bisnis',x:128,z:36},
   residential:{label:'Permukiman barat',x:-384,z:36},
@@ -60,8 +62,27 @@ export function cityBlock(ix,iz) {
       }
     }
   }
+  const employeeHomes=plots.filter(staffPlot);
+  for (const plot of plots) {
+    if (!staffPlot(plot) && employeeHomes.some(home=>home.z===plot.z && Math.abs(home.x-plot.x)<=16)) {
+      plot.height=Math.min(plot.height,5.7);
+      plot.townhouse=true;
+    }
+  }
   return {id:`${ix}:${iz}`,ix,iz,x,z,zone,plots};
 }
+
+// Keep the assignment stable when the staff catalogue is reordered.
+export const staffPlotIds={
+  management:'-1:0/1/-1/1',operations:'1:0/-1/-1/1',
+  administration:'-1:0/1/-1/0',hr:'1:0/-1/-1/0',
+  development:'-1:0/-1/-1/0',creative:'1:0/1/-1/0',
+  video:'-2:0/1/-1/1',social:'2:0/-1/-1/1',
+  research:'-2:0/1/-1/0',marketing:'2:0/-1/-1/0',
+  qa:'-2:0/-1/-1/0',finance:'2:0/1/-1/0',
+};
+const reservedPlots=new Set(Object.values(staffPlotIds));
+export const staffPlot=plot=>reservedPlots.has(plot.id);
 
 export function cityChunks(x,z,radius) {
   const ix=Math.round(x/chunkSize), iz=Math.round(z/chunkSize), chunks=[];

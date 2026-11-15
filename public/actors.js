@@ -5,7 +5,7 @@ import { employeeFigure, handGrip } from './employee-look.js';
 import { employeeMouth } from './employee-mouth.js';
 import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, conversationAnchors, station } from './furnishings.js';
-import { districtRoute, homeByEmployee, roomById } from './layout.js';
+import { districtRoute, homeByEmployee, legacyHomes, roomById } from './layout.js';
 import { gamepad } from './lounge.js';
 import { isGameReaction } from './lounge-game.js';
 import { characterClearance } from './character-mode.js';
@@ -74,6 +74,24 @@ function chooseAnchor(actor,activity,reservations,nav,room) {
 }
 
 function location(actor) { return [actor.root.position.x,actor.root.position.z]; }
+
+export function migrateHomePose(value) {
+  const {id,position,angle,stage,actual}=value;
+  const old=legacyHomes[id], home=homeByEmployee[id];
+  const dx=position[0]-old.x, dz=position[1]-old.z;
+  const u=dx*Math.cos(old.angle)-dz*Math.sin(old.angle);
+  const v=dx*Math.sin(old.angle)+dz*Math.cos(old.angle);
+  const atOldHome=Math.abs(u)<=old.width/2+.15 && v>=-old.depth/2-.15 && v<=old.depth/2+1.5;
+  const homeActivity=actual==='home' || actual==='home-sleep';
+  if (!atOldHome && !homeActivity) return value;
+  const needsRoute=stage==='walking' || stage==='aligning' && !atOldHome;
+  return {...value,
+    position:atOldHome?home.point(u,v):position,
+    angle:atOldHome?angleDifference(angle+home.angle-old.angle,0):angle,
+    stage:needsRoute?'waiting':stage,
+    path:needsRoute?[]:value.path,
+  };
+}
 
 export async function createActors(scene,nav,shadowMap,initial,requestDialogue,storage) {
   const shadow=new THREE.MeshBasicMaterial({map:shadowMap,transparent:true,depthWrite:false,opacity:.70,toneMapped:false});
@@ -483,7 +501,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
 
   function capture() {
     const turn=actors.find(actor=>actor.directTurn)?.directTurn ?? conversations.turns.values().next().value;
-    return {actors:actors.map(actor=>({
+    return {cityHomes:1,actors:actors.map(actor=>({
       id:actor.person.id,position:location(actor),y:actor.root.position.y,
       angle:angleDifference(actor.root.rotation.y,0),stage:actor.stage,activity:actor.activity,actual:actor.actual,
       anchor:actor.anchor.id,pending:actor.pending?.id,pendingActivity:actor.pendingActivity,room:actor.requestedRoom,
@@ -531,8 +549,9 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     if (!snapshot) return;
     reservations.clear();
     for (const actor of actors) {
-      const value=snapshot.actors.find(item=>item.id===actor.person.id);
-      if (!value) continue;
+      const original=snapshot.actors.find(item=>item.id===actor.person.id);
+      if (!original) continue;
+      const value=snapshot.cityHomes===1?original:migrateHomePose(original);
       const options=activity=>activity==='meet-dika'?conversationAnchors[0]:activityAnchors(actor.person,activity);
       const anchor=options(value.actual).find(item=>item.id===value.anchor) ?? station(roomById[actor.person.id]);
       const pending=value.pending && options(value.pendingActivity).find(item=>item.id===value.pending);

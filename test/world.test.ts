@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createStore } from '../server/store.ts';
 import { activities, divisions } from '../public/catalog.js';
 import { activityAnchors, furniture, obstaclesFor, partitions, propBounds, propsFor, station } from '../public/furnishings.js';
-import { districtObstacles, doorway, entrance, gate, insideRoom, roomById, rooms, withinSite } from '../public/layout.js';
+import { districtObstacles, districtRoute, doorway, entrance, gate, homeByEmployee, insideRoom, roomById, rooms, withinSite } from '../public/layout.js';
 import { agentRadius, navigation, segmentHits } from '../public/navigation.js';
 import { isGameReaction } from '../public/lounge-game.js';
 
@@ -63,7 +63,7 @@ test('semua titik aktivitas dapat dicapai dan gerak duduk hanya mengecualikan ku
   for (const person of divisions) {
     for (const name of Object.keys(activities)) {
       for (const anchor of activityAnchors(person,name)) {
-        assert.ok(nav.route(lobby,anchor.approach),anchor.id);
+        assert.ok(districtRoute(nav,lobby,anchor.approach,homeByEmployee[person.id]),anchor.id);
         assert.ok(nav.clear(anchor.approach,anchor.point,anchor.support,.075),anchor.id);
         if (!anchor.support) continue;
         assert.ok(obstacles.find(item=>item.id===anchor.support),anchor.id);

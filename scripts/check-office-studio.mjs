@@ -13,12 +13,13 @@ const store=createStore(':memory:',()=>testClock ?? Date.now());
 const password='local-fixture-password';
 store.settings({mode:'open'});
 const office=officeServer(store,{OWNER_PASSWORD:password});
-const engineFixture=['days','city'].includes(process.env.ANSHEL_PHASE10_FINAL) && (await build({bundle:true,write:false,format:'esm',platform:'browser',
+const engineFixture=['days','city','commute'].includes(process.env.ANSHEL_PHASE10_FINAL) && (await build({bundle:true,write:false,format:'esm',platform:'browser',
   stdin:{contents:`export * as THREE from 'three'; export {createActors} from './public/actors.js';
     export {campusTraffic} from './public/campus-traffic.js'; export {navigation} from './public/navigation.js';
     export {districtObstacles,pedestrianOnlyObstacles,rooms} from './public/layout.js'; export {obstaclesFor} from './public/furnishings.js';
     export {radialTexture} from './public/materials.js'; export {buildWorld,model} from './public/world.js';
     export {openHouseFacade} from './public/district-models.js';
+    export {streamingCity} from './public/city-world.js';
     export {houseDoor,houseFronts,homes} from './public/layout.js';`,resolveDir:process.cwd()},
 })).outputFiles[0].text;
 const server=createServer((req,res)=>{
@@ -96,6 +97,19 @@ async function studioEpisode() {
     await form.locator('[name='+key+']').setInputFiles(media+'/'+file);
   await click(page,'draft-save');
   await status.filter({hasText:'Draf tersimpan'}).waitFor();
+  if (process.env.ANSHEL_EXPORT_REPLAY_SOURCE==='1') {
+    const frames=await page.evaluate(()=>new Promise((resolve,reject)=>{
+      const request=indexedDB.open('anshel-studio',2);
+      request.onerror=()=>reject(request.error);
+      request.onsuccess=()=>{
+        const db=request.result, transaction=db.transaction('draft','readonly');
+        const draft=transaction.objectStore('draft').get('episode');
+        transaction.oncomplete=()=>{ db.close(); resolve(draft.result.clips[0].frames); };
+        transaction.onabort=()=>{ db.close(); reject(transaction.error); };
+      };
+    }));
+    await writeFile(process.env.ANSHEL_SCREENSHOTS+'/runner-replay.json',JSON.stringify(frames));
+  }
   await page.reload();
   await page.locator('#character-mode:enabled').waitFor({timeout:90000});
   await page.locator('[data-panel=studio]').click();
@@ -104,7 +118,8 @@ async function studioEpisode() {
   await status.filter({hasText:'Draf dibuka kembali'}).waitFor();
   assert.equal(await form.locator('#studio-clips > div').count(),4);
   await submit(page,'video');
-  await page.waitForFunction(()=>document.querySelector('#studio-progress')?.value>2);
+  try { await page.waitForFunction(()=>document.querySelector('#studio-progress')?.value>2); }
+  catch (error) { throw new Error([await status.innerText(),...errors].join('\n'),{cause:error}); }
   await click(page,'cancel-video');
   await status.filter({hasText:'Ekspor dibatalkan'}).waitFor();
   await submit(page,'video');
@@ -158,6 +173,18 @@ async function studioEpisode() {
   assert.equal(mp4.toString('ascii',4,8),'ftyp');
   assert.ok(mp4.includes(Buffer.from('avcC')) && mp4.includes(Buffer.from('mp4a')) && mp4.includes(Buffer.from('esds')));
   await shot(page,'studio-episode');
+  if (process.env.ANSHEL_EXPORT_REPLAY_SOURCE==='1') {
+    await tab(page,'plan');
+    await page.waitForTimeout(14000);
+    await page.locator('#studio-plan [name=instruction]').fill('Perjalanan Alya di kawasan Anshel');
+    page.once('dialog',dialog=>dialog.accept());
+    await click(page,'episode-story');
+    await status.filter({hasText:'Tiga potongan dan teks siap'}).waitFor();
+    assert.equal(await form.locator('#studio-clips > div').count(),3);
+    assert.equal(await form.locator('[name=format]').inputValue(),'mp4');
+    await click(page,'clip-preview');
+    await shot(page,'storyboard-auto-preview');
+  }
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({shots:4,draftReload:true,cancelAndRetry:true,...measurements}));
 }
@@ -382,6 +409,11 @@ async function soak() {
     return debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
   });
   const samples=[];
+  const profile=process.env.ANSHEL_PROFILE==='1' && await desktop.context().newCDPSession(desktop);
+  if (profile) {
+    await profile.send('Profiler.enable');
+    await profile.send('Profiler.start');
+  }
   await desktop.evaluate(()=>{
     window.observedClips=new Set();
     document.getElementById('scene').addEventListener('office-frame',event=>{
@@ -407,7 +439,11 @@ async function soak() {
       await mobile.locator('#character-mode').tap();
     }
     await desktop.locator('[data-camera=reset]').click();
-    await desktop.waitForTimeout(54500);
+    await desktop.waitForTimeout(Number(process.env.ANSHEL_SOAK_STEP_MS ?? 54500));
+  }
+  if (profile) {
+    const result=await profile.send('Profiler.stop');
+    await writeFile(process.env.ANSHEL_SCREENSHOTS+'/city-soak.cpuprofile',JSON.stringify(result.profile));
   }
   const clips=await desktop.evaluate(()=>Array.from(window.observedClips));
   await finish('final-autonomous-live');
@@ -415,6 +451,103 @@ async function soak() {
   await mobile.close();
   await desktop.close();
   return {renderer,samples,clips,errors};
+}
+
+async function recordCommute(page,id) {
+  await page.evaluate(async id=>{
+    const {THREE,createActors,buildWorld,navigation,radialTexture,homes,model,streamingCity}=
+      await import('/phase10-fixture.js');
+    const scene=new THREE.Scene();
+    scene.background=new THREE.Color('#8ca6ae');
+    scene.add(new THREE.HemisphereLight('#fff0da','#848c9c',2.2));
+    const shadow=radialTexture();
+    const world=await buildWorld(scene,shadow);
+    const city=await streamingCity(scene,model,true);
+    const staff=await createActors(scene,navigation(world.obstacles),shadow,{phase:'closed'},null);
+    const actor=staff.actors.find(member=>member.person.id===id), home=homes.find(item=>item.person.id===id);
+    const renderer=new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(1080,650);
+    renderer.domElement.id='commute-view';
+    document.body.replaceChildren(renderer.domElement);
+    const camera=new THREE.PerspectiveCamera(52,1080/650,.1,380);
+    const clock=Date.parse('2026-11-16T01:45:00Z');
+    const state={phase:'arrival',now:clock,people:{}};
+    const trips={outbound:false,entered:false,inbound:false,returned:false,maxStep:0};
+    const target=actor.root.position.clone();
+    let elapsed=0, startReturn=Infinity, resolve;
+    window.commuteResult=new Promise(done=>{resolve=done;});
+    function frame(now) {
+      for (let step=0;step<9;step++) {
+        const before=actor.root.position.clone();
+        staff.update(.05,state,null,true);
+        const distance=Math.hypot(actor.root.position.x-before.x,actor.root.position.z-before.z);
+        trips.maxStep=Math.max(trips.maxStep,distance);
+        elapsed+=.05;
+      }
+      const {x,z}=actor.root.position;
+      const onStreet=Math.abs(x)>64 && Math.abs(z-30.65)<1.35;
+      if (state.phase==='arrival') {
+        trips.outbound ||= onStreet;
+        if (trips.outbound && Math.abs(x)<24 && Math.abs(z)<21 && ['seated','arrived'].includes(actor.stage)) {
+          if (!trips.entered) startReturn=elapsed+5;
+          trips.entered=true;
+        }
+        if (elapsed>=startReturn) {
+          state.phase='closed';
+          state.now=clock+9.25*3600000;
+        }
+      } else {
+        trips.inbound ||= onStreet;
+        trips.returned ||= trips.inbound && actor.actual==='home' && actor.stage==='seated';
+      }
+      target.lerp(actor.root.position,.16);
+      camera.position.set(target.x+6.6,9.1,target.z+10.8);
+      camera.lookAt(target.x,Math.max(.5,target.y),target.z);
+      const homeInterior=Math.hypot(x-home.x,z-home.z)<home.depth/2;
+      const officeInterior=Math.abs(x)<26 && z<22;
+      const mode=homeInterior||officeInterior?'interior':'exterior';
+      world.buildings.setMode(mode);
+      world.walls(mode,camera.position,target,true);
+      city.update(target,2,state.now,now,null,staff.actors);
+      renderer.render(scene,camera);
+      if (trips.returned || elapsed>600) resolve({...trips,elapsed,x,z});
+      else requestAnimationFrame(frame);
+    }
+    window.startCommute=()=>requestAnimationFrame(frame);
+  },id);
+  const finish=await recordScene(page,'#commute-view');
+  await page.evaluate(()=>window.startCommute());
+  const result=await page.evaluate(()=>window.commuteResult);
+  await finish('city-commute-'+id);
+  assert.ok(result.outbound && result.entered && result.inbound && result.returned && result.maxStep<.25,JSON.stringify(result));
+  return result;
+}
+
+async function cityPresenceSmoke() {
+  store.settings({mode:'auto'});
+  testClock=Date.parse('2026-11-15T16:00:00Z');
+  const sessions=await Promise.all([
+    open({viewport:{width:1280,height:800}}),
+    open({viewport:{width:390,height:844},hasTouch:true,isMobile:true}),
+  ]);
+  for (const page of sessions) await page.evaluate(()=>{
+    document.getElementById('scene').addEventListener('office-frame',event=>{
+      window.cityPoses=event.detail.actors.map(actor=>actor.position);
+    });
+  });
+  const poses=()=>Promise.all(sessions.map(page=>page.evaluate(()=>window.cityPoses)));
+  for (const page of sessions)
+    await page.waitForFunction(()=>window.cityPoses?.every(([x])=>Math.abs(x)>65),null,{timeout:30000});
+  const [atNight,mirror]=await poses();
+  const gap=(a,b)=>Math.max(...a.map(([x,z],i)=>Math.hypot(x-b[i][0],z-b[i][1])));
+  assert.ok(gap(atNight,mirror)<.8);
+  testClock=Date.parse('2026-11-16T01:54:00Z');
+  for (const page of sessions)
+    await page.waitForFunction(before=>window.cityPoses?.some(([x,z],i)=>Math.hypot(x-before[i][0],z-before[i][1])>5),atNight,{timeout:35000});
+  const [departing,observer]=await poses();
+  assert.ok(gap(departing,observer)<5,'The observer should follow office presence within a few seconds.');
+  assert.deepEqual(errors,[]);
+  return {employees:atNight.length,nightGap:gap(atNight,mirror),departureGap:gap(departing,observer)};
 }
 
 async function autonomousDays(page,seedValue) {
@@ -428,7 +561,7 @@ async function autonomousDays(page,seedValue) {
     const obstacles=[...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room))];
     const nav=navigation(obstacles);
     const people=await createActors(scene,navigation([...obstacles,...pedestrianOnlyObstacles]),radialTexture(),{phase:'closed'},null);
-    const arrivals={}, completed={}, visits={}, road={}, troubles={};
+    const arrivals={}, completed={}, visits={}, road={}, troubles={}, commutes={};
     const tours=new Map(), orders=new Map(), lastAction=new Map();
     let tick=0, priorityFailures=0, collisions=0, propDrift=0, duplicateDeliveries=0;
     const traffic=await campusTraffic(scene,nav,(id,asset)=>{
@@ -440,8 +573,11 @@ async function autonomousDays(page,seedValue) {
     });
     people.campus(traffic.obstacles);
     for (let day=16;day<=18;day++) {
+      const trips=commutes[day]=Object.fromEntries(people.actors.map(actor=>[actor.person.id,{
+        outbound:false,office:false,inbound:false,home:false,
+      }]));
       for (const [phase,hour,duration,range] of [['closed',23,255,420],['arrival',8.75,195,15],['briefing',9,80,15],
-        ['work',9.25,260,165],['lunch',12,230,60],['work',13,260,210],['review',16.5,85,30],['closed',18,150,180]]) {
+        ['work',9.25,260,165],['lunch',12,230,60],['work',13,260,210],['review',16.5,85,30],['closed',18,285,180]]) {
         const time=Date.UTC(2026,10,day)+3600000*(hour-7);
         for (let step=0;step<duration*20;step++,tick++) {
           const active=phase==='work' && step>=1100 && step<1900;
@@ -485,6 +621,18 @@ async function autonomousDays(page,seedValue) {
           }
           for (const actor of people.actors) {
             const {id}=actor.person;
+            const trip=trips[id];
+            const {x,z}=actor.root.position;
+            const throughCity=Math.abs(x)>65 && Math.abs(z-30.65)<1.25 && actor.stage==='walking';
+            if (phase==='arrival' || phase==='briefing') {
+              trip.outbound ||= throughCity;
+              trip.office ||= trip.outbound && Math.abs(x)<24 && Math.abs(z)<21 &&
+                ['seated','arrived'].includes(actor.stage);
+            }
+            if (hour===18) {
+              trip.inbound ||= throughCity;
+              trip.home ||= trip.inbound && actor.actual==='home' && actor.stage==='seated';
+            }
             if (!['seated','arrived'].includes(actor.stage)) continue;
             const before=lastAction.get(id);
             if (before?.activity!==actor.actual) {
@@ -516,7 +664,7 @@ async function autonomousDays(page,seedValue) {
       below3:list.filter(value=>value<3).length,median:list.sort((a,b)=>a-b)[Math.floor(list.length/2)]}]));
     Math.random=previousRandom;
     return {days:3,employees:people.actors.length,arrivals,duration,diversity:Object.fromEntries(Object.entries(visits).map(([id,values])=>[id,values.size])),
-      road,orders:[...orders.values()],priorityFailures,duplicateDeliveries,collisions,propDrift,troubles};
+      road,commutes,orders:[...orders.values()],priorityFailures,duplicateDeliveries,collisions,propDrift,troubles};
   },seedValue);
 }
 try {
@@ -641,8 +789,17 @@ try {
     await survey(page);
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({rooms:rooms.length,houses:homes.length,views:rooms.length*2+homes.length*4,errors}));
+  } else if (process.env.ANSHEL_PHASE10_FINAL==='commute') {
+    for (const id of ['management','finance']) {
+      const page=await browser.newPage();
+      await page.goto(url);
+      console.log(JSON.stringify({id,...await recordCommute(page,id)}));
+      await page.close();
+    }
   } else if (process.env.ANSHEL_PHASE10_FINAL==='soak') {
     console.log(JSON.stringify(await soak()));
+  } else if (process.env.ANSHEL_PHASE10_FINAL==='sync-city') {
+    console.log(JSON.stringify(await cityPresenceSmoke()));
   } else if (process.env.ANSHEL_PHASE10_FINAL==='days') {
     const page=await open({viewport:{width:1280,height:800}});
     const seed=Number(process.env.ANSHEL_PHASE10_SEED ?? 72803);
@@ -650,6 +807,10 @@ try {
     console.log(JSON.stringify(result));
     assert.deepEqual(errors,[]);
     assert.equal(result.employees,12);
+    for (const [day,trips] of Object.entries(result.commutes)) {
+      for (const [person,trip] of Object.entries(trips))
+        assert.ok(Object.values(trip).every(Boolean),day+' '+person+' '+JSON.stringify(trip));
+    }
     assert.equal(result.priorityFailures+result.duplicateDeliveries+result.collisions+result.propDrift,0);
     assert.equal(result.arrivals['home-sleep'],36);
     for (const activity of ['nap','phone','read','brew','coffee','snack','game']) assert.ok(result.arrivals[activity],activity);

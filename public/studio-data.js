@@ -1,6 +1,41 @@
 export const maxFrames=900;
 export const maxEvents=240;
 
+export function episodeFromReplay(topic,frames,people) {
+  const end=frames.at(-1)?.at;
+  if (!end || end-frames[0].at<9000) return null;
+  const start=Math.max(frames[0].at,end-18000);
+  const duration=(end-start)/3;
+  const name=topic.toLocaleLowerCase('id');
+  const preferred=people.findIndex(person=>name.includes(person.employee.toLocaleLowerCase('id')));
+  const descriptions={walk:'sedang berjalan',speak:'sedang berbicara','seated-speak':'sedang berbicara',
+    'desk-work':'sedang bekerja','home-sleep':'sedang tidur',read:'sedang membaca',drink:'sedang minum',
+    phone:'sedang menggunakan ponsel','game-play':'sedang bermain'};
+  return Array.from({length:3},(_,i)=>{
+    const from=Math.round(start+i*duration), to=Math.round(start+(i+1)*duration);
+    const frame=frames.find(item=>item.at>=(from+to)/2);
+    const featured=frame.actors.findIndex(actor=>Object.hasOwn(descriptions,actor.animation));
+    const index=preferred>=0?preferred:featured;
+    const person=people[index], actor=frame.actors[index];
+    return {frames,start:from,end:to,camera:i===0?'campus':person?'employee-'+person.id:'',
+      caption:i===0?'Kita mulai dari kawasan Anshel Virtual Tech.':
+        person && Object.hasOwn(descriptions,actor?.animation)?person.employee+' '+descriptions[actor.animation]+'.':
+        'Rekaman memperlihatkan suasana di kawasan Anshel.'};
+  });
+}
+
+export function episodeWebVtt(clips) {
+  const format=value=>new Date(value).toISOString().slice(11,23);
+  let time=0;
+  const cues=[];
+  for (const clip of clips) {
+    const next=time+clip.end-clip.start;
+    if (clip.caption) cues.push(format(Math.round(time))+' --> '+format(Math.round(next))+'\n'+clip.caption);
+    time=next;
+  }
+  return cues.length?'WEBVTT\n\n'+cues.join('\n\n')+'\n':null;
+}
+
 export function localReminderTime(input) {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input)) return NaN;
   const at=Date.parse(input+':00+07:00');

@@ -1,6 +1,6 @@
 import { divisions } from './catalog.js';
 import { editProp, layoutItems } from './layout-editor.js';
-import { historyEvent, localReminderTime, maxEvents, maxFrames, nationSnapshot, storyboard } from './studio-data.js';
+import { episodeFromReplay, episodeWebVtt, historyEvent, localReminderTime, maxEvents, maxFrames, nationSnapshot, storyboard } from './studio-data.js';
 import { recordReplay } from './studio-video.js';
 import { studioArchive } from './studio-archive.js';
 import { narrationCues } from './studio-captions.js';
@@ -21,6 +21,7 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
   let draftFiles=[], preparing=false;
   const shotNames={'':'Kantor',campus:'Fasad kantor',meeting:'Pod Rapat',gaming:'Lounge PS5',hub:'Atrium',
     ...Object.fromEntries(divisions.map(person=>['home-'+person.id,'Rumah '+person.employee])),
+    ...Object.fromEntries(divisions.map(person=>['employee-'+person.id,'Ikuti '+person.employee])),
     ...Object.fromEntries(Object.entries(cityDistricts).map(([id,place])=>[id,place.label]))};
   let liveCity, serverSchedule;
   const storageKey='anshel-layout-v1';
@@ -105,7 +106,8 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
         '<label>Teks video<input name="heading" maxlength="100"></label>'+
         '<label>Teks narasi <span>Dipakai sebagai teks video bila tanpa rekaman suara</span><textarea name="narration" maxlength="480"></textarea></label>'+
         '<div class="context-actions">'+button('narration-draft','Susun teks narasi')+button('narration-preview','Dengarkan narasi')+
-        button('clip-add','Tambah potongan')+button('clip-preview','Preview urutan')+'</div><div id="studio-clips"></div>'+
+        button('clip-add','Tambah potongan')+button('clip-preview','Preview urutan')+
+        button('episode-vtt','Unduh naskah WebVTT')+'</div><div id="studio-clips"></div>'+
         '<label>Narasi Bahasa Indonesia<input name="audio" type="file" accept="audio/*"></label>'+
         '<label>Audio latar milik Anda atau berlisensi<input name="background" type="file" accept="audio/*"></label>'+
         '<label>Subtitle narasi <span>WebVTT dari rekaman yang sama</span><input name="captions" type="file" accept=".vtt,text/vtt"></label>'+
@@ -121,7 +123,8 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
     }
     if (tab==='plan') {
       body.innerHTML='<form id="studio-plan"><label>Instruksi storyboard<textarea name="instruction" required maxlength="400" placeholder="Jadikan rapat tadi video pendek"></textarea></label>'+
-        '<button type="submit">Susun dari riwayat</button></form><div id="studio-storyboard"></div>';
+        '<button type="submit">Susun dari riwayat</button>'+button('episode-story','Siapkan episode 3D')+
+        '</form><div id="studio-storyboard"></div>';
     }
     if (tab==='schedule') {
       const state=office();
@@ -282,7 +285,7 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
     const target=content.querySelector('#studio-clips');
     if (!target) return;
     target.innerHTML=clipQueue.map((clip,index)=>'<div class="context-actions"><span>'+escape(shotNames[clip.camera] ?? 'Kantor')+' · '+time.format(clip.start)+' · '+
-      ((clip.end-clip.start)/1000).toFixed(1)+' dtk</span>'+button('clip-up-'+index,'↑')+
+      ((clip.end-clip.start)/1000).toFixed(1)+' dtk</span>'+(clip.caption?'<span>'+escape(clip.caption)+'</span>':'')+button('clip-up-'+index,'↑')+
       button('clip-down-'+index,'↓')+button('clip-remove-'+index,'Hapus')+'</div>').join('');
   }
   function playQueue() {
@@ -599,6 +602,37 @@ export function officeStudio({host,content,scene,office,escape,notice,release,co
         clipQueue.push(clip); renderQueue(); break;
       }
       case 'clip-preview': if (!recording) playQueue(); break;
+      case 'episode-vtt': {
+        const text=episodeWebVtt(clipQueue);
+        if (!text) return notice('Susun episode 3D untuk menghasilkan naskah per potongan.');
+        const url=URL.createObjectURL(new Blob([text],{type:'text/vtt;charset=utf-8'}));
+        const link=document.createElement('a');
+        link.href=url;
+        link.download='anshel-episode.vtt';
+        link.click();
+        setTimeout(()=>URL.revokeObjectURL(url),2000);
+        break;
+      }
+      case 'episode-story': {
+        const topic=formValue(control.form,'instruction').trim();
+        if (!topic) return notice('Isi topik dan arah cerita.');
+        const frames=frameList.slice();
+        const shots=episodeFromReplay(topic,frames,divisions);
+        if (!shots) return notice('Biarkan kantor berjalan setidaknya sembilan detik sebelum membuat episode.');
+        if (clipQueue.length && !window.confirm('Ganti urutan potongan saat ini? Draf yang tersimpan tetap bisa dibuka.')) break;
+        setTab('replay');
+        startReplay(undefined,frames);
+        if (!replaying) break;
+        clipQueue=shots;
+        draftFiles=[];
+        const form=content.querySelector('#studio-video');
+        form.elements.ratio.value='portrait';
+        form.elements.format.value='mp4';
+        form.elements.heading.value=topic.slice(0,100);
+        renderQueue();
+        exportStatus('Tiga potongan dan teks siap. Preview urutan, simpan draf, atau tambahkan audio dan WebVTT.');
+        break;
+      }
       case 'draft-save': await episodeDraft(control.form,true); break;
       case 'draft-load': await episodeDraft(control.form,false); break;
       case 'draft-delete': {

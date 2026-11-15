@@ -7,8 +7,22 @@ import { navigation } from '../public/navigation.js';
 import { guestStops, vehicleRoute } from '../public/campus-traffic.js';
 import { createLivingOffice } from '../public/living-office.js';
 import { validPresence } from '../server/office-presence.ts';
+import { migrateHomePose } from '../public/actors.js';
+import { legacyHomes } from '../public/layout.js';
 
 const nav=navigation([...districtObstacles,...rooms.flatMap(room=>obstaclesFor(room))]);
+
+test('legacy home snapshots retain stable ids and preserve their local seated pose at the new house',()=>{
+  for (const home of homes) {
+    const id=home.person.id, old=legacyHomes[id];
+    const value={id,position:old.sofa,angle:old.angle,stage:'seated',actual:'home',path:[]};
+    const next=migrateHomePose(value);
+    assert.equal(next.id,id);
+    assert.equal(next.stage,'seated');
+    assert.ok(Math.hypot(next.position[0]-home.sofa[0],next.position[1]-home.sofa[1])<1e-8);
+    assert.ok(migrateHomePose({...value,stage:'walking',path:[old.porch]}).path.length===0);
+  }
+});
 
 test('all homes have distinct points and routes through both pedestrian doors in either direction',()=>{
   assert.equal(homes.length,12);

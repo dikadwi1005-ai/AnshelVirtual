@@ -80,7 +80,7 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,back
     }
   }
   function playClip() {
-    const {frames,start,end,camera}=clips[index];
+    const {frames,start,end,camera,caption:shotCaption}=clips[index];
     scene.replayOptions({frames,time:start,index:0,end,speed:1,playing:true,exportSize:[canvas.width,canvas.height],
       shot:{id:camera ?? '',start,end},
       onFrame:(world,turn,at)=>{
@@ -99,7 +99,7 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,back
           const cue=audio && !audio.ended && cues.find(item=>item.start<=narrationTime && narrationTime<item.end);
           caption(heading,portrait?104:52);
           if (cue) caption(cue.text,canvas.height-(portrait?285:127));
-          else if (subtitles && !audio) caption(turn?.text,canvas.height-(portrait?285:127));
+          else if (!audio) caption(shotCaption ?? (subtitles?turn?.text:null),canvas.height-(portrait?285:127));
           if (narration && !audio && elapsed+at-start<Math.min(total,9000)) caption(narration,portrait?220:110);
           onProgress(Math.min(100,Math.round((elapsed+at-start)/total*100)));
           if (at>=end && recorder.state==='recording') {

@@ -1,4 +1,5 @@
 import { site, withinSite } from './layout.js';
+import { cityEdge } from './city-plan.js';
 
 export const agentRadius = .29;
 const spacing = .27;
@@ -51,18 +52,16 @@ class Heap {
   }
 }
 
-export function navigation(obstacles) {
-  const minX=-site.width/2+agentRadius, minZ=-site.depth/2+agentRadius;
-  const columns=Math.floor(-2*minX/spacing)+1, rows=Math.floor(-2*minZ/spacing)+1;
+export function navigation(obstacles, region=null) {
+  const [left,front,right,back]=region ?? [-site.width/2,-site.depth/2,site.width/2,site.depth/2];
+  const minX=left+agentRadius, minZ=front+agentRadius;
+  const columns=Math.floor((right-agentRadius-minX)/spacing)+1;
+  const rows=Math.floor((back-agentRadius-minZ)/spacing)+1;
   const cellCount=columns*rows;
   const blocked=new Uint8Array(cellCount);
   const cell=(x,z)=>z*columns+x;
   const position=index=>[minX+(index%columns)*spacing,minZ+Math.floor(index/columns)*spacing];
   const within=(x,z)=>x>=0 && z>=0 && x<columns && z<rows;
-  const boundsCheck=point=>withinSite(point,agentRadius);
-  for (let index=0;index<cellCount;index++) {
-    if (!boundsCheck(position(index))) blocked[index]=1;
-  }
   for (const {box} of obstacles) {
     const x0=Math.ceil((box[0]-agentRadius-minX)/spacing), x1=Math.floor((box[2]+agentRadius-minX)/spacing);
     const z0=Math.ceil((box[1]-agentRadius-minZ)/spacing), z1=Math.floor((box[3]+agentRadius-minZ)/spacing);
@@ -70,7 +69,8 @@ export function navigation(obstacles) {
       for (let x=Math.max(x0,0);x<=Math.min(x1,columns-1);x++) blocked[cell(x,z)]=1;
     }
   }
-  const clear=(a,b,ignore=null,radius=agentRadius)=>boundsCheck(a) && boundsCheck(b) &&
+  const inside=([x,z])=>Math.abs(x)<cityEdge-agentRadius && Math.abs(z)<cityEdge-agentRadius;
+  const clear=(a,b,ignore=null,radius=agentRadius)=>inside(a) && inside(b) &&
     !obstacles.some(({box,id})=>!(ignore && id===ignore) && segmentHits(a,b,box,radius));
 
   function nearest(point,passable,visible) {
@@ -106,6 +106,13 @@ export function navigation(obstacles) {
     };
     if (!separated(to)) return null;
     if (visible(from,to)) return [to];
+    if (!region && (!withinSite(from,agentRadius) || !withinSite(to,agentRadius))) {
+      if (Math.hypot(from[0]-to[0],from[1]-to[1])>24 || !inside(from) || !inside(to)) return null;
+      const area=[Math.min(from[0],to[0])-3,Math.min(from[1],to[1])-3,
+        Math.max(from[0],to[0])+3,Math.max(from[1],to[1])+3];
+      const nearby=obstacles.filter(({box})=>box[0]<=area[2] && box[2]>=area[0] && box[1]<=area[3] && box[3]>=area[1]);
+      return navigation(nearby,area).route(from,to,people);
+    }
     const start=nearest(from,passable,visible), end=nearest(to,passable,visible);
     if (start<0 || end<0) return null;
     const [endX,endZ]=position(end);

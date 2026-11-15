@@ -29,9 +29,12 @@ const evening={
 
 export function officeScene(host, labels, onSelect, onMessage, onDisplay, requestDialogue, {low=false}={}) {
   const scene=new THREE.Scene();
+  scene.matrixAutoUpdate=false;
   scene.background=new THREE.Color(day.backdrop);
   const renderer=new THREE.WebGLRenderer({antialias:!low,powerPreference:low?'default':'high-performance',stencil:false});
-  renderer.setPixelRatio(low?1:Math.min(devicePixelRatio,1.5));
+  let compact=low, renderScale=1, averageFrame=.016, qualitySample=0, fastFrames=0;
+  const pixelRatio=()=>renderScale*(compact?1:Math.min(devicePixelRatio,1.5));
+  renderer.setPixelRatio(pixelRatio());
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=day.exposure;
@@ -194,12 +197,17 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (characterActive()) return;
     following=null;
     const home=homeByEmployee[id];
-    if (home) return focus(home.x,home.z,3.4);
+    if (home) {
+      const target=new THREE.Vector3(home.x,.48,home.z);
+      const [frontX,frontZ]=home.point(9,86);
+      cameraMove={target,position:new THREE.Vector3(frontX,87,frontZ),zoom:3.4};
+      return;
+    }
     const district=Object.hasOwn(cityDistricts,id) && cityDistricts[id];
     if (district) return focus(district.x,district.z,.45);
     if (id==='city') return focus(128,36,.10);
     if (id==='gate') return focus(3,27,2.2);
-    if (id==='homes') return focus(0,-36,1.15);
+    if (id==='homes') return focus(0,21,.10);
     if (id==='garden') return focus(-18.9,11.8,2.35);
     if (id==='area') cameraMove={target:center.clone(),position:overview.clone(),zoom:.44};
     else reset();
@@ -215,10 +223,11 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   function prepareShot(width,height) {
     const {id,start,end}=replay.shot;
     const room=roomById[id], home=id.startsWith('home-') && homeByEmployee[id.slice(5)];
+    const employee=id.startsWith('employee-')?population?.actors.find(actor=>actor.person.id===id.slice(9)):null;
     const district=Object.hasOwn(cityDistricts,id) && cityDistricts[id];
     const progress=THREE.MathUtils.smoothstep(replay.time,start,end);
-    const subject=room || home || district || center;
-    const zoom=room?3.05:home?2.8:district ? .32 : id==='campus' ? .53 : .49;
+    const subject=employee?.root.position || room || home || district || center;
+    const zoom=employee?5:room?3.05:home?2.8:district ? .32 : id==='campus' ? .53 : .49;
     const heading=home?home.angle+.31:district ? .7 : .53;
     const sweep=heading+progress*.28;
     const radius=district?180:100;
@@ -229,7 +238,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     Object.assign(exportCamera,{left:-horizontal,right:horizontal,top:vertical,bottom:-vertical,zoom});
     exportCamera.updateProjectionMatrix();
     exportCamera.updateMatrixWorld();
-    return {view:exportCamera,target:shotTarget,zoom,mode:district||home||id==='campus'?'exterior':'interior'};
+    return {view:exportCamera,target:shotTarget,zoom,mode:district||home||id==='campus'?'exterior':
+      employee?structureView('auto',shotTarget,zoom,false):'interior'};
   }
 
   function focusDisplay(room,type) {
@@ -408,7 +418,12 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   async function load() {
     if (loaded) return;
     onMessage('Menyiapkan kantor…');
+    const existing=new Set(scene.children);
     world=await buildWorld(scene,shadow);
+    for (const root of scene.children.filter(child=>!existing.has(child))) {
+      root.updateMatrixWorld(true);
+      root.traverse(node=>{ node.matrixAutoUpdate=false; });
+    }
     city=await streamingCity(scene,model,low);
     renderedBuildingMode=undefined;
     world.displays.sync(state);
@@ -423,10 +438,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if(shared) restoreOffice(shared);
     else if(!['paused','arrival'].includes(state?.phase)) population.catchUp(42,{...state,dialogueEnabled:false});
     const playerNav={clear(from,to,ignore,radius) {
-      const start=withinSite(from,.30), end=withinSite(to,.30);
-      if (start && end) return liveNav.clear(from,to,ignore,radius);
-      const local=start?from:end?to:null;
-      return (!local || liveNav.clear(local,local,ignore,radius)) && city.clear(from,to,radius);
+      return liveNav.clear(from,to,ignore,radius) &&
+        (withinSite(from,.30) && withinSite(to,.30) || city.clear(from,to,radius));
     }};
     try { character=await createCharacter(scene,playerNav,shadow); }
     catch (error) { console.error('Avatar Dika gagal dimuat',error); }
@@ -566,18 +579,34 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       renderer.setSize(...size,false);
     } else if (!size && exportBuffer) {
       exportBuffer=null;
-      renderer.setPixelRatio(low?1:Math.min(devicePixelRatio,1.5));
+      renderer.setPixelRatio(pixelRatio());
       resize();
+    }
+    if (!replay && loaded) {
+      averageFrame+=.04*(delta-averageFrame);
+      fastFrames=averageFrame<.019?fastFrames+1:0;
+      if (now-qualitySample>2500) {
+        qualitySample=now;
+        const floor=compact ? .65 : .72;
+        const next=averageFrame>.029?Math.max(floor,renderScale-.12):
+          fastFrames>360?Math.min(1,renderScale+.10):renderScale;
+        if (next!==renderScale) {
+          renderScale=next;
+          renderer.setPixelRatio(pixelRatio());
+          host.dataset.renderScale=renderScale.toFixed(2);
+        }
+      }
     }
     const shot=replay?.shot && prepareShot(...(size ?? [width,height]));
     const view=shot?.view ?? viewCamera(), target=shot?.target ?? viewTarget(), zoom=shot?.zoom ?? viewZoom();
-    const cityState=city?.update(target,zoom,state?.now ?? Date.now(),now,characterView()?character.root.position:null);
+    const cityState=city?.update(target,zoom,state?.now ?? Date.now(),now,
+      characterView()?character.root.position:null,population?.actors);
     if (cityState && now-lastLabelUpdate>=45) {
       host.dataset.cityChunks=String(cityState.chunks);
       host.dataset.cityVehicles=String(cityState.vehicles);
       host.dataset.cityPedestrians=String(cityState.pedestrians);
     }
-    const siteMode=shot?.mode ?? (displayReturn || replay?'interior':!withinSite([target.x,target.z])?'exterior':
+    const siteMode=shot?.mode ?? (displayReturn || replay?'interior':
       structureView(buildingMode,target,zoom,characterView()));
     if (siteMode!==renderedBuildingMode) {
       renderedBuildingMode=siteMode;
@@ -813,8 +842,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     },
     lighting(value) { mode=value; },
     quality(low) {
-      renderer.setPixelRatio(low?1:Math.min(devicePixelRatio,1.5));
-      renderer.shadowMap.enabled=!low;
+      compact=low;
+      renderScale=1;
+      renderer.setPixelRatio(pixelRatio());
+      renderer.shadowMap.enabled=!compact;
       renderer.shadowMap.needsUpdate=true;
       resize();
     },
