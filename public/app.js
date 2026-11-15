@@ -206,7 +206,8 @@ async function refresh(force = false) {
     if (!force) return;
   }
   refreshing = api('state').then(value=>{
-    const signature = JSON.stringify([value.phase,value.mode,value.schedule,value.worker,value.capabilities,value.people,value.tasks,value.audit,value.counts,value.projects]);
+    const signature = JSON.stringify([value.phase,value.mode,value.schedule,value.worker,value.workerLastSeenAt,
+      value.capabilities,value.people,value.tasks,value.audit,value.counts,value.projects,value.overdueQueueByDivision]);
     const changes = office?.signature !== signature;
     clockOffset = value.now-Date.now();
     clock();
@@ -223,7 +224,7 @@ async function refresh(force = false) {
     $('phase').classList.toggle('live',!['closed','paused'].includes(value.phase));
     $('phase').lastElementChild.textContent = phaseNames[value.phase] ?? value.phase;
     $('worker-light').classList.toggle('online',value.worker);
-    $('worker-status').textContent = value.worker ? 'Worker terhubung' : 'Worker offline';
+    $('worker-status').textContent = value.worker ? 'Worker baru aktif' : 'Menunggu sinyal worker';
     const queued = value.counts.queued ?? 0;
     $('queue-badge').hidden = queued === 0;
     $('queue-badge').textContent = queued;
@@ -412,6 +413,8 @@ function renderTasks(tasks,interactive=true) {
     return '<li class="task-card"><span class="task-state">'+statusNames[task.status]+'</span>'+
       '<p>'+escape(task.description)+'</p><small>'+escape(team(task.division)?.name)+
       (task.project?' · '+escape(task.project):'')+' · '+dateFormat.format(task.created)+'</small>'+
+      (interactive && task.status==='queued' && office.now-task.created>=7_200_000?
+        '<p class="status-text">Antre ≥2 jam. Periksa eksekusi worker sebelum menjadwalkan ulang.</p>':'')+
       (task.error?'<p class="error">'+escape(task.error)+'</p>':'')+
       (task.sha256?'<small class="hash">SHA-256 '+escape(task.sha256)+'</small>':'')+
       (actions||result||assign?'<div class="task-actions">'+actions+result+assign+'</div>':'')+'</li>';
@@ -511,9 +514,15 @@ function render() {
     title(queued+' dalam antrean','Tugas');
     const supported = [['diagnostic','diagnostik'],['draft','draf AI']]
       .filter(([kind])=>office.capabilities.includes(kind)).map(([,label])=>label);
-    const worker = !office.worker ? 'Worker belum terhubung.' : supported.length ?
+    const worker = !office.worker ? 'Belum ada sinyal worker dalam 40 detik. Worker draf dapat menunggu jadwal berikutnya.' : supported.length ?
       'Worker menerima '+supported.join(' dan ')+'.' : 'Worker belum melaporkan jenis pekerjaan yang didukung.';
-    $('panel-content').innerHTML='<p class="status-text">'+worker+'</p>'+renderTasks(office.tasks);
+    const lastSeen=Number(office.workerLastSeenAt);
+    const overdue=Object.values(office.overdueQueueByDivision ?? {}).reduce((total,count)=>total+Number(count),0);
+    const evidence=[
+      lastSeen>0 && lastSeen<=office.now ? 'Sinyal terakhir '+dateFormat.format(lastSeen)+' WIB.' : 'Waktu sinyal terakhir belum tersedia.',
+      overdue>0 ? overdue+' tugas sudah antre sedikitnya dua jam.' : '',
+    ].filter(Boolean).join(' ');
+    $('panel-content').innerHTML='<p class="status-text">'+worker+' '+evidence+'</p>'+renderTasks(office.tasks);
     return;
   }
   title('Log audit','Aktivitas');

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { narrationCues } from '../public/studio-captions.js';
 import test from 'node:test';
 import { checkLayout, editProp, layoutItems } from '../public/layout-editor.js';
 import { historyEvent, localReminderTime, nationSnapshot, storyboard } from '../public/studio-data.js';
@@ -52,4 +53,11 @@ test('reminder time uses WIB and rejects normalized invalid calendar dates',()=>
   assert.equal(localReminderTime('2026-11-13T00:30'),Date.parse('2026-11-12T17:30:00Z'));
   assert.ok(Number.isNaN(localReminderTime('2026-02-31T09:00')));
   assert.ok(Number.isNaN(localReminderTime('2026-11-13T00:30Z')));
+});
+test('WebVTT narration accepts millisecond timing and rejects overlapping or out-of-range cues',()=>{
+  const first='WEBVTT\r\n\r\n00:00.500 --> 00:02.000\r\nSelamat pagi.';
+  assert.deepEqual(narrationCues(first,2000),[{start:500,end:2000,text:'Selamat pagi.'}]);
+  assert.throws(()=>narrationCues(first,1998),/durasi/);
+  assert.throws(()=>narrationCues(first+'\n\n00:01.500 --> 00:02.100\nOverlap',3000),/bertumpuk/);
+  assert.throws(()=>narrationCues(first.replace('Selamat pagi.','<b>Halo</b>'),2000),/teks biasa/);
 });

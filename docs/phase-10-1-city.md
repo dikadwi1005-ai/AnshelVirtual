@@ -12,7 +12,7 @@ Checkpoint interior kantor dan kota. Implementasi dan audit visual masih berjala
 
 ## Acceptance yang masih terbuka
 
-- Ada trotoar yang menembus atau bertumpuk dengan aspal di sambungan jalan. Elevasi, tepi perkerasan dan persimpangan masih perlu diperiksa dari dekat.
+- Checkpoint berikutnya memutus trotoar pada persilangan aspal di chunk kota. Elevasi, tepi perkerasan, dan sambungan kampus lama masih perlu diperiksa dari dekat. Lihat [matriks eksekusi](anshel-execution-checkpoint.md).
 - Pindah 12 rumah pegawai ke lingkungan yang tersebar dan buat perjalanan pegawai dengan transportasi. Rute pegawai masih memakai kompleks sebelumnya untuk menjaga snapshot dan jadwal.
 - Tata kota masih memakai denah awal. Variasi blok, koneksi jalan lingkungan, transisi antarzona, serta penempatan fasilitas publik masih perlu dipoles dan diuji.
 - Perlu bukti berjalan dari pintu ke interior bagi 12 pegawai, pemeriksaan 21 ruang lewat kamera Dika, dan audit aset dari ketinggian berbeda. Tiga tangkapan layar pemilik hanya disebut dalam brief yang tersedia.

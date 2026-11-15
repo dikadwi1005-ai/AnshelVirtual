@@ -42,7 +42,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   renderer.domElement.setAttribute('aria-label','Kantor 3D interaktif');
 
   const camera=new THREE.OrthographicCamera(-32,32,24,-24,.1,3700);
-  const exportCamera=new THREE.OrthographicCamera(-32,32,24,-24,.1,220);
+  const exportCamera=new THREE.OrthographicCamera(-32,32,24,-24,.1,3700);
   const chase=createCharacterCamera();
   const controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true;
@@ -80,6 +80,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
   let buildingMode='interior', renderedBuildingMode;
   let simulationState, previousState, previousMeeting, previousLayout;
   let nextRecording=0, chooseFurniture=null;
+  const shotTarget=new THREE.Vector3();
+  let exportBuffer=null;
   const preview=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial({
     color:0x47ead0,transparent:true,opacity:.52,wireframe:true,depthWrite:false,
   }));
@@ -155,7 +157,7 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     Object.assign(camera,{left:-vertical*aspect,right:vertical*aspect,top:vertical,bottom:-vertical});
     camera.updateProjectionMatrix();
     chase.resize(aspect);
-    renderer.setSize(width,height,false);
+    if (!exportBuffer) renderer.setSize(width,height,false);
   }
   const resizeObserver=new ResizeObserver(resize);
   resizeObserver.observe(host);
@@ -208,6 +210,26 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (!actor || characterActive()) return;
     following=follow?id:null;
     focus(actor.root.position.x,actor.root.position.z,host.clientWidth<650?3.7:4.7);
+  }
+
+  function prepareShot(width,height) {
+    const {id,start,end}=replay.shot;
+    const room=roomById[id], home=id.startsWith('home-') && homeByEmployee[id.slice(5)];
+    const district=Object.hasOwn(cityDistricts,id) && cityDistricts[id];
+    const progress=THREE.MathUtils.smoothstep(replay.time,start,end);
+    const subject=room || home || district || center;
+    const zoom=room?3.05:home?2.8:district ? .32 : id==='campus' ? .53 : .49;
+    const heading=home?home.angle+.31:district ? .7 : .53;
+    const sweep=heading+progress*.28;
+    const radius=district?180:100;
+    shotTarget.set(subject.x+(progress-.5)*(district?15:2),.52,subject.z);
+    exportCamera.position.set(shotTarget.x+Math.sin(sweep)*radius,radius*.87,shotTarget.z+Math.cos(sweep)*radius);
+    exportCamera.lookAt(shotTarget);
+    const vertical=26.4, horizontal=vertical*width/height;
+    Object.assign(exportCamera,{left:-horizontal,right:horizontal,top:vertical,bottom:-vertical,zoom});
+    exportCamera.updateProjectionMatrix();
+    exportCamera.updateMatrixWorld();
+    return {view:exportCamera,target:shotTarget,zoom,mode:district||home||id==='campus'?'exterior':'interior'};
   }
 
   function focusDisplay(room,type) {
@@ -537,22 +559,33 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
       updateCamera(delta);
       camera.updateMatrixWorld();
     }
-    const view=viewCamera(), target=viewTarget(), zoom=viewZoom();
+    const size=replay?.exportSize;
+    if (size && (!exportBuffer || size[0]!==exportBuffer[0] || size[1]!==exportBuffer[1])) {
+      exportBuffer=size;
+      renderer.setPixelRatio(1);
+      renderer.setSize(...size,false);
+    } else if (!size && exportBuffer) {
+      exportBuffer=null;
+      renderer.setPixelRatio(low?1:Math.min(devicePixelRatio,1.5));
+      resize();
+    }
+    const shot=replay?.shot && prepareShot(...(size ?? [width,height]));
+    const view=shot?.view ?? viewCamera(), target=shot?.target ?? viewTarget(), zoom=shot?.zoom ?? viewZoom();
     const cityState=city?.update(target,zoom,state?.now ?? Date.now(),now,characterView()?character.root.position:null);
     if (cityState && now-lastLabelUpdate>=45) {
       host.dataset.cityChunks=String(cityState.chunks);
       host.dataset.cityVehicles=String(cityState.vehicles);
       host.dataset.cityPedestrians=String(cityState.pedestrians);
     }
-    const siteMode=displayReturn || replay?'interior':!withinSite([target.x,target.z])?'exterior':
-      structureView(buildingMode,target,zoom,characterView());
+    const siteMode=shot?.mode ?? (displayReturn || replay?'interior':!withinSite([target.x,target.z])?'exterior':
+      structureView(buildingMode,target,zoom,characterView()));
     if (siteMode!==renderedBuildingMode) {
       renderedBuildingMode=siteMode;
       world?.buildings.setMode(siteMode);
       renderer.shadowMap.needsUpdate=true;
       host.dataset.buildings=siteMode;
     }
-    world?.walls(siteMode,view.position,target,zoom>1.5 && zoom<10 && !replay,characterView());
+    world?.walls(siteMode,view.position,target,zoom>1.5 && zoom<10 && (!replay || Boolean(shot)),characterView());
     refreshLighting(delta);
     const lounge=roomById.gaming;
     const gameVisible=zoom>=2 && Math.hypot(target.x-lounge.x,target.z-lounge.z)<10;
@@ -560,17 +593,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (!replay) updateSpeech(width,height);
     if (!replay && population && zoom>2.15 && state?.phase!=='paused') sound.update(population.actors,target,view.position);
     else sound.clear();
-    if (replay?.exportAspect) {
-      exportCamera.copy(camera);
-      const horizontal=Math.max(camera.right,camera.top*replay.exportAspect);
-      Object.assign(exportCamera,{left:-horizontal,right:horizontal,top:horizontal/replay.exportAspect,bottom:-horizontal/replay.exportAspect});
-      exportCamera.updateProjectionMatrix();
-      renderer.render(scene,exportCamera);
-      replay.onFrame?.(renderer.domElement,replay.turn,replay.time,replay.playing);
-    } else {
-      renderer.render(scene,view);
-      replay?.onFrame?.(renderer.domElement,replay.turn,replay.time,replay.playing);
-    }
+    renderer.render(scene,view);
+    replay?.onFrame?.(renderer.domElement,replay.turn,replay.time,replay.playing);
     if (now-lastLabelUpdate>=45) {
       updateLabels(width,height);
       lastLabelUpdate=now;

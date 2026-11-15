@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 const { chromium }=await import(process.env.ANSHEL_PLAYWRIGHT_MODULE ?? 'playwright');
 import { officeServer } from '../server/http.ts';
 import { createStore } from '../server/store.ts';
@@ -70,6 +70,97 @@ function testAudio() {
   return {name:'fixture.wav',mimeType:'audio/wav',buffer:wave};
 }
 const shot=(p,name)=>process.env.ANSHEL_SCREENSHOTS && p.screenshot({path:process.env.ANSHEL_SCREENSHOTS+'/phase10-'+name+'.png'});
+async function studioEpisode() {
+  const media=process.env.ANSHEL_EPISODE_MEDIA;
+  testClock=Date.parse('2026-11-16T02:15:00Z');
+  const page=await open({viewport:{width:1280,height:850},acceptDownloads:true});
+  await page.locator('[data-panel=studio]').click();
+  await tab(page,'replay');
+  const form=page.locator('#studio-video');
+  const status=form.locator('#studio-export-status');
+  await page.waitForTimeout(27000);
+  await click(page,'replay-start');
+  const seconds=Number(await form.locator('[name=end]').inputValue());
+  assert.ok(seconds>=20,'Replay langsung harus memiliki minimal 20 detik');
+  for (const [index,camera] of ['campus','hub','business','home-management'].entries()) {
+    await form.locator('#studio-camera').selectOption(camera);
+    await form.locator('[name=start]').fill(String(index*5));
+    await form.locator('[name=end]').fill(String((index+1)*5));
+    await click(page,'clip-add');
+  }
+  const select=(name,value)=>form.locator('[name='+name+']').selectOption(value);
+  await select('ratio','portrait');
+  await select('format','mp4');
+  await form.locator('[name=heading]').fill('Pagi di Anshel Virtual Tech');
+  for (const [key,file] of [['audio','episode-narration.wav'],['background','episode-music.wav'],['captions','episode.vtt']])
+    await form.locator('[name='+key+']').setInputFiles(media+'/'+file);
+  await click(page,'draft-save');
+  await status.filter({hasText:'Draf tersimpan'}).waitFor();
+  await page.reload();
+  await page.locator('#character-mode:enabled').waitFor({timeout:90000});
+  await page.locator('[data-panel=studio]').click();
+  await tab(page,'replay');
+  await click(page,'draft-load');
+  await status.filter({hasText:'Draf dibuka kembali'}).waitFor();
+  assert.equal(await form.locator('#studio-clips > div').count(),4);
+  await submit(page,'video');
+  await page.waitForFunction(()=>document.querySelector('#studio-progress')?.value>2);
+  await click(page,'cancel-video');
+  await status.filter({hasText:'Ekspor dibatalkan'}).waitFor();
+  await submit(page,'video');
+  await status.filter({hasText:'Merekam scene 3D'}).waitFor();
+  await status.filter({hasText:/Ekspor selesai|coba|diekspor ulang/}).waitFor({timeout:70000});
+  assert.match(await status.innerText(),/Ekspor selesai/);
+  const output=form.locator('#studio-output video');
+  const metadata=await output.evaluate(async video=>{
+    if (video.readyState<2) await new Promise((resolve,reject)=>{
+      video.addEventListener('loadeddata',resolve,{once:true});
+      video.addEventListener('error',reject,{once:true});
+    });
+    const screen=document.createElement('canvas');
+    screen.width=64;
+    screen.height=114;
+    const ctx=screen.getContext('2d',{willReadFrequently:true});
+    const frames=[];
+    const gallery=document.createElement('canvas');
+    gallery.width=1080;
+    gallery.height=480;
+    const galleryContext=gallery.getContext('2d');
+    for (const time of [1,2,6,7,11,12,16,17]) {
+      await new Promise(resolve=>{
+        video.addEventListener('seeked',resolve,{once:true});
+        video.currentTime=time;
+      });
+      ctx.drawImage(video,0,0,64,114);
+      frames.push(ctx.getImageData(0,0,64,114).data.slice());
+      if (frames.length%2===0) galleryContext.drawImage(video,(frames.length/2-1)*270,0,270,480);
+    }
+    const moving=[0,2,4,6].map(index=>frames[index].reduce((changed,value,i)=>
+      changed+(i%4!==3 && Math.abs(value-frames[index+1][i])>12?1:0),0));
+    await video.play();
+    await new Promise(resolve=>setTimeout(resolve,300));
+    const played=video.currentTime;
+    video.pause();
+    return {proof:gallery.toDataURL().split(',')[1],width:video.videoWidth,height:video.videoHeight,duration:video.duration,moving,played,
+      audioBytes:video.webkitAudioDecodedByteCount,videoBytes:video.webkitVideoDecodedByteCount};
+  });
+  assert.deepEqual([metadata.width,metadata.height],[1080,1920]);
+  assert.ok(metadata.duration>=19 && metadata.duration<25,JSON.stringify(metadata));
+  assert.ok(metadata.moving.every(changes=>changes>100),JSON.stringify(metadata));
+  assert.ok(metadata.audioBytes>0 && metadata.videoBytes>0 && metadata.played>17);
+  const {proof,...measurements}=metadata;
+  await writeFile(process.env.ANSHEL_SCREENSHOTS+'/anshel-episode-four-shots.png',Buffer.from(proof,'base64'));
+  const download=page.waitForEvent('download');
+  await form.getByRole('link',{name:'Unduh video'}).click();
+  const path=process.env.ANSHEL_SCREENSHOTS+'/anshel-pagi-di-kota.mp4';
+  await (await download).saveAs(path);
+  const mp4=await readFile(path);
+  assert.equal(mp4.toString('ascii',4,8),'ftyp');
+  assert.ok(mp4.includes(Buffer.from('avcC')) && mp4.includes(Buffer.from('mp4a')) && mp4.includes(Buffer.from('esds')));
+  await shot(page,'studio-episode');
+  assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({shots:4,draftReload:true,cancelAndRetry:true,...measurements}));
+}
 async function recordScene(page,selector='#scene canvas') {
   if (!process.env.ANSHEL_SCREENSHOTS) return async()=>{};
   await page.evaluate(selector=>{
@@ -429,6 +520,9 @@ async function autonomousDays(page,seedValue) {
   },seedValue);
 }
 try {
+  if (process.env.ANSHEL_EPISODE_MEDIA) {
+    await studioEpisode();
+  } else {
   if (process.env.ANSHEL_PHASE10_FINAL==='city') {
     testClock=Date.parse('2026-11-16T01:22:00Z');
     const page=await open({viewport:{width:1440,height:900}});
@@ -708,8 +802,8 @@ try {
   }
   assert.ok(bytes>2000); await desktop.waitForFunction(()=>document.querySelector('#studio-output video')?.readyState>=2); const dimensions=await desktop.locator('#studio-output video').evaluate(v=>[v.videoWidth,v.videoHeight]); assert.deepEqual(dimensions,[960,540]);
   metrics.replay=await perf(desktop);
-  await shot(desktop,'replay'); await desktop.locator('#studio-video [name=ratio]').selectOption('portrait'); await submit(desktop,'video'); await desktop.waitForFunction(()=>document.querySelector('#studio-output video')?.videoHeight===960,{},{timeout:30000});
-  if (await desktop.evaluate(()=>MediaRecorder.isTypeSupported('video/mp4'))) {
+  await shot(desktop,'replay'); await desktop.locator('#studio-video [name=ratio]').selectOption('portrait'); await submit(desktop,'video'); await desktop.waitForFunction(()=>document.querySelector('#studio-output video')?.videoHeight===1920,{},{timeout:45000});
+  if (await desktop.evaluate(()=>MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.420028,mp4a.40.2'))) {
     await desktop.locator('#studio-video [name=format]').selectOption('mp4');
     await submit(desktop,'video');
     await desktop.locator('#studio-output a[download$=".mp4"]').waitFor({timeout:30000});
@@ -818,6 +912,7 @@ try {
   }
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({videoBytes:bytes,mp4,metrics,errors}));
+  }
   }
 } finally {
   await browser.close();

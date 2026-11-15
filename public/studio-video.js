@@ -1,10 +1,11 @@
-const formats={webm:['video/webm;codecs=vp8,opus','video/webm'],mp4:['video/mp4;codecs=avc1.42001E,mp4a.40.2','video/mp4']};
+const formats={webm:['video/webm;codecs=vp8,opus','video/webm'],mp4:['video/mp4;codecs=avc1.420028,mp4a.40.2']};
 
-export function recordReplay(scene,{format,portrait,heading,subtitles,audio,background,clips,narration,onProgress}) {
+export function recordReplay(scene,{format,portrait,heading,subtitles,audio,background,clips,narration,cues=[],
+  narrationGain=.9,backgroundGain=.25,onProgress}) {
   const mime=formats[format]?.find(type=>globalThis.MediaRecorder?.isTypeSupported(type));
-  if (!mime) throw new Error('Encoder '+format.toUpperCase()+' belum tersedia di browser ini.');
+  if (!mime) throw new Error('Encoder '+format.toUpperCase()+' belum tersedia di browser ini. Coba Chrome atau pilih WebM.');
   const canvas=document.createElement('canvas');
-  [canvas.width,canvas.height]=portrait?[540,960]:[960,540];
+  [canvas.width,canvas.height]=portrait?[1080,1920]:[960,540];
   const context=canvas.getContext('2d');
   if (!context || !canvas.captureStream) throw new Error('Perekaman kanvas tidak tersedia.');
   const stream=canvas.captureStream(24);
@@ -15,7 +16,7 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,back
   let chunks=[], finished=false, timer;
   const clean=()=>{
     clearTimeout(timer);
-    scene.replayOptions({onFrame:null,playing:false,exportAspect:null});
+    scene.replayOptions({onFrame:null,playing:false,exportSize:null,shot:null});
     audio?.pause();
     background?.pause();
     for (const source of sources) source.disconnect();
@@ -29,13 +30,13 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,back
       for (const element of [audio,background].filter(Boolean)) {
         const source=sound.createMediaElementSource(element);
         const gain=sound.createGain();
-        gain.gain.value=element===background ? .25 : .9;
+        gain.gain.value=element===background ? backgroundGain : narrationGain;
         source.connect(gain).connect(audioStream);
         sources.push(source,gain);
       }
       for (const track of audioStream.stream.getAudioTracks()) stream.addTrack(track);
     }
-    recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:3000000});
+    recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:portrait?8000000:3000000});
   } catch (error) { clean(); throw error; }
 
   let complete, fail;
@@ -61,8 +62,9 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,back
 
   function caption(text,y) {
     if (!text) return;
-    const max=canvas.width-64;
-    context.font='600 24px sans-serif';
+    const scale=portrait?2:1;
+    const max=canvas.width-64*scale;
+    context.font=`600 ${24*scale}px sans-serif`;
     const lines=[''];
     for (const word of text.split(/\s+/)) {
       const i=lines.length-1, next=(lines[i]+' '+word).trim();
@@ -70,16 +72,17 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,back
       else lines[i]=next;
     }
     for (const [index,line] of lines.slice(0,4).entries()) {
-      const baseline=y+index*31;
+      const baseline=y+index*31*scale;
       context.fillStyle='#172534ed';
-      context.fillRect(20,baseline-26,canvas.width-40,31);
+      context.fillRect(20*scale,baseline-26*scale,canvas.width-40*scale,31*scale);
       context.fillStyle='#fff';
-      context.fillText(line,32,baseline,max);
+      context.fillText(line,32*scale,baseline,max);
     }
   }
   function playClip() {
-    const {frames,start,end}=clips[index];
-    scene.replayOptions({frames,time:start,index:0,end,speed:1,playing:true,exportAspect:canvas.width/canvas.height,
+    const {frames,start,end,camera}=clips[index];
+    scene.replayOptions({frames,time:start,index:0,end,speed:1,playing:true,exportSize:[canvas.width,canvas.height],
+      shot:{id:camera ?? '',start,end},
       onFrame:(world,turn,at)=>{
         try {
           context.drawImage(world,0,0,canvas.width,canvas.height);
@@ -92,9 +95,12 @@ export function recordReplay(scene,{format,portrait,heading,subtitles,audio,back
             context.fillStyle='rgba(15,26,37,'+Math.min(1,opacity)+')';
             context.fillRect(0,0,canvas.width,canvas.height);
           }
-          caption(heading,52);
-          if (subtitles) caption(turn?.text,canvas.height-127);
-          if (narration && !audio && elapsed+at-start<Math.min(total,9000)) caption(narration,110);
+          const narrationTime=(audio?.currentTime ?? 0)*1000;
+          const cue=audio && !audio.ended && cues.find(item=>item.start<=narrationTime && narrationTime<item.end);
+          caption(heading,portrait?104:52);
+          if (cue) caption(cue.text,canvas.height-(portrait?285:127));
+          else if (subtitles && !audio) caption(turn?.text,canvas.height-(portrait?285:127));
+          if (narration && !audio && elapsed+at-start<Math.min(total,9000)) caption(narration,portrait?220:110);
           onProgress(Math.min(100,Math.round((elapsed+at-start)/total*100)));
           if (at>=end && recorder.state==='recording') {
             elapsed+=end-start;

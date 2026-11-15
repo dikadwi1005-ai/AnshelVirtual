@@ -8,10 +8,11 @@ export function createNationCity(env,fetcher=fetch,now=Date.now) {
   async function refresh() {
     let url;
     try { url=new URL(env.NATION_CITY_READ_URL); }
-    catch { return {connection:'unconfigured',snapshot:null}; }
+    catch { return {connection:'unconfigured',health:'not_configured',snapshot:null}; }
     if (env.NATION_CITY_ENABLED!=='true' || url.protocol!=='https:' || url.port || url.username || url.password ||
       url.hash || url.search || !url.hostname.includes('.') || isIP(url.hostname.replace(/^\[|\]$/g,'')) ||
-      /\.(local|localhost|internal|test)$/.test(url.hostname)) return {connection:'unconfigured',snapshot:null};
+      /\.(local|localhost|internal|test)$/.test(url.hostname))
+      return {connection:'unconfigured',health:'not_configured',snapshot:null};
     try {
       const response=await fetcher(url,{redirect:'error',signal:AbortSignal.timeout(4000),headers:{
         Accept:'application/json',...(env.NATION_CITY_READ_TOKEN?{Authorization:'Bearer '+env.NATION_CITY_READ_TOKEN}:{}),
@@ -34,9 +35,13 @@ export function createNationCity(env,fetcher=fetch,now=Date.now) {
       const snapshot=nationSnapshot(JSON.parse(text));
       if (!snapshot) throw new Error();
       cached={snapshot,at:now()};
-      return {connection:'live',snapshot,checkedAt:cached.at};
+      return {connection:'live',health:snapshot.status==='online'?'connected':'degraded',
+        snapshot,checkedAt:cached.at,lastGoodAt:cached.at};
     } catch {
-      return {connection:'offline',snapshot:cached && now()-cached.at<300_000?cached.snapshot:null,checkedAt:now()};
+      const checkedAt=now();
+      const useCache=cached && checkedAt-cached.at<300_000;
+      return {connection:'offline',health:useCache?'degraded':'offline',snapshot:useCache?cached.snapshot:null,
+        checkedAt,lastGoodAt:cached?.at ?? null};
     }
   }
   let last;

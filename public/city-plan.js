@@ -2,6 +2,10 @@ export const chunkSize=128;
 export const cityRadius=8;
 export const cityEdge=(cityRadius+.5)*chunkSize;
 export const avenueOffset=36;
+export const avenueHalfWidth=4.5;
+export const localStreetOffset=-29;
+export const localStreetHalfWidth=2.8;
+export const sidewalkWidth=1.7;
 export const cityDistricts={
   business:{label:'Pusat bisnis',x:128,z:36},
   residential:{label:'Permukiman barat',x:-384,z:36},
@@ -10,6 +14,19 @@ export const cityDistricts={
   services:{label:'Terminal selatan',x:0,z:548},
 };
 const noise=(x,z)=>((Math.imul(x+41,19349663)^Math.imul(z+71,83492791))>>>0)%997/997;
+
+// Crossings are ordered pairs of center and half-width in block-local space.
+export function streetSpans(crossings) {
+  let start=-chunkSize/2;
+  const end=chunkSize/2, spans=[];
+  for (const [center,halfWidth] of crossings.slice().sort((a,b)=>a[0]-b[0])) {
+    const before=Math.min(end,center-halfWidth);
+    if (before>start) spans.push([start,before]);
+    start=Math.max(start,center+halfWidth);
+  }
+  if (start<end) spans.push([start,end]);
+  return spans;
+}
 
 export function zoneAt(x,z) {
   if (!x && !z) return 'campus';
@@ -37,7 +54,7 @@ export function cityBlock(ix,iz) {
           variant:Math.floor(n*4),color:Math.floor(n*100)%4};
         plots.push(plot);
         if (north===-1 && (zone==='business'||zone==='residential')) for (const side of [-1,1]) {
-          plots.push({...plot,id:plot.id+`/local/${side}`,z:z-29+side*16,roadZ:z-29,
+          plots.push({...plot,id:plot.id+`/local/${side}`,z:z+localStreetOffset+side*16,roadZ:z+localStreetOffset,
             angle:side===1?Math.PI:0,height:plot.height*.83,variant:(plot.variant+side+4)%4});
         }
       }
