@@ -267,6 +267,42 @@ test('kabar IT tidak boleh didasarkan pada klaim memantau log atau aman tanpa pe
   assert.equal(memory.length,1);
 });
 
+test('Bima does not call the office normal or deny paused IT tasks',async()=>{
+  const question='Bima, jelaskan kondisi operasional Anshel hari ini dan apa yang perlu diperiksa berikutnya.';
+  const inaccurate='Status operasional hari ini berjalan normal, Pak, tapi belum ada tugas IT yang masuk atau tercatat selesai. Kalau mau diperiksa berikutnya, tentukan bagian endpoint atau server mana.';
+  assert.equal(cleanOfficeNaturalResponse(inaccurate,'status belum terbukti',question),
+    'status belum terbukti');
+  const state={
+    now:Date.parse('2026-11-15T08:30:00Z'),phase:'work',worker:false,
+    workerLastSeenAt:Date.parse('2026-11-13T09:40:00Z'),
+    counts:{paused:2,failed:0,blocked:0},
+    tasks:[{division:'operations',status:'paused',project:''},
+      {division:'research',status:'paused',project:''}],people:{},
+  };
+  const generated=buildOfficeNaturalRequest('operations',question,state);
+  const facts=JSON.parse(generated.systemInstruction.parts[0].text.split('DATA KANTOR TERPERCAYA: ')[1]);
+  assert.equal(facts.buktiStatusTeknis.tugasITDijedaDalamDaftarTerbaru,1);
+  assert.equal(facts.buktiStatusTeknis.tugasDijedaSemuaDivisi,2);
+  const messages=[];
+  const result=await deliverOfficeNaturalChat({
+    consumeOfficeGroupAI:async()=>({division:'operations',question}),
+    state:async()=>state,rememberOfficeGroupAI:async()=>{},
+  },env,{updateId:'334466',ticket:'mock',output:inaccurate},transport(messages));
+  assert.equal(result.ai,false);
+  assert.match(messages[0].body.text,/1 tugas IT dijeda/);
+  assert.match(messages[0].body.text,/2 tugas dijeda di seluruh kantor/);
+  assert.match(messages[0].body.text,/n8n Executions/);
+  assert.doesNotMatch(messages[0].body.text,/berjalan normal|belum ada tugas IT yang masuk/);
+  const incomplete='Untuk memeriksa berikutnya, bisa mulai dari endpoint API dan catatan server.';
+  const messages2=[];
+  const result2=await deliverOfficeNaturalChat({
+    consumeOfficeGroupAI:async()=>({division:'operations',question}),
+    state:async()=>state,rememberOfficeGroupAI:async()=>{},
+  },env,{updateId:'334467',ticket:'mock',output:incomplete},transport(messages2));
+  assert.equal(result2.ai,false);
+  assert.match(messages2[0].body.text,/tugas IT dijeda/);
+});
+
 test('riwayat pesan lama yang mengarang pemantauan log tidak dijadikan konteks baru',()=>{
   const hist=[
     {question:'Bima, gimana?',reply:'Lagi mantengin log sistem aja.'},
