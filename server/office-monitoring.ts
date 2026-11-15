@@ -86,13 +86,25 @@ export function overdueOfficeQueue(state,allowed=divisions.map(person=>person.id
     Number(task.created)>0 && now-Number(task.created)>=2*60*60_000);
 }
 
+export function overdueOfficeQueueSummary(state,allowed=divisions.map(person=>person.id)) {
+  if(state.overdueQueueByDivision && typeof state.overdueQueueByDivision==='object' &&
+    !Array.isArray(state.overdueQueueByDivision)) {
+    const entries=Object.entries(state.overdueQueueByDivision).filter(([id,count])=>
+      allowed.includes(id) && Number.isSafeInteger(Number(count)) && Number(count)>0);
+    return {count:entries.reduce((total,[,count])=>total+Number(count),0),
+      divisions:entries.map(([id])=>id)};
+  }
+  const stale=overdueOfficeQueue(state,allowed);
+  return {count:stale.length,divisions:[...new Set(stale.map(task=>task.division))]};
+}
+
 export function officeQueueDelayAlert(state,allowed=pilotDivisions) {
   const now=Number(state.now);
   if(!Number.isFinite(now)||state.worker||!['work','review','open'].includes(state.phase))return null;
-  const stale=overdueOfficeQueue(state,allowed);
-  if(!stale.length)return null;
-  const names=[...new Set(stale.map(t=>labels[t.division]))];
-  return 'Bima · Peringatan antrean: '+stale.length+' tugas pada '+names.join(', ')+
+  const stale=overdueOfficeQueueSummary(state,allowed);
+  if(!stale.count)return null;
+  const names=stale.divisions.map(id=>labels[id]||id);
+  return 'Bima · Peringatan antrean: '+stale.count+' tugas pada '+names.join(', ')+
     ' telah menunggu sedikitnya dua jam. Worker belum terlihat aktif dalam 40 detik terakhir. '+
     'Ini indikasi antrean perlu dicek, BUKAN bukti layanan mati. Periksa dashboard Anshel atau /kendala.';
 }

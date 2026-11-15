@@ -316,6 +316,10 @@ export function createStore(path: string, now = Date.now) {
           row_number() OVER (PARTITION BY division ORDER BY priority DESC,created,rowid) AS rank
         FROM tasks WHERE status IN ('queued','blocked')
       ) WHERE rank=1`);
+      // Full-table counts avoid false negatives when the task list exceeds its 150-row limit.
+      const overdueQueueByDivision=Object.fromEntries(all(
+        "SELECT division,count(*) AS count FROM tasks WHERE status='queued' AND created<=? GROUP BY division",
+        now()-2*60*60_000).map(row=>[row.division,row.count]));
       const officePhase = current();
       const simulation = officePhase === 'paused' ? readSetting('paused_at',null) : null;
       return {
@@ -323,6 +327,7 @@ export function createStore(path: string, now = Date.now) {
         worker: now() - readSetting('worker_at', -Infinity) < 40_000,
         capabilities: readSetting('worker_kinds',[]),
         tasks:all('SELECT * FROM tasks ORDER BY created DESC,rowid DESC LIMIT 150').map(publicTask),
+        overdueQueueByDivision,
         running, people:employeePlans(simulation?.at ?? now(),simulation?.phase ?? officePhase,running,assigned),
         avatarPresence:officeAvatarPresence(readSetting(officePresenceKey,null),now()),
         counts:Object.fromEntries(all('SELECT status,count(*) AS count FROM tasks GROUP BY status').map(row=>[row.status,row.count])),

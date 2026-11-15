@@ -2,7 +2,7 @@ import { divisions, activities } from '../public/catalog.js';
 import { Fault } from './store.ts';
 import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import { observedAvatar } from './office-avatar-status.ts';
-import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert,overdueOfficeQueue } from './office-monitoring.ts';
+import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert,overdueOfficeQueueSummary } from './office-monitoring.ts';
 import { parseGroupWorkspaceCommand } from './telegram-workspace.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
@@ -291,10 +291,10 @@ export function officeGroupReply(state,input,env) {
     const c=state.counts||{};
     const blocked=Number(c.blocked)||0;
     const failed=Number(c.failed)||0;
-    const overdue=overdueOfficeQueue(state);
-    const backlog=overdue.length?' '+overdue.length+' tugas masih antre sedikitnya dua jam.':'';
+    const overdue=overdueOfficeQueueSummary(state);
+    const backlog=overdue.count?' '+overdue.count+' tugas masih antre sedikitnya dua jam.':'';
     const workerSignal=state.worker===false?' Worker belum terlihat aktif dalam 40 detik terakhir.':'';
-    if(!blocked&&!failed&&!overdue.length) return {division:'operations',
+    if(!blocked&&!failed&&!overdue.count) return {division:'operations',
       text:'Di catatan tugas Anshel saat ini belum ada yang berstatus terhambat atau gagal, '+
       'dan tidak terlihat antrean lewat dua jam.'+workerSignal+
       ' Ini bukan hasil pemeriksaan server, jadi belum memastikan sistem bebas masalah.'};

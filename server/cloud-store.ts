@@ -355,6 +355,8 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
       const simulation = officePhase === 'paused' ? await readSetting('paused_at', null) : null;
       const taskRows = await rows(`SELECT ${fields} FROM anshel.tasks ORDER BY created DESC,seq DESC LIMIT 150`);
       const counts = await rows('SELECT status,count(*)::integer AS count FROM anshel.tasks GROUP BY status');
+      const overdueCounts=await rows("SELECT division,count(*)::integer AS count FROM anshel.tasks WHERE status='queued' AND created<=$1 GROUP BY division",
+        [now()-2*60*60_000]);
       const projects = await rows(`SELECT project,status,count(*)::integer AS count FROM anshel.tasks
         WHERE project<>'' GROUP BY project,status ORDER BY project`);
       return {
@@ -363,6 +365,7 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
         worker: now() - await readSetting('worker_at', -Infinity) < 40_000,
         capabilities: await readSetting('worker_kinds', []),
         tasks: taskRows.map(publicTask), running,
+        overdueQueueByDivision:Object.fromEntries(overdueCounts.map(row=>[row.division,row.count])),
         people: employeePlans(simulation?.at ?? now(), simulation?.phase ?? officePhase, running, assigned),
         avatarPresence: officeAvatarPresence(await readSetting(officePresenceKey,null),now()),
         counts: Object.fromEntries(counts.map(row => [row.status, row.count])),

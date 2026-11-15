@@ -109,6 +109,23 @@ test('Bima /kendala includes overdue queued tasks even when blocked and failed a
   assert.doesNotMatch(officeGroupReply(cleared,'/kendala',env).text,/tugas masih antre/);
 });
 
+test('full database queue count finds an old task excluded from the latest 150 rows',()=>{
+  let now=day(9);
+  const store=createStore(':memory:',()=>now);
+  try{
+    const stuck=store.create({division:'operations',kind:'draft',description:'Old draft queued'});
+    now=day(13);
+    for(let i=0;i<151;i++) store.create({division:'research',kind:'draft',description:'New draft '+i});
+    const state=store.state();
+    assert.equal(state.tasks.length,150);
+    assert.equal(state.tasks.some(t=>t.id===stuck.id),false);
+    assert.equal(state.overdueQueueByDivision.operations,1);
+    assert.equal(state.overdueQueueByDivision.research,undefined);
+    assert.match(officeGroupReply(state,'/kendala',env).text,/1 tugas masih antre sedikitnya dua jam/);
+    assert.match(officeQueueDelayAlert(state),/1 tugas pada Bima/);
+  }finally{store.close();}
+});
+
 test('store sends at most one summary and one queue alert per WIB day, resets next day',()=>{
   let now=day(12);
   const store=createStore(':memory:',()=>now);
