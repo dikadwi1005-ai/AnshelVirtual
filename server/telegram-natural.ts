@@ -13,7 +13,7 @@ import {parseGroupWorkspaceCommand,workspacePromptContext} from './telegram-work
 import {loadTelegramMedia,questionForMedia,attachMediaToGeminiRequest} from './telegram-media.ts';
 import {isJihanNewsQuery,readBciftBlogTitles,addJihanNewsGrounding,
   verifyJihanNews,formatJihanNews} from './bcift-news.ts';
-import { workerPulseEvidence } from './office-monitoring.ts';
+import { workerPulseEvidence,overdueOfficeQueueSummary } from './office-monitoring.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -38,9 +38,55 @@ const wantsAvatarActivity=text=>/\b(?:lagi\s+(?:apa|ngapain)|sedang\s+apa|kesibu
 const unsupportedMonitoring=/\b(?:lagi|sedang|barusan|tadi|sudah)\s+(?:(?:mantengin|memantau|monitoring|ngecek|mengecek|memeriksa|cek|audit|mengawasi)\s+(?:(?:log|server|sistem|database|dashboard|infrastruktur)\b))/i;
 const unverifiedHealth=/\b(?:it|server|sistem|operasional|jaringan|infrastruktur|layanan)\b.{0,65}\b(?:aman\s+terkendali|aman\s+semua|normal\s+semua|stabil\s+semua|bebas\s+(?:error|gangguan)|(?:terpantau|dipantau|dipastikan|terlihat)\s+(?:aman|normal|stabil|baik))\b|\b(?:semua|seluruh)\s+(?:sistem|server|layanan|jaringan)\b.{0,30}\b(?:aman|normal|stabil|baik)\b/i;
 const unverifiedOpsAssurance=/\b(?:status|kondisi)\s+(?:operasional|it|server|sistem|layanan|anshel)\b.{0,65}\b(?:(?:berjalan|masih)\s+)?(?:normal|aman|stabil|lancar)\b/i;
-const technicalStatusQuestion=question=>/\b(?:status|kondisi|operasional|kesehatan)\b/i.test(question) &&
-  /\b(?:anshel|it|operasional|sistem|server|layanan|api)\b/i.test(question);
+const technicalStatusQuestion=question=>
+  (/\b(?:status|kondisi|operasional|kesehatan)\b/i.test(question) &&
+    /\b(?:anshel|it|operasional|sistem|server|layanan|api)\b/i.test(question)) ||
+  (/\b(?:langkah|prioritas|harus|berikutnya)\b.{0,70}\b(?:dicek|diperiksa|cek|periksa|tinjau)\b/i.test(question) &&
+    /\b(?:it|api|server|n8n|worker|anshel|operasional)\b/i.test(question));
 const deniesRecordedITWork=text=>/\b(?:belum|tidak|nggak|gak|ga)\s+(?:ada|punya)\s+(?:tugas|pekerjaan)\s*(?:it|teknis)?\b/i.test(text);
+const unverifiedIncidentAbsence=/\b(?:belum|tidak|nggak|gak|ga)\s+(?:ada|tercatat|terdeteksi)\s+(?:(?:laporan|indikasi)\s+)?(?:error|gangguan|insiden|masalah)(?:\s+baru)?\b/i;
+const vagueITDelegation=/\b(?:tentukan|pilih|sebutkan)\b.{0,80}\b(?:bagian|server|api|endpoint|mana)\b|\b(?:bagian|server|api|endpoint)\s+(?:mana|apa)\s+(?:yang\s+)?(?:mau|perlu)\s+(?:dicek|diperiksa)/i;
+const specificITNextStep=/\b(?:cek|periksa|tinjau|lihat|verifikasi|cocokkan|perhatikan)\b.{0,100}\b(?:alasan.{0,20}dijeda|tugas.{0,30}(?:dijeda|jeda)|n8n|executions?|riwayat.{0,20}(?:workflow|eksekusi)|heartbeat|jadwal.{0,30}worker|antrean|panel tugas)\b/i;
+
+/** A proposed triage plan assembled from trusted task/heartbeat state only.
+ * This function does not execute tests, call n8n, or observe external logs. */
+export function officeTechnicalBriefing(state) {
+  const tasks=Array.isArray(state?.tasks)?state.tasks:[];
+  const counts=state?.counts||{};
+  const count=value=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):0;
+  const pausedIT=tasks.filter(t=>t.division==='operations'&&t.status==='paused').length;
+  const totalPaused=Math.max(count(counts.paused),tasks.filter(t=>t.status==='paused').length);
+  const blocked=count(counts.blocked),failed=count(counts.failed);
+  const overdue=overdueOfficeQueueSummary(state||{});
+  const pulse=workerPulseEvidence(state||{});
+  const pausedText=pausedIT
+    ?pausedIT+' tugas IT dijeda ('+totalPaused+' tugas dijeda di seluruh kantor)'
+    :totalPaused
+      ?totalPaused+' tugas dijeda di seluruh kantor; belum terlihat rinciannya di daftar IT terbaru'
+      :'belum tampak tugas IT yang dijeda pada daftar terbaru';
+  const extra=[blocked||failed?blocked+' terhambat dan '+failed+' gagal':null,
+    overdue.count?overdue.count+' tugas antre lebih dari dua jam':null].filter(Boolean);
+  const status=[pausedText,...extra].join('; ');
+  const first=blocked||failed
+    ?'tinjau penyebab tugas gagal/terhambat di panel Tugas'
+    :pausedIT
+      ?'tinjau alasan tugas IT dijeda di panel Tugas sebelum memutuskan melanjutkan'
+      :overdue.count
+        ?'tinjau antrean lama dan tugas yang menunggu di panel Tugas'
+        :totalPaused
+          ?'cek rincian tugas yang dijeda di panel Tugas'
+          :'cek status tugas terkini di panel Tugas';
+  const second=pulse.missedScheduledPulse
+    ?'cocokkan jadwal worker dan eksekusi terbaru di n8n Executions (heartbeat terlewat saat jadwal)'
+    :pulse.inSchedule
+      ?'cocokkan jadwal worker dengan hasil eksekusi terakhir di n8n Executions'
+      :'tinjau riwayat workflow grup dan worker di n8n Executions bila ada laporan gangguan';
+  const text='Pak, dari catatan Anshel: '+status+'. '+pulse.lastSeenText+
+    '. '+pulse.verdict+' Prioritasku: '+first+'; lalu '+second+
+    '. Ini rencana pemeriksaan, belum hasil audit layanan eksternal.';
+  return {text,pausedIT,totalPaused,blocked,failed,overdue:overdue.count,
+    priorities:[first,second],pulse};
+}
 const unsupportedTeamMood=/\b(?:suasana|kondisi|mood|semangat)\s+(?:tim|kantor|para\s+pegawai|pegawai)\b.{0,80}\b(?:kondusif|harmonis|kompak|saling\s+mendukung|nyaman|baik|positif|solid)\b|\b(?:semua\s+pegawai|seluruh\s+tim)\b.{0,40}\b(?:kompak|kondusif|saling\s+mendukung|baik\s+baik\s+saja)\b/i;
 const unsupportedArchiveUpdate=/\b(?:arsip|catatan(?:\s+(?:harian|kantor))?|dokumen)\b.{0,65}\b(?:tidak|belum|nggak|gak)\s+(?:ada\s+)?(?:penambahan(?:\s+data)?|perubahan(?:\s+data)?|update(?:\s+data)?|data)\s+baru\b/i;
 
@@ -156,14 +202,17 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     faseOperasionalKantor:state.phase??'tidak diketahui',
     cakupanData:'Catatan tugas dan snapshot simulasi kantor virtual; bukan log error, hasil audit atau verifikasi kondisi server.'};
   if(division==='operations' && technicalStatusQuestion(spokenQuestion)) {
-    const pulse=workerPulseEvidence(state);
+    const brief=officeTechnicalBriefing(state);
     facts.buktiStatusTeknis={
-      tugasITDijedaDalamDaftarTerbaru:(state.tasks||[]).filter(t=>
-        t.division==='operations'&&t.status==='paused').length,
-      tugasDijedaSemuaDivisi:Number(c.paused)||0,
-      heartbeatTerakhir:pulse.lastSeenText,
-      konteksJadwal:pulse.verdict,
-      keterbatasan:'Belum ada hasil audit live menyeluruh Gemini, n8n, dan server. Status READY atau nihil tugas gagal tidak membuktikan operasional normal.'};
+      tugasITDijedaDalamDaftarTerbaru:brief.pausedIT,
+      tugasDijedaSemuaDivisi:brief.totalPaused,
+      tugasTerhambat:brief.blocked,
+      tugasGagal:brief.failed,
+      antreanLebihDariDuaJam:brief.overdue,
+      heartbeatTerakhir:brief.pulse.lastSeenText,
+      konteksJadwal:brief.pulse.verdict,
+      prioritasPemeriksaan:brief.priorities,
+      keterbatasan:'Belum ada hasil audit live menyeluruh Gemini, n8n, dan server. Tidak ada laporan error yang terintegrasi secara lengkap; jangan simpulkan tidak ada error baru.'};
   }
   if(wantsCompanyOverview(spokenQuestion)) {
     facts.totalSemuaDivisi={
@@ -198,7 +247,8 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
     'Jika ditanya lagi ngapain, boleh ceritakan aktivitas avatar yang terverifikasi di simulasi kantor virtual. Itu aktivitas virtual, bukan bukti memantau server, membaca log, melakukan audit atau tindakan nyata.',
     'Urusan API, endpoint, server, database, webhook, integrasi, koneksi, dan insiden teknis adalah ranah Bima di IT & Operasional. Alya mengoordinasikan dan menerima laporan, bukan mengaku mendiagnosis sendiri. Eka di Pengembangan berfokus pada perubahan kode dan masih non-pilot.',
     'Belum ada tugas IT tercatat tidak berarti server pasti aman. Tanpa bukti pemeriksaan, jangan klaim kondisi sistem aman, stabil, normal, atau bebas kendala.',
-    'Jangan pernah bilang sistem terpantau aman, semua server normal, atau tim sedang kondusif/kompak/saling mendukung jika itu hanya dugaan dari percakapan. Ceritakan apa yang benar-benar tercatat, bukan membuat kesimpulan umum.',
+    'Jangan pernah bilang sistem terpantau aman, semua server normal, atau tim sedang kondusif/kompak/saling mendukung jika itu hanya dugaan dari percakapan. Jangan mengaku tidak ada laporan error baru tanpa sumber log yang terhubung. Ceritakan hanya apa yang benar-benar tercatat.',
+    'Jika kamu Bima dan ditanya kondisi/prioritas IT, ajukan sendiri dua pemeriksaan konkret memakai DATA.buktiStatusTeknis.prioritasPemeriksaan. Mulai dari masalah yang tercatat. Jangan hanya meminta pemilik memilih server/API mana yang dicek, jangan mengaku sudah memeriksa n8n, dan jelaskan bahwa itu rencana, bukan hasil audit.',
     'Jangan bilang tidak ada pembaruan arsip/catatan harian tanpa daftar dokumen yang tervalidasi. Jika tugas administrasi baru masuk antrean, katakan antrean itu belum diproses, bukan menganggap arsip sudah dicek.',
     'Jangan mengaku sedang mantengin log, cek server, bekerja, ngobrol dengan staf, mengirim sesuatu, atau melakukan kegiatan konkret yang tidak tersedia pada DATA KANTOR.',
     'Jangan menyebut format /tugas, cara memakai bot atau perintah teknis kecuali memang ditanya cara memberi tugas.',
@@ -234,7 +284,9 @@ export function buildOfficeNaturalRequest(division,question,state,history=[]) {
   const contents=[];
   for(const t of (Array.isArray(history)?history:[]).slice(-6)) {
     if(typeof t.question==='string' && typeof t.reply==='string' &&
-        !unsupportedMonitoring.test(t.reply) && !unverifiedHealth.test(t.reply) && !unsupportedHours.test(t.reply)) {
+        !unsupportedMonitoring.test(t.reply) && !unverifiedHealth.test(t.reply) &&
+        !unverifiedOpsAssurance.test(t.reply) && !unverifiedIncidentAbsence.test(t.reply) &&
+        !unsupportedHours.test(t.reply)) {
       contents.push({role:'user',parts:[{text:t.question.slice(0,350)}]});
       contents.push({role:'model',parts:[{text:t.reply.slice(0,500)}]});
     }
@@ -354,7 +406,9 @@ export function cleanOfficeNaturalResponse(text,fallback,question='') {
   if(safe.length<4||safe.length>700||/[\x00-\x08\x0e-\x1f]/.test(safe)||
       actionClaim.test(safe)||unverifiedCompletedWorkClaim(safe)||
       rawStatus.test(safe)||unsupportedMonitoring.test(safe)||
-      unverifiedHealth.test(safe)||unverifiedOpsAssurance.test(safe)||unsupportedTeamMood.test(safe)||
+      unverifiedHealth.test(safe)||unverifiedOpsAssurance.test(safe)||
+      (technicalStatusQuestion(question)&&unverifiedIncidentAbsence.test(safe))||
+      unsupportedTeamMood.test(safe)||
       unsupportedArchiveUpdate.test(safe)||
       (askedAtmosphere&&(atmosphere.test(safe)||physicalDisclaimer.test(safe))))
     return fallback;
@@ -427,14 +481,9 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,p
   const asksTechnical= /\b(?:it|teknis|server|sistem|log|jaringan|bug|error|kendala|gangguan)\b/i.test(pending.question);
   const divisionTasks=(state.tasks||[]).filter(t=>t.division===pending.division);
   const isOpsOverview=pending.division==='operations'&&technicalStatusQuestion(pending.question);
-  const pausedIT=divisionTasks.filter(t=>t.status==='paused').length;
-  const pulse=isOpsOverview?workerPulseEvidence(state):null;
-  const groundedOperations=isOpsOverview
-    ?'Dari catatan Anshel, '+pausedIT+' tugas IT dijeda ('+
-      (Number(counts.paused)||pausedIT)+' tugas dijeda di seluruh kantor). '+
-      pulse.lastSeenText+'. '+pulse.verdict+
-      ' Prioritas berikutnya cek tugas yang dijeda dan n8n Executions. '+
-      'Kondisi seluruh layanan belum diperiksa langsung.':null;
+  const brief=isOpsOverview?officeTechnicalBriefing(state):null;
+  const pausedIT=brief?.pausedIT||0;
+  const groundedOperations=brief?.text||null;
   const fallback=isOpsOverview?groundedOperations:asksAtmosphere
     ? (activity.length ? 'Dari catatan tugas, '+activity.join(', ')+'. ':
         'Di catatan tugas belum ada perkembangan baru yang menonjol. ')+
@@ -449,11 +498,14 @@ export async function deliverOfficeNaturalChat(store,env,input,fetchImpl=fetch,p
   const reference=report?'\n'+(verified.length?'Laporan privat Anshel: ':'Tugas terhambat di Anshel: ')+report.id:'';
   const candidate=news?formatJihanNews(verified,700-reference.length)+reference:
     cleanOfficeNaturalResponse(input?.output,fallback,pending.question);
-  // For an IT status overview, reject an ungrounded "no tasks" claim and
-  // never omit known paused work simply to sound reassuring.
+  // An operational answer must own the next step, without fabricating any log
+  // check. Passing a true task status alone is not sufficient.
   const text=isOpsOverview && (
     (divisionTasks.length>0&&deniesRecordedITWork(candidate)) ||
-    (pausedIT>0&&!/\b(?:dijeda|jeda|tertunda|ditunda)\b/i.test(candidate))
+    (pausedIT>0&&!/\b(?:dijeda|jeda|tertunda|ditunda)\b/i.test(candidate)) ||
+    unverifiedIncidentAbsence.test(candidate) ||
+    vagueITDelegation.test(candidate) ||
+    !specificITNextStep.test(candidate)
   ) ? groundedOperations : candidate;
   await sendOfficeBotMessage(env,pending.division,text,{fetchImpl,silent:state.groupWorkspace?.quiet===true});
   await store.rememberOfficeGroupAI(pending.division,pending.question,text);
