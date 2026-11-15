@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createActors } from './actors.js';
 import { createCharacter } from './character-mode.js';
 import { createCharacterCamera } from './character-camera.js';
-import { homeByEmployee, insideRoom, pedestrianOnlyObstacles, rooms, roomById, point, structureView, withinSite } from './layout.js';
+import { homeByEmployee, homes, insideRoom, pedestrianOnlyObstacles, rooms, roomById, point, structureView, withinSite } from './layout.js';
 import { furniture } from './furnishings.js';
 import { checkLayout } from './layout-editor.js';
 import { radialTexture } from './materials.js';
@@ -199,8 +199,8 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     const home=homeByEmployee[id];
     if (home) {
       const target=new THREE.Vector3(home.x,.48,home.z);
-      const [frontX,frontZ]=home.point(9,86);
-      cameraMove={target,position:new THREE.Vector3(frontX,87,frontZ),zoom:3.4};
+      const [frontX,frontZ]=home.point(6,45);
+      cameraMove={target,position:new THREE.Vector3(frontX,114,frontZ),zoom:3.4};
       return;
     }
     const district=Object.hasOwn(cityDistricts,id) && cityDistricts[id];
@@ -287,6 +287,10 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
           camera.position.distanceToSquared(cameraMove.position)<.0001 &&
           Math.abs(camera.zoom-cameraMove.zoom)<.002) cameraMove=null;
     }
+    const homeCutaway=camera.zoom>1.3 && buildingMode!=='exterior' && homes.some(home=>
+      Math.abs(home.x-controls.target.x)<4.5 && Math.abs(home.z-controls.target.z)<4.5);
+    // Keep nearby roofs from hiding the interior when inspecting a city home.
+    controls.maxPolarAngle=homeCutaway ? .43 : 1.18;
     controls.update();
     const {x,z}=controls.target;
     controls.target.x=THREE.MathUtils.clamp(x,-cityEdge,cityEdge);
