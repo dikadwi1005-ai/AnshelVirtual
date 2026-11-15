@@ -7,7 +7,8 @@ Baseline Production yang diverifikasi sebelumnya adalah `fe69de2`. Pekerjaan ini
 - Dua belas pegawai memakai rumah dengan ID yang sama pada 12 kavling tetap di empat blok kota. Bangunan placeholder pada kavling itu diganti rumah yang mempunyai interior. Kavling tetangga langsung memakai bangunan rendah agar akses dan sudut kamera lebih terbuka.
 - Pegawai jalan kaki dari rumah, melalui akses kavling, trotoar, penyeberangan, gerbang dan pintu kantor. Jadwal tetap memakai simulasi Living Office. Perjalanan pulang menggunakan arah trotoar berbeda untuk memberi ruang berpapasan. Kendaraan kota memberi jalan saat pegawai mendekati penyeberangan.
 - Snapshot presence lama tetap terbaca. Pose dari interior rumah lama dipetakan ke koordinat lokal yang sama di rumah baru. Jalur lama yang mengarah ke rumah dihitung ulang. Batas pose replay diperluas, batas pose kendaraan kampus tetap memakai kontrak lama.
-- Bukti browser tiga hari mengamati **36 keberangkatan dan 36 kepulangan** pada 12 pegawai. Rekaman Alya dan Laras menampilkan perjalanan keluar rumah, menyeberang, menuju dan memasuki kantor, lalu kembali. Rekaman bukti memakai langkah simulasi dipercepat dan mesh serta navigasi aplikasi. Audit awal menyimpan 90 tampilan untuk 21 ruang dan 12 rumah.
+- Bukti browser tiga hari mengamati **36 keberangkatan dan 36 kepulangan** pada 12 pegawai. Rekaman Alya dan Laras menampilkan perjalanan keluar rumah, menyeberang, menuju dan memasuki kantor, lalu kembali. Rekaman bukti memakai langkah simulasi dipercepat dan mesh serta navigasi aplikasi. Audit final menyimpan 90 tampilan untuk 21 ruang dan 12 rumah.
+- Smoke check desktop dan viewport sentuh menyisakan waktu polling dan interpolasi. Uji ulang mencatat selisih posisi maksimum 0,48 m saat di rumah dan 0,38 m saat keberangkatan. Satu percobaan sebelumnya gagal pada batas sinkronisasi yang sama dengan selisih 4,18 m. Stabilitas antarsesi masih perlu diuji lebih lama pada kondisi jaringan nyata.
 
 ## Profil kinerja
 
@@ -37,6 +38,8 @@ Dalam profil Chrome singkat sebelum optimasi, `updateMatrixWorld` mengambil 13,5
 ## Gate rilis
 
 Build dan 224 tes lokal lulus. Tes Chrome menguji pemulihan draf lintas refresh, batal dan render ulang, empat shot MP4 dengan audio, dan pembuatan otomatis tiga shot dari topik.
+
+Episode uji baru **Perjalanan Kota Anshel** berdurasi 18,60 detik, dari empat potongan rekaman 3D perjalanan Alya dan Laras. FFmpeg menggabungkan narasi lokal, musik sintetis asli dan subtitle yang waktunya dihitung dari audio. FFprobe serta pemutaran Chrome memverifikasi MP4 1080 × 1920 H.264/AAC. Video perkenalan sebelumnya tetap tersimpan. Episode baru bersifat bukti privat dan memakai model lokal yang hak penggunaan ulang dataset-nya masih perlu diperiksa sebelum publikasi.
 
 Pemeriksaan visual menemukan menara tetangga menutupi sudut rumah pada beberapa arah. Kamera fokus rumah dan tinggi bangunan tetangga diperbaiki. Pengujian visual menyimpan bukti tampilan aplikasi untuk ditinjau. Pembuktian bebas clipping pada seluruh momen, manuver parkir kota penuh, mobil pegawai dan perjalanan melalui transportasi umum masih terbuka. Perjalanan kaki adalah moda yang tersedia dalam checkpoint ini.
 

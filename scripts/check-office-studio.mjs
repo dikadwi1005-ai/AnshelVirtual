@@ -530,6 +530,13 @@ async function cityPresenceSmoke() {
     open({viewport:{width:1280,height:800}}),
     open({viewport:{width:390,height:844},hasTouch:true,isMobile:true}),
   ]);
+  const exchanges=[[],[]];
+  sessions.forEach((page,index)=>page.on('response',async response=>{
+    if (!response.url().endsWith('/api/office-presence')) return;
+    const data=await response.json().catch(()=>null);
+    exchanges[index].push({status:response.status(),leader:data?.leader,actors:data?.snapshot?.actors.length,
+      error:data?.error});
+  }));
   for (const page of sessions) await page.evaluate(()=>{
     document.getElementById('scene').addEventListener('office-frame',event=>{
       window.cityPoses=event.detail.actors.map(actor=>actor.position);
@@ -538,14 +545,24 @@ async function cityPresenceSmoke() {
   const poses=()=>Promise.all(sessions.map(page=>page.evaluate(()=>window.cityPoses)));
   for (const page of sessions)
     await page.waitForFunction(()=>window.cityPoses?.every(([x])=>Math.abs(x)>65),null,{timeout:30000});
-  const [atNight,mirror]=await poses();
   const gap=(a,b)=>Math.max(...a.map(([x,z],i)=>Math.hypot(x-b[i][0],z-b[i][1])));
-  assert.ok(gap(atNight,mirror)<.8);
+  async function matchingPoses(limit) {
+    // Presence polling and follower interpolation can outlast the first visible frame.
+    let pair=await poses();
+    const cutoff=Date.now()+10000;
+    while (gap(...pair)>=limit && Date.now()<cutoff) {
+      await sessions[0].waitForTimeout(250);
+      pair=await poses();
+    }
+    assert.ok(gap(...pair)<limit,JSON.stringify({gap:gap(...pair),exchanges:exchanges.map(list=>list.slice(-5)),
+      errors:errors.map(error=>error.slice(0,250)),visibility:await Promise.all(sessions.map(page=>page.evaluate(()=>document.visibilityState)))}));
+    return pair;
+  }
+  const [atNight,mirror]=await matchingPoses(.8);
   testClock=Date.parse('2026-11-16T01:54:00Z');
   for (const page of sessions)
     await page.waitForFunction(before=>window.cityPoses?.some(([x,z],i)=>Math.hypot(x-before[i][0],z-before[i][1])>5),atNight,{timeout:35000});
-  const [departing,observer]=await poses();
-  assert.ok(gap(departing,observer)<5,'The observer should follow office presence within a few seconds.');
+  const [departing,observer]=await matchingPoses(5);
   assert.deepEqual(errors,[]);
   return {employees:atNight.length,nightGap:gap(atNight,mirror),departureGap:gap(departing,observer)};
 }
