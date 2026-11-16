@@ -5,6 +5,7 @@ import {
   avatarAnimationInterval,settleCarriedProp,releaseCarriedProp,speechGesture,deskGesture,
 } from '../public/actor-motion.js';
 import {divisions} from '../public/catalog.js';
+import {blendEmployeeMouth} from '../public/employee-mouth.js';
 
 test('12 employee gesture variants are deterministic, with seated voices distinct from standing',()=>{
   assert.equal(divisions.length,12);
@@ -47,4 +48,22 @@ test('hand-held props snap once, smoothly follow thereafter and reset on hide',(
   assert.equal(prop.position.x,-2,'first visible frame attaches immediately');
   assert.equal(settleCarriedProp(prop,new THREE.Vector3(NaN,0,0),.033),false);
   assert.equal(prop.position.x,-2,'bad rig values cannot move the prop');
+});
+
+test('facial visemes ease between vowel shapes and close without overshooting',()=>{
+  const mouth=[0,0,0];
+  blendEmployeeMouth(mouth,{open:1.4,round:-.2,wide:.65},.016);
+  assert.ok(mouth[0]>0 && mouth[0]<1);
+  assert.equal(mouth[1],0);
+  assert.ok(mouth[2]>0 && mouth[2]<.65);
+  let previous=mouth[0];
+  blendEmployeeMouth(mouth,{open:0,round:0,wide:0},.016);
+  assert.ok(mouth[0]>=0 && mouth[0]<previous);
+  previous=mouth[0];
+  blendEmployeeMouth(mouth,{open:0,round:0,wide:0},.25);
+  assert.ok(mouth[0]<previous);
+  blendEmployeeMouth(mouth,{open:0,round:1,wide:0},0);
+  assert.deepEqual(mouth,[0,1,0]);
+  blendEmployeeMouth(mouth,{open:NaN,round:Infinity,wide:undefined},0);
+  assert.deepEqual(mouth,[0,0,0]);
 });
