@@ -32,3 +32,25 @@ export function employeeMouth(figure) {
   mesh.updateMorphTargets();
   return mesh.morphTargetInfluences;
 }
+
+
+const mouthKeys=['open','round','wide'];
+
+// Filter rapid viseme changes from approximate text-to-shape timing. This is
+// animation polish, not audio phoneme recognition. Caller resets influences
+// immediately when a new speaker takes over or speech ends.
+export function blendEmployeeMouth(mouth,pose,seconds) {
+  if(!mouth) return;
+  for (let index=0;index<3;index++) {
+    const raw=Number(pose?.[mouthKeys[index]]);
+    const next=Number.isFinite(raw)?THREE.MathUtils.clamp(raw,0,1):0;
+    if(!Number.isFinite(seconds)||seconds<=0) {
+      mouth[index]=next;
+      continue;
+    }
+    const current=Number.isFinite(mouth[index])?mouth[index]:0;
+    const speed=next>current?31:24;
+    const alpha=THREE.MathUtils.clamp(1-Math.exp(-seconds*speed),0,1);
+    mouth[index]=THREE.MathUtils.lerp(current,next,alpha);
+  }
+}
