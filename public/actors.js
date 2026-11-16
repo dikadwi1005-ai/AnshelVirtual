@@ -3,6 +3,7 @@ import { divisions } from './catalog.js';
 import { chooseConversationAnchor, createConversations, createMonologues } from './conversations.js';
 import { employeeFigure, handGrip } from './employee-look.js';
 import { employeeMouth } from './employee-mouth.js';
+import { avatarAnimationInterval, settleCarriedProp, releaseCarriedProp, speechGesture, deskGesture } from './actor-motion.js';
 import { employeeProfile } from './employee-profiles.js';
 import { activityAnchors, conversationAnchors, station } from './furnishings.js';
 import { districtRoute, homeByEmployee, legacyHomes, roomById } from './layout.js';
@@ -137,6 +138,15 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     const talk={head:[0,.055,-.035,0],'arm-left':[0,-.26,-.13,0],'arm-right':[0,-.22,-.10,0]};
     if (idle) {
       clips.set('speak',mixer.clipAction(gestureClip(idle,'speak',1.36,talk)));
+      clips.set('speak-soft',mixer.clipAction(gestureClip(idle,'speak-soft',1.74,{
+        head:[0,.035,.065,0],'arm-left':[0,-.12,-.08,0],'arm-right':[0,-.14,-.11,0],
+      })));
+      clips.set('speak-explain',mixer.clipAction(gestureClip(idle,'speak-explain',1.88,{
+        head:[0,-.065,.045,0],'arm-left':[0,-.25,-.38,0],'arm-right':[0,-.38,-.28,0],
+      })));
+      clips.set('idle-glance',mixer.clipAction(gestureClip(idle,'idle-glance',4.7,{
+        head:[0,.082,-.085,0],'arm-right':[0,-.07,-.06,0],
+      })));
       clips.set('drink',mixer.clipAction(gestureClip(idle,'drink',3.8,{'arm-right':[-.52,-1.50,-1.38,-.52]})));
       clips.set('snack',mixer.clipAction(gestureClip(idle,'snack',3.1,{head:[0,.16,.12,0],'arm-right':[-.28,-1.34,-1.16,-.28]})));
       clips.set('brew',mixer.clipAction(gestureClip(idle,'brew',3.6,{'arm-right':[0,-.57,-.82,0]})));
@@ -153,6 +163,13 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       clips.set('game-react',mixer.clipAction(seatedClip(sit,drive,'game-react',[-.04,-.27,-.22,-.04],[-.04,-.24,-.19,-.04])));
       clips.set('seated-speak',mixer.clipAction(gestureClip(sit,'seated-speak',1.7,
         {head:talk.head,'arm-right':[0,-.37,-.18,0]})));
+      clips.set('seated-speak-explain',mixer.clipAction(gestureClip(sit,'seated-speak-explain',2.1,{
+        head:[0,.065,-.04,0],'arm-left':[0,-.22,-.18,0],'arm-right':[0,-.34,-.46,0],
+      })));
+      clips.set('desk-review',mixer.clipAction(gestureClip(sit,'desk-review',3.5,{
+        head:[.13,.19,.10,.13],'arm-left':[-.13,-.19,-.12,-.13],
+        'arm-right':[-.17,-.24,-.21,-.17],
+      })));
       clips.set('read',mixer.clipAction(gestureClip(sit,'read',4.4,
         {head:[.18,.23,.28,.18],'arm-left':[-.82,-.86,-.82,-.82],'arm-right':[-.82,-.82,-.69,-.82]})));
       clips.set('desk-nap',mixer.clipAction(gestureClip(sit,'desk-nap',6,
@@ -250,33 +267,40 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     actor.foodTime=28;
     actor.retry=0;
   }
-  function poseProps(actor,animation) {
-    actor.cup.visible=animation==='drink' || animation==='brew';
-    actor.book.visible=animation==='read';
-    actor.phone.visible=animation==='phone';
-    actor.bite.visible=animation==='snack';
+  function poseProps(actor,animation,delta=0) {
+    const visibility=(prop,shown)=>{
+      prop.visible=shown;
+      if (!shown) releaseCarriedProp(prop);
+    };
+    visibility(actor.cup,animation==='drink'||animation==='brew');
+    visibility(actor.book,animation==='read');
+    visibility(actor.phone,animation==='phone');
+    visibility(actor.bite,animation==='snack');
     if (actor.parcel) {
-      actor.parcel.visible=actor.foodTime>0 && animation!=='snack';
-      if (actor.parcel.visible) hold(actor.parcel,actor,0);
+      visibility(actor.parcel,actor.foodTime>0 && animation!=='snack');
+      if (actor.parcel.visible) hold(actor.parcel,actor,0,delta);
     }
     if (actor.phone.visible) {
-      hold(actor.phone,actor,1);
+      hold(actor.phone,actor,1,delta);
       actor.phone.rotation.x=.46;
     }
-    if (actor.cup.visible) hold(actor.cup,actor,1);
-    if (actor.bite.visible) hold(actor.bite,actor,1);
+    if (actor.cup.visible) hold(actor.cup,actor,1,delta);
+    if (actor.bite.visible) hold(actor.bite,actor,1,delta);
     if (actor.book.visible) {
       handGrip(actor.hands[0],1,gripLeft);
       handGrip(actor.hands[1],-1,gripRight);
-      actor.book.position.copy(actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5)));
-      actor.book.position.y+=.032;
+      actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5));
+      gripLeft.y+=.032;
+      settleCarriedProp(actor.book,gripLeft,delta);
       actor.book.rotation.x=.32;
     }
   }
-  function hold(prop,actor,hand) {
+  function hold(prop,actor,hand,delta=0) {
     handGrip(actor.hands[hand],hand===0?1:-1,gripRight);
-    prop.position.copy(actor.root.worldToLocal(gripRight));
+    actor.root.worldToLocal(gripRight);
+    settleCarriedProp(prop,gripRight,delta);
   }
+
   function occupied(actor,point,from) {
     for (const {root,radius,width=radius} of campus) {
       if (!root.visible) continue;
@@ -442,9 +466,13 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       const reacts=isGameReaction(game.elapsed+actor.person.index%4*.17);
       const receiving=handingOff && pickup===actor.person.id && actor.stage==='arrived' && actor.actual==='pickup';
       const waking=actor.wake>0 && !plan?.taskLock && seated && !gaming;
-      const clip=receiving?'take-parcel':(speaking || chatting) && seated ? 'seated-speak' : speaking || chatting || speakingAlone ? 'speak' :
+      const speechClip=speechGesture(actor.person.index,seated);
+      const restingClip=actor.person.index%2 ? 'idle-glance' : 'idle';
+      const clip=receiving?'take-parcel':(speaking || chatting || speakingAlone) ? speechClip :
         gaming ? (reacts?'game-react':'game-play') : watching && reacts?'desk-cheer':
-          waking?'stretch':reacting ? (seated?'desk-cheer':'emote-yes') : working?'desk-work':actor.stage==='waiting'?'idle':actor.anchor.clip;
+          waking?'stretch':reacting ? (seated?'desk-cheer':'emote-yes') :
+          working?deskGesture(actor.person.index,actor.actual==='work'):
+          actor.stage==='waiting'?restingClip:actor.anchor.clip==='idle'?restingClip:actor.anchor.clip;
       if (clip==='desk-nap') actor.slept=true;
       else if (actor.slept) { actor.slept=false; actor.wake=2; }
       actor.wake=Math.max(0,(actor.wake ?? 0)-delta);
@@ -455,13 +483,14 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
     const sleeping=actor.actual==='home-sleep' && ['seated','sitting','departing'].includes(actor.stage);
     actor.figure.rotation.x=sleeping?-Math.PI/2*actor.seatProgress:0;
     const propActive=actor.foodTime>0 || ['drink','read','phone','brew','snack'].includes(actor.animation);
-    const interval=actor.stage==='walking'||actor.stage==='sitting'||actor.stage==='departing' ? 1/30 : 1/12;
+    const interval=avatarAnimationInterval(actor.stage,actor.animation,Boolean(animate));
     if (animate || actor.animationDelta>=interval || propActive) {
       if (actor.headYaw) actor.head.rotateY(-actor.headYaw);
-      actor.mixer.update(actor.animationDelta);
+      const animationStep=actor.animationDelta;
+      actor.mixer.update(animationStep);
       actor.animationDelta=0;
       actor.headYaw=0;
-      poseProps(actor,actor.animation);
+      poseProps(actor,actor.animation,animationStep);
       if (actor.stage==='seated' && actor.anchor.conversation==='meeting') {
         const turn=conversations.turns.get('meeting');
         const partner=turn && (turn.speaker===actor?turn.other:turn.speaker);
@@ -492,10 +521,15 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
       actor.hands[0].localToWorld(gripLeft.set(.138,-.080,.019));
       actor.hands[1].localToWorld(gripRight.set(-.138,-.080,.019));
       const grip=actor.root.worldToLocal(gripLeft.add(gripRight).multiplyScalar(.5));
-      pad.position.set(grip.x,grip.y+.042,grip.z+.105);
+      grip.y+=.042;
+      grip.z+=.105;
+      settleCarriedProp(pad,grip,delta);
       pad.rotation.x=actor.animation==='game-react' ? -.23 : -.08;
     }
-    for (const [slot,pad] of pads.entries()) if (!game.players.has(slot)) pad.removeFromParent();
+    for (const [slot,pad] of pads.entries()) if (!game.players.has(slot)) {
+      releaseCarriedProp(pad);
+      pad.removeFromParent();
+    }
     game.elapsed=game.players.size ? game.elapsed+delta : 0;
   }
 
@@ -644,7 +678,7 @@ export async function createActors(scene,nav,shadowMap,initial,requestDialogue,s
         -Math.PI/2*actor.seatProgress:0;
       actor.shadowMesh.position.x=actor.root.position.x;
       actor.shadowMesh.position.z=actor.root.position.z;
-      poseProps(actor,actor.animation);
+      poseProps(actor,actor.animation,delta);
     }
     updateGame(delta);
   }
