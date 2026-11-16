@@ -9,6 +9,7 @@ import { checkLayout } from './layout-editor.js';
 import { radialTexture } from './materials.js';
 import { navigation } from './navigation.js';
 import { createLipTimeline } from './office-lips.js';
+import { blendEmployeeMouth } from './employee-mouth.js';
 import { createOfficeSpatialAudio } from './office-spatial-audio.js';
 import { createOfficeVoice } from './office-voice.js';
 import { buildWorld, model } from './world.js';
@@ -394,19 +395,19 @@ export function officeScene(host, labels, onSelect, onMessage, onDisplay, reques
     if (lips?.turn!==closest) {
       clearMouth();
       if (closest) lips={turn:closest,timeline:createLipTimeline(closest.text,closest.duration),
-        started:performance.now(),finished:false};
+        started:performance.now(),sampleAt:null,finished:false};
     }
     voice.show(closest,THREE.MathUtils.clamp(1-distance/10,.30,.92));
     if (!closest) return;
     const mouth=closest.speaker.mouth;
     if (mouth) {
-      if (lips.finished) mouth.fill(0);
-      else {
-        const pose=lips.timeline.pose((performance.now()-lips.started)/1000);
-        mouth[0]=pose.open;
-        mouth[1]=pose.round;
-        mouth[2]=pose.wide;
-      }
+      const sampledAt=performance.now();
+      const since=Number.isFinite(lips.sampleAt)?
+        Math.min(.08,Math.max(0,(sampledAt-lips.sampleAt)/1000)):0;
+      const pose=lips.finished?{open:0,round:0,wide:0}:
+        lips.timeline.pose((sampledAt-lips.started)/1000);
+      blendEmployeeMouth(mouth,pose,since);
+      lips.sampleAt=sampledAt;
     }
     if (shownTurn!==closest) {
       shownTurn=closest;
