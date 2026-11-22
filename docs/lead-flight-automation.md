@@ -66,3 +66,27 @@ Browser lokal: desktop 1440×1000 dan viewport sentuh 390×844, kosong tanpa fix
 ## Checkpoint rilis
 
 Lihat laporan rilis setelah pemeriksaan GitHub/Vercel/n8n dan smoke test Production. Jangan menyebut pencarian lead/harga live berhasil sebelum akses sumber dan datanya diuji. Sampai akses itu tersedia, tidak ada waktu postingan lead terbaru atau harga aktual yang dapat dilaporkan.
+
+## Production smoke test — 22 November 2026 WIB
+
+Implementasi awal merged PR #49, commit `5603aad65d22794f3677e3a02f6c286f0cc221bc`, Vercel `dpl_6dGRhAGPiR6z7SGpBkc9YUhbdVPW` Ready. GitHub Validate Anshel #121 berhasil. Dashboard Production terbuka dengan sesi pemilik; GET API automation/state tanpa sesi mengembalikan 401.
+
+Workflow cloud [Lead Hunter + Flight Tracker](https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id/workflow/UNWbXWqAgngjXYaM) Published/active, cron `*/15 * * * *`. Zona waktu instance yang ditampilkan UI: Asia/Jakarta. API key existing hanya mengizinkan baca (pembuatan workflow melalui API mendapat 403); pemasangan dilakukan melalui editor n8n yang sudah login, memakai referensi credential existing. Ekspor workflow memastikan keenam node, koneksi dan credential reference sesuai template. Tick manual berhasil tersimpan di Supabase. Pemeriksaan sumber menghasilkan kendala sebenarnya; bukan data dummy. Belum dilakukan soak test 24 jam atau menunggu seluruh siklus rolling 30 hari.
+
+Live Telegram berhasil diverifikasi:
+
+- Kalimat “Alya, pantau harga tiket Surabaya ke Batam” membuat watch `bfabad0d-bbcf-48a5-b0dd-902c283f001f`, rolling 30 hari tanpa tanggal wajib.
+- Tombol pause mengubah status di Supabase menjadi paused/revision 2; kalimat “Alya, lanjutkan monitoring terakhir” memulihkannya menjadi active/revision 3.
+- `/leadon` dijawab Jihan dan status enabled tersimpan. `/leads` menjawab jujur belum ada publikasi terverifikasi.
+- `/diagnosa` dijawab Bima dengan pembacaan database, metadata n8n, tick automation, watch aktif dan daftar sumber yang belum terhubung. Tugas lama yang dijeda tidak diubah.
+- Webhook callback Jihan dipasang melalui endpoint pemilik. Alya tetap memakai satu trigger existing; hanya update callback_query dan prefix avt:callback-bridge ditambahkan melalui editor, lalu Published. Jalur pesan/media/Gemini existing dipertahankan.
+
+Source status saat smoke test: approved-feed/Brave/Google Alerts belum memiliki konfigurasi; Facebook Groups API lama tidak digunakan; Traveloka dan tiket.com belum memiliki akses partner atau mailbox/forwarding berizin; Amadeus belum memiliki credential Production dan batas kuota yang disetujui. Rolling tersedia pada adapter API Amadeus setelah akses tersebut tersedia; email Traveloka/tiket hanya specific-date event intake, bukan rolling atau setiap perubahan aktual. Tidak ada lead terverifikasi yang ditemukan, sehingga waktu postingan terbaru tidak tersedia. Tidak ada harga aktual yang diperoleh. Jalur klasifikasi Gemini memakai credential reference existing, tetapi analisis lead live belum teruji tanpa postingan nyata terverifikasi; pengujian struktur/parser memakai fixture lokal.
+
+Pengaturan bawaan penyimpanan execution n8n dipertahankan. Percobaan mengurangi retensi sukses dan menambah workflow timeout ditolak review persetujuan otomatis; dialog dibatalkan dan pengaturan tidak disimpan. Timeout HTTP per-node 45 detik tetap bagian dari template yang dipasang. Tidak mengubah scope API key, credential, atau pengaturan instance.
+
+Bukti lokal/Production: `automation-2026-11-22` di direktori artifacts Codex (di luar Git), termasuk screenshot dashboard desktop/mobile, workflow Published, hasil browser-check dan log tes. Informasi RLS no-policy dari advisor hanya INFO dan disengaja karena seluruh tabel anshel privat/backend-only; [penjelasan advisor](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy). Akses anon/authenticated tetap ditolak.
+
+Perbaikan setelah smoke test: pemeriksaan scheduler yang sudah Published dan cocok kini baca-saja, sehingga tombol dashboard tidak mencoba deactivation/republish dengan API key read-only. Webhook callback Jihan yang sudah sesuai juga cukup diverifikasi. Tes tambahan memastikan tidak ada request mutation pada scheduler terverifikasi.
+
+Release gate setelah perbaikan verifikasi: 286/286 tes regresi lulus, 45 tes automation termasuk di dalamnya; build Production lulus.
