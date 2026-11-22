@@ -206,8 +206,8 @@ const telegramData={chatId:telegramEnv.TELEGRAM_CHAT_ID,userId:telegramEnv.TELEG
 const response=value=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
 const recorder=()=>{const sent=[];return {sent,fetch:async (url,options)=>{sent.push({url:String(url),body:JSON.parse(options.body)});return response({ok:true,result:{message_id:100}});}};};
 
-test('Alya check command and button explain email polling and link to live prices',async()=>{
-  const {store}=fixture(),r=recorder();
+test('Alya check button asks for the date and dated command returns a FlightClaw quote',async()=>{
+  const {store,advance}=fixture(),r=recorder();
   try {
     const {watch}=store.automation({action:'watch-save',config:{}});
     await handleAutomationMessage(store,telegramEnv,{...telegramData,text:'/cektiket'},r.fetch);
@@ -216,7 +216,18 @@ test('Alya check command and button explain email polling and link to live price
     assert.equal(messages.length,2);
     assert.equal(messages[0].body.text,messages[1].body.text);
     assert.match(messages[0].body.text,/Belum ada alert email/);
-    assert.match(messages[0].body.reply_markup.inline_keyboard[0][0].url,/flights-from-surabaya-to-batam/);
+    assert.match(messages[0].body.text,/\/cektiket YYYY-MM-DD/);
+    const fetchImpl=async(url,options)=>{
+      if (!String(url).endsWith('/anshel-flightclaw-search-v1')) return r.fetch(url,options);
+      assert.deepEqual(JSON.parse(options.body),{origin:'SUB',destination:'BTH',date:'2026-12-05'});
+      return response({origin:'SUB',destination:'BTH',date:'2026-12-05',offers:[
+        {total:247.05,currency:'GBP',airline:'Garuda Indonesia',departure:'07:05',arrival:'16:40',stops:1},
+      ]});
+    };
+    advance(2000);
+    await handleAutomationMessage(store,{...telegramEnv,N8N_TOKEN:'test-only-token-more-than-24'},
+      {...telegramData,updateId:'12346',text:'/cektiket 5 desember'},fetchImpl);
+    assert.match(r.sent.at(-1).body.text,/247,05.*Garuda Indonesia.*1 transit/);
   } finally {store.close();}
 });
 

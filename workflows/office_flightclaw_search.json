@@ -1,0 +1,115 @@
+{
+  "name": "Anshel · Alya FlightClaw Search",
+  "nodes": [
+    {
+      "id": "4a5ae65d-7892-4328-8e44-1d04d094ca71",
+      "name": "Permintaan Anshel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "5b9416d1-aad4-4f7e-8fb9-0ccfeff0750f",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "anshel-flightclaw-search-v1",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "ae6598e0-f8e9-459f-9fc4-f5ef53dd6b82",
+      "name": "Validasi rute dan tanggal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const {origin,destination,date}=$input.first().json.body ?? {};\nconst stamp=Date.parse(date);\nif (!/^[A-Z]{3}$/.test(origin ?? '') || !/^[A-Z]{3}$/.test(destination ?? '') || origin===destination ||\n    !/^20\\d\\d-\\d\\d-\\d\\d$/.test(date ?? '') || !Number.isFinite(stamp) || new Date(stamp).toISOString().slice(0,10)!==date ||\n    stamp<Date.now()-86400000 || stamp>Date.now()+365*86400000) throw Error('Invalid flight query');\nreturn [{json:{origin,destination,date}}];"
+      }
+    },
+    {
+      "id": "083a597c-d64b-4494-b0db-dde876eda3f0",
+      "name": "FlightClaw Search Only",
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "serverTransport": "httpStreamable",
+        "endpointUrl": "https://mcp.flightclaw.com/mcp",
+        "authentication": "mcpOAuth2Api",
+        "tool": {
+          "__rl": true,
+          "mode": "id",
+          "value": "search_flights"
+        },
+        "inputMode": "json",
+        "jsonInput": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "2836efe0-dc03-4de9-b00b-96da633531df",
+      "name": "Normalisasi penawaran",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const query=$('Validasi rute dan tanggal').first().json;\nconst response=$input.first().json;\nif (response.isError) throw Error('FlightClaw search failed');\nlet result=response.structuredContent ?? response;\nif (!Array.isArray(result.offers)) {\n  const texts=(Array.isArray(response.content)?response.content:[]).filter(item=>item.type==='text');\n  if (texts.length===1) try { result=JSON.parse(texts[0].text); } catch {}\n}\nif (!Array.isArray(result.offers)) throw Error('FlightClaw offers missing');\nconst now=Date.now();\nconst offers=result.offers.flatMap(offer=>{\n  const leg=offer.slices?.[0], total=Number(offer.total_amount);\n  if (offer.slices?.length!==1 || leg?.origin!==query.origin || leg.destination!==query.destination ||\n      !leg.departing_at?.startsWith(query.date+'T') || !offer.payable || !(Date.parse(offer.expires_at)>now) ||\n      !Number.isFinite(total) || total<=0 || !/^[A-Z]{3}$/.test(offer.currency ?? '') ||\n      typeof offer.airline?.name!=='string' || !Number.isInteger(leg.stops) || leg.stops<0) return [];\n  return [{total,currency:offer.currency,airline:offer.airline.name,stops:leg.stops,\n    departure:leg.departing_at.slice(11,16),arrival:leg.arriving_at?.slice(11,16)}];\n});\nif (result.offers.length && !offers.length) throw Error('No usable FlightClaw offers');\nconst currency=offers[0]?.currency;\nreturn [{json:{...query,offers:offers.filter(offer=>offer.currency===currency).sort((a,b)=>a.total-b.total).slice(0,5)}}];"
+      }
+    }
+  ],
+  "connections": {
+    "Permintaan Anshel": {
+      "main": [
+        [
+          {
+            "node": "Validasi rute dan tanggal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi rute dan tanggal": {
+      "main": [
+        [
+          {
+            "node": "FlightClaw Search Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FlightClaw Search Only": {
+      "main": [
+        [
+          {
+            "node": "Normalisasi penawaran",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  }
+}
