@@ -1,0 +1,68 @@
+# Lead Hunter & Flight Tracker — 22 November 2026
+
+Status: implementasi tersedia; koneksi sumber eksternal tetap bergantung pada akses yang benar-benar tersedia. Tidak ada lead atau harga fixture pada Production.
+
+## Perilaku
+
+- Jihan: input manual dengan bukti publikasi asli, feed JSON berizin, discovery Brave / Google Alerts, Gemini existing di n8n untuk klasifikasi buyer dan draf berdasarkan profil jasa. Publikasi maksimal 24 jam, konfigurasi lebih ketat diperbolehkan, skor default 75, deduplikasi URL dan isi, status tindak lanjut, inline keyboard. Tidak melakukan auto-comment/DM.
+- Alya: rute default SUB–BTH, rolling 30 hari tanpa tanggal wajib, pilihan 7/14/30/60/90, tanggal tertentu dan rentang, penumpang/kelas/bagasi/maskapai/transit/provider/budget. Beberapa monitoring, pause/resume/stop, penggantian rute atomik. Histori membandingkan provider, tanggal, penerbangan, kelas, bagasi, tarif dan penumpang yang sama. Notifikasi default kenaikan dan penurunan, juga down/up/budget/nominal/persen/harian.
+- Kalender WIB mengeluarkan tanggal lewat dan menambah tanggal baru. Perubahan minimum akibat pergeseran jendela bukan perubahan harga penerbangan. Kegagalan provider tidak membuat harga nol atau menandai penerbangan hilang.
+- State, lease 120 detik, revision, outbox, histori dan deduplikasi tersimpan. Pekerjaan tidak bergantung pada browser, laptop, aktivitas avatar atau jam kantor. Pekerjaan utama pegawai tetap mendapat prioritas. Jihan/Alya tampak bekerja hanya selama lease pekerjaan nyata aktif.
+- Outbox diperiksa kembali sebelum mengirim. Stop membatalkan antrean/job lama. Request Telegram yang telah terkirim ke jaringan tidak dapat ditarik kembali; timeout ambigu ditahan sebagai `uncertain`, tidak diulang otomatis. Penolakan yang terkonfirmasi dibatasi tiga percobaan.
+
+## Penyimpanan & keamanan
+
+Migration `20261122034020_lead_flight_automation.sql` menambah satu aggregate transaction `anshel.automation_state`, sesuai pola settings existing. Entitas lead, konfigurasi, watch, offer, snapshot, change, log, outbox dan usage merupakan struktur JSON terpisah di dalam aggregate; bukan sebelas tabel baru. PostgreSQL advisory lock melindungi transaksi lintas instance, SQLite memakai transaksi existing untuk lokal. Tidak ada perubahan kontrak task atau tabel proyek lain.
+
+RLS aktif, akses PUBLIC/anon/authenticated dicabut; hanya backend existing mengakses. API dashboard membutuhkan sesi pemilik dan pemeriksaan origin. Endpoint worker membutuhkan token n8n existing. Callback memeriksa identitas pemilik dan grup. Callback Jihan memakai secret turunan token existing, tanpa credential baru. Aktivasi menolak mengganti webhook Jihan jika sudah dipakai layanan lain. Bridge callback Alya mempertahankan trigger Telegram tunggal dan jalur pesan existing, dengan pemulihan workflow jika perubahan gagal.
+
+Batas: 20 watch, 50 antrean manual, 150 penawaran per batch, log 500, histori snapshot 20.000 / perubahan 10.000 sampai 180 hari, lead 2.000 sampai 180 hari, outbox 3.000 sampai 30 hari. Retensi dibatasi, bukan arsip tak terbatas. Aggregate ini cocok untuk pemantauan pribadi; volume besar memerlukan tabel histori terpisah/pagination sebelum memperluas kuota. Tidak ada pembelian tiket, auto-post, CAPTCHA bypass atau akses private API.
+
+## Konfigurasi sumber yang diperlukan
+
+| Sumber | Adapter | Batas faktual |
+|---|---|---|
+| Manual | Siap, publikasi asli harus diperiksa pemilik | Bukan pencarian otomatis |
+| Feed berizin | `LEAD_SOURCE_URL`, `LEAD_SOURCE_ALLOWED=true`, opsional `LEAD_SOURCE_TOKEN` | JSON version 1, posts maksimum 50; bukti original/owner_verified wajib |
+| Brave | `BRAVE_SEARCH_API_KEY` | Discovery; tanggal indeks/pembaruan tidak diterima sebagai publikasi |
+| Google Alerts | `GOOGLE_ALERTS_FEED_URL` dari feed resmi Google | Discovery; waktu alert tidak membuktikan umur postingan |
+| Facebook groups | Tidak memakai Groups API lama | Perlu feed berizin atau impor manual, tidak scraping grup |
+| Traveloka | Intake alert autentik melalui n8n | Perlu email/akses partner yang diizinkan; tidak mendukung rolling otomatis |
+| tiket.com | Intake alert autentik melalui n8n | Perlu email/akses partner yang diizinkan; tidak mendukung rolling otomatis |
+| Amadeus | API Production resmi | `AMADEUS_API_KEY`, `AMADEUS_API_SECRET`, `FLIGHT_API_DAILY_LIMIT` positif sesuai kuota yang diizinkan |
+
+Gemini memakai reference credential n8n yang sudah ada; alternatif backend opsional `GEMINI_API_KEY`, `GEMINI_AUTOMATION_MODEL`. `LEAD_AI_DAILY_LIMIT` default 12 membatasi panggilan. `FLIGHT_API_DAILY_LIMIT` default 0: API harga tidak diaktifkan tanpa kuota eksplisit; tidak mendaftarkan layanan berbayar.
+
+Amadeus memeriksa satu tanggal per tick per watch yang dipilih, round-robin, maksimal 50 hasil. Bila dibatasi 50, hasil tidak dianggap lengkap untuk menyimpulkan penerbangan hilang. Satu watch rolling 30 hari memerlukan hingga 30 tick untuk satu putaran; interval 15 menit adalah interval job, bukan jaminan setiap tanggal diperiksa tiap 15 menit. Banyak watch dibagi antar-tick. Tampilkan waktu pemeriksaan setiap observasi; ini periodic, bukan real-time. Cakupan maskapai bergantung provider.
+
+Intake email `/api/integrations/automation/price-alert` hanya aktif dengan `FLIGHT_ALERT_INTAKE_ENABLED=true`, token n8n, provider traveloka/tiket, messageId unik, sender domain benar dan hasil DKIM pass dari integration terpercaya. Payload memuat ID/revision watch specific serta penawaran yang dinormalisasi. Tidak ada koneksi inbox atau parser email provider yang diklaim aktif: template email asli dan izin mailbox/forwarding masih diperlukan. Satu flag intake tidak menjamin mailbox telah terhubung. Alert hanya mencatat perubahan yang dilaporkan provider.
+
+## Operasi cloud
+
+Dashboard privat: `/automation.html`, login sebagai Dika melalui kantor existing.
+
+- `POST /api/automation/scheduler {activate:true}` membuat/memperbarui hanya workflow bernama `Anshel · Lead Hunter + Flight Tracker · 24 jam`. Memakai credential reference N8N dan Gemini existing, cron `*/15 * * * *`, Asia/Jakarta. Tidak menyalin nilai rahasia ke repo. Memerlukan API n8n existing dengan scope yang cukup.
+- `POST /api/automation/callback-setup {}` memasang callback Jihan bila aman dan bridge callback pada workflow Alya existing. Tidak menambah Telegram trigger kedua.
+- Tick `/api/integrations/automation/tick`, hasil Gemini `/lead-result`, intake `/price-alert` dan `/callback` dilindungi token n8n.
+- Bima `/diagnosa` membaca tick terakhir, jumlah watch, status sumber dan kegagalan; tidak menyamakan database tersedia dengan sumber sehat.
+- Template workflow tersimpan di `workflows/office_leads_flights.json`, nonaktif dan tanpa nilai credential; installer mengambil reference existing, bukan credential palsu.
+- Tidak mengaktifkan Studio Scheduler, mengubah token, Nation City atau BCIFT.
+
+## Pengujian lokal
+
+44 tes modul automation: batas umur 1/6/23/24/>24 jam, original vs indeks/komentar/modified, duplikat, buyer vs seller/spam/job, prompt injection, persistence/restart, rolling WIB, seluruh window, harga setara, kegagalan provider, invalidasi route/pause/stop, seluruh mode notifikasi, deduplikasi/timeout outbox, autentikasi/CSRF, command natural, callback history/status, email spoof/revision, task priority, sumber dan scheduler reference.
+
+Suite regresi lengkap: 285/285 lulus; build Production lulus. Percobaan di lingkungan terbatas sempat gagal karena Windows EACCES pada koneksi localhost; pengulangan dengan akses lokal yang diperlukan lulus, tanpa mengubah tes agar mengabaikan kegagalan.
+
+Browser lokal: desktop 1440×1000 dan viewport sentuh 390×844, kosong tanpa fixture Production, watch tanpa tanggal, refresh/persistensi, pause/resume/edit/stop, grafik fare setara, status lead, XSS escaped, error koneksi dan pemulihan. Tidak ada pageerror. Ini emulasi viewport, bukan perangkat fisik. Script `scripts/check-office-automation.mjs`; screenshot di folder artifacts di luar repository. Angka harga pada screenshot lokal adalah fixture pengujian, bukan penawaran nyata.
+
+## Referensi resmi yang diperiksa
+
+- [Traveloka Price Alerts](https://www.traveloka.com/id-id/flights/price-alerts): push/email; bukan API bebas untuk semua perubahan.
+- [tiket.com perjanjian affiliate](https://www.tiket.com/public/downloads/b2b/affiliate/Affiliate_SyaratKetentuan_ID.pdf): akses partner memerlukan hubungan resmi.
+- [Brave Search API](https://api-dashboard.search.brave.com/api-reference/web/search/get): freshness dapat mencakup publikasi atau modifikasi.
+- [Amadeus for Developers FAQ](https://amadeus4dev.github.io/developer-guides/faq/): test dataset dan cakupan berbeda dengan Production.
+
+## Checkpoint rilis
+
+Lihat laporan rilis setelah pemeriksaan GitHub/Vercel/n8n dan smoke test Production. Jangan menyebut pencarian lead/harga live berhasil sebelum akses sumber dan datanya diuji. Sampai akses itu tersedia, tidak ada waktu postingan lead terbaru atau harga aktual yang dapat dilaporkan.

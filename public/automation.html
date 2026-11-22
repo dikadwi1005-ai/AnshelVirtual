@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Automation · Anshel Virtual Tech</title>
+  <link rel="stylesheet" href="/automation.css">
+</head>
+<body>
+  <header><a href="/" class="brand">Anshel Virtual Tech</a><nav aria-label="Automation"><button data-tab="leads" aria-pressed="true">Lead Hunter · Jihan</button><button data-tab="flights" aria-pressed="false">Tiket · Alya</button><a href="/">Kembali ke kantor</a></nav></header>
+  <main>
+    <div class="page-heading"><div><p class="eyebrow">Automation</p><h1 id="page-title">Lead Hunter</h1></div><button id="refresh">Segarkan</button></div>
+    <p id="feedback" role="status">Memuat data privat…</p>
+    <section id="leads-view">
+      <div id="lead-summary" class="metrics"></div>
+      <div class="workspace-grid">
+        <section><h2>Calon pelanggan</h2>
+          <div class="toolbar"><label>Cari<input type="search" id="lead-search" placeholder="Kebutuhan, platform atau kategori"></label><label>Status<select id="lead-filter"><option value="">Semua</option><option value="new">Baru</option><option value="commented">Dikomentari</option><option value="negotiating">Negosiasi</option><option value="deal">Deal</option><option value="skipped">Dilewati</option><option value="irrelevant">Tidak relevan</option></select></label></div>
+          <div id="lead-list"></div>
+          <details><summary>Penemuan yang masih memerlukan bukti publikasi asli</summary><div id="lead-discovery"></div></details>
+          <details><summary>Masukkan postingan untuk dianalisis</summary>
+            <form id="lead-input">
+              <label>URL postingan asli<input type="url" name="url" required placeholder="https://"></label>
+              <label>Platform<input name="platform" required maxlength="70" placeholder="Facebook, forum atau sumber berizin"></label>
+              <label>Grup, bila tersedia<input name="group" maxlength="160"></label>
+              <label>Publikasi asli · WIB<input type="datetime-local" name="published" required></label>
+              <label>Bukti waktu publikasi<textarea name="publicationProof" required maxlength="1000" placeholder="Tuliskan keterangan tanggal dan waktu yang tampak pada postingan asli."></textarea></label>
+              <label>Teks postingan<textarea name="text" required maxlength="12000" rows="5"></textarea></label>
+              <button type="submit">Antrekan analisis</button>
+            </form>
+          </details>
+        </section>
+        <aside>
+          <form id="lead-settings"><h2>Pengaturan pencarian</h2>
+            <div class="toolbar"><button type="button" data-lead-enabled="true">Aktifkan / cari sekarang</button><button type="button" data-lead-enabled="false">Hentikan</button></div>
+            <label>Kata kunci · satu per baris<textarea name="keywords" rows="4"></textarea></label>
+            <div class="form-grid"><label>Maksimal usia · jam<input name="maxAgeHours" type="number" min=".25" max="24" step=".25" required></label><label>Skor minimal<input name="minScore" type="number" min="0" max="100" required></label><label>Interval · menit<input name="intervalMinutes" type="number" min="15" max="1440" required></label></div>
+            <button type="submit">Simpan pengaturan</button>
+          </form>
+          <details><summary>Profil jasa dan ketentuan penawaran</summary><form id="service-profile">
+            <label>Nama bisnis<input name="business" maxlength="700"></label>
+            <label>Layanan · pisahkan dengan koma<input name="services" maxlength="1000"></label>
+            <label>Portofolio<input name="portfolio" maxlength="700"></label>
+            <label>Kontak<input name="contact" maxlength="700"></label>
+            <label>Harga opsional<input name="price" maxlength="700"></label>
+            <label>DP<input name="deposit" maxlength="700"></label>
+            <label>Ketentuan pelunasan<input name="settlement" maxlength="700"></label>
+            <label>Garansi bug<input name="bugWarranty" maxlength="700"></label>
+            <label>Revisi<input name="revisions" maxlength="700"></label>
+            <label>Gaya bahasa<input name="tone" maxlength="700"></label>
+            <button type="submit">Simpan profil</button>
+          </form></details>
+        </aside>
+      </div>
+    </section>
+    <section id="flights-view" hidden>
+      <div class="workspace-grid">
+        <section><h2>Monitoring tiket</h2><div id="watch-list"></div>
+          <div class="toolbar"><button id="stop-all">Stop semua monitoring</button><label>Monitoring untuk histori<select id="history-watch"></select></label></div>
+          <h2>Kalender harga teramati</h2><p class="hint">Harga total IDR dari observasi yang berhasil. Tanggal kosong belum memiliki penawaran terverifikasi.</p><div id="price-calendar" class="calendar"></div>
+          <h2>Perubahan harga</h2><label>Penerbangan dan kondisi tarif untuk grafik<select id="history-fare"></select></label><div id="price-chart" class="price-chart" aria-label="Grafik harga satu penerbangan dengan tarif setara"></div>
+          <div class="table-wrap"><table><thead><tr><th>Tanggal terbang</th><th>Provider / penerbangan</th><th>Perubahan</th><th>Bagasi</th><th>Diperiksa · WIB</th></tr></thead><tbody id="price-history"></tbody></table></div>
+          <h2>Penawaran terakhir</h2><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Provider</th><th>Penerbangan / kelas</th><th>Harga total</th><th>Bagasi</th></tr></thead><tbody id="flight-offers"></tbody></table></div>
+        </section>
+        <aside><form id="watch-settings"><h2 id="watch-form-title">Tambah monitoring</h2>
+          <input type="hidden" name="id"><div class="form-grid"><label>Dari<input name="from" value="SUB" required pattern="[A-Za-z]{3}" maxlength="3"></label><label>Ke<input name="to" value="BTH" required pattern="[A-Za-z]{3}" maxlength="3"></label></div>
+          <label>Mode tanggal<select name="mode"><option value="rolling">Rolling · tanggal bergerak setiap hari</option><option value="specific">Tanggal spesifik</option><option value="range">Rentang tanggal</option></select></label>
+          <label>Jendela rolling<select name="windowDays"><option>7</option><option>14</option><option selected>30</option><option>60</option><option>90</option></select></label>
+          <label>Tanggal keberangkatan opsional<input type="date" name="date"></label>
+          <div class="form-grid"><label>Mulai rentang<input type="date" name="start"></label><label>Akhir rentang<input type="date" name="end"></label></div>
+          <label>Perjalanan<select name="trip"><option value="oneway">Satu arah</option><option value="roundtrip">Pulang pergi</option></select></label>
+          <label>Tanggal pulang<input type="date" name="returnDate"></label>
+          <div class="form-grid"><label>Penumpang<input type="number" name="passengers" min="1" max="9" value="1" required></label><label>Interval · menit<input type="number" name="intervalMinutes" min="15" max="1440" value="15" required></label></div>
+          <label>Kelas<select name="cabin"><option>ECONOMY</option><option>PREMIUM_ECONOMY</option><option>BUSINESS</option><option>FIRST</option></select></label>
+          <label>Maskapai · kode IATA, kosong untuk semua<input name="airlines" placeholder="JT,QG"></label>
+          <label>Transit<select name="nonstop"><option value="false">Langsung atau transit</option><option value="true">Langsung</option></select></label>
+          <label>Bagasi<select name="baggage"><option value="any">Semua</option><option value="included">Termasuk</option><option value="none">Tanpa persyaratan bagasi tambahan</option></select></label>
+          <label>Provider<select name="providers"><option value="connected">Semua provider terhubung</option><option value="traveloka">Traveloka · Price Alert</option><option value="tiket">tiket.com · Price Alert</option><option value="traveloka,tiket">Traveloka dan tiket.com</option><option value="amadeus">Amadeus</option><option value="manual">Manual</option></select></label>
+          <label>Budget maksimal opsional<input name="budget" type="number" min="1" step="1" placeholder="IDR"></label>
+          <label>Notifikasi<select name="notification"><option value="all">Semua perubahan</option><option value="down">Hanya turun</option><option value="up">Hanya naik</option><option value="budget">Di bawah budget</option><option value="amount">Minimal nominal</option><option value="percent">Minimal persen</option><option value="daily">Ringkasan harian</option></select></label>
+          <label>Batas nominal atau persen<input name="threshold" type="number" min="0" value="0"></label>
+          <div class="toolbar"><button type="submit">Simpan monitoring</button><button type="button" id="watch-reset">Buat baru</button></div>
+        </form></aside>
+      </div>
+    </section>
+    <section><h2>Kesehatan koneksi</h2><p id="scheduler-state"></p>
+      <div class="toolbar"><button id="scheduler-connect">Hubungkan scheduler cloud 15 menit</button><button id="callback-connect">Hubungkan tombol Telegram Jihan</button></div>
+      <p class="hint">Koneksi memakai credential existing. Provider pencarian dan harga memerlukan akses yang diizinkan sebelum menghasilkan data.</p>
+      <div class="table-wrap"><table><thead><tr><th>Sumber</th><th>Kemampuan</th><th>Status</th><th>Keterangan</th></tr></thead><tbody id="provider-health"></tbody></table></div></section>
+    <details><summary>Riwayat pencarian dan pemeriksaan</summary><div class="table-wrap"><table><thead><tr><th>Waktu · WIB</th><th>Modul</th><th>Tindakan</th><th>Hasil</th></tr></thead><tbody id="scan-log"></tbody></table></div></details>
+  </main>
+  <script type="module" src="/automation.js"></script>
+</body>
+</html>

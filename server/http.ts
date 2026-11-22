@@ -8,6 +8,9 @@ import { createStore, Fault } from './store.ts';
 import { telegram } from './telegram.ts';
 import { createDialogue } from './dialogue.ts';
 import { validPresence } from './office-presence.ts';
+import { AutomationFault } from './automation-domain.ts';
+import { officeAutomationWork, ownerAutomationAction, runOfficeAutomation, finishLeadAnalysis, ingestPriceAlert } from './automation-service.ts';
+import { handleAutomationCallback } from './automation-commands.ts';
 import { createNationCity } from './nation-city.ts';
 import { ownerAutomation, runAutomation } from './studio-schedule.ts';
 
@@ -148,7 +151,20 @@ export function officeHandler(store, env = process.env) {
           if (Object.keys(await json(req)).length) throw new Fault(400,'Pemicu jadwal tidak menerima parameter.');
           return respond(await runAutomation(store));
         }
+        if (path.startsWith('/api/integrations/automation/') && post) {
+          if (!configured(env.N8N_TOKEN) || !equal(bearer,env.N8N_TOKEN)) throw new Fault(401,'Token n8n ditolak.');
+          const input=await json(req);
+          if (path.endsWith('/tick')) {
+            if (Object.keys(input).length) throw new Fault(400,'Tick tidak menerima input.');
+            return respond(await runOfficeAutomation(store,env));
+          }
+          if (path.endsWith('/lead-result')) return respond(await finishLeadAnalysis(store,input.job,input.response));
+          if (path.endsWith('/price-alert')) return respond(await ingestPriceAlert(store,env,input));
+          if (path.endsWith('/callback')) return respond(await handleAutomationCallback(store,env,input));
+        }
         if (!authed) throw new Fault(401,'Masuk sebagai Dika untuk melanjutkan.');
+        if (path==='/api/automation' && (post || req.method==='GET'))
+          return respond(await ownerAutomationAction(store,post?await json(req):undefined,env));
         if (path === '/api/logout' && post) {
           sessions.delete(token);
           if (typeof store.deleteSession === 'function') await store.deleteSession(token);
@@ -156,7 +172,7 @@ export function officeHandler(store, env = process.env) {
           return respond({authenticated:false});
         }
         if (path === '/api/state' && req.method === 'GET') return respond({
-          ...await store.state(),dialogueEnabled:dialogue.enabled,dialogueStatus:dialogue.status,
+          ...await officeAutomationWork(store,await store.state()),dialogueEnabled:dialogue.enabled,dialogueStatus:dialogue.status,
         });
         if (path === '/api/dialogue' && post) return respond(await dialogue.generate(await json(req)));
         if (path==='/api/studio/replay' && (post || req.method==='GET'))
@@ -201,7 +217,7 @@ export function officeHandler(store, env = process.env) {
       res.writeHead(200,{'Content-Type':mime[extname(file)],'Content-Length':content.length,'Cache-Control':cache});
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch(error) {
-      if (error instanceof Fault) return respond({error:error.message},error.status);
+      if (error instanceof Fault || error instanceof AutomationFault) return respond({error:error.message},error.status);
       if (error instanceof URIError) return respond({error:'URL tidak valid.'},400);
       console.error(error);
       respond({error:'Kesalahan internal.'},500);

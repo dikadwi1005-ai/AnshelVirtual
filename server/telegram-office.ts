@@ -130,6 +130,7 @@ export async function sendOfficeBotMessage(env,division,text,options={}) {
   if (typeof text!=='string'||!text.trim()||text.length>3800) throw new Fault(400,'Pesan bot tidak valid.');
   const token=config.parsed[division];
   const payload={chat_id:env.TELEGRAM_CHAT_ID,text,disable_notification:options.silent===true};
+  if (options.replyMarkup) payload.reply_markup=options.replyMarkup;
   if (Number.isSafeInteger(options.replyTo)&&options.replyTo>0) {
     payload.reply_parameters={message_id:options.replyTo,allow_sending_without_reply:true};
   }
