@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { reserveSourceBudget } from './automation-budget.ts';
+import { flightEmailStatus, recordFlightEmail } from './automation-flight-email.ts';
 
 export class AutomationFault extends Error {
   status: number;
@@ -87,7 +88,7 @@ export function flightWatch(input,now) {
   requireValue(['all','down','up','budget','amount','percent','daily'].includes(notification),'Mode notifikasi tidak valid.');
   const providers=input.providers ?? ['connected'];
   requireValue(Array.isArray(providers) && providers.length>0 && providers.length<=4 &&
-    providers.every(value=>['connected','traveloka','tiket','amadeus','skyscanner','manual'].includes(value)),'Provider tidak valid.');
+    providers.every(value=>['connected','google-flights','traveloka','tiket','amadeus','skyscanner','manual'].includes(value)),'Provider tidak valid.');
   const airlines=input.airlines ?? [];
   requireValue(Array.isArray(airlines) && airlines.length<=10 && airlines.every(value=>/^[A-Z0-9]{2}$/.test(value)),'Kode maskapai tidak valid.');
   const threshold=Number(input.threshold ?? 0);
@@ -169,7 +170,7 @@ export function automationOperation(current,input,now=Date.now()) {
     const settings=flightWatch({...old,...input.config},now);
     const watch={...settings,id:old?.id ?? randomUUID(),revision:(old?.revision ?? 0)+1,
       status:old?.status ?? 'active',created:old?.created ?? now,nextAt:now,lastAt:old?.lastAt ?? null,
-      lease:null,cursor:0};
+      lease:null,cursor:0,emailSince:now};
     if (old) Object.assign(old,watch); else state.watches.push(watch);
     result={watch};
   } else if (input.action==='watch-route') {
@@ -186,7 +187,7 @@ export function automationOperation(current,input,now=Date.now()) {
       if (input.control==='check') { watch.nextAt=now; continue; }
       watch.revision++;watch.lease=null;
       watch.status={pause:'paused',resume:'active',stop:'stopped',delete:'deleted'}[input.control];
-      watch.nextAt=now;
+      watch.nextAt=now;watch.emailSince=now;
     }
     result={ok:true,count:targets.length};
   } else if (input.action==='lead-status') {
@@ -369,6 +370,8 @@ export function automationOperation(current,input,now=Date.now()) {
       watch.summaryDay=day;
     }
     result={ok:true};
+  } else if (input.action==='flight-email') {
+    result=recordFlightEmail(state,input,now,enqueue);
   } else if (input.action==='outbox-claim') {
     result=null;
     for (const item of state.outbox) {
@@ -394,7 +397,7 @@ export function automationOperation(current,input,now=Date.now()) {
     result=!prior;
     if (!prior) state.commands.push({key:input.key,at:now});
   } else throw new AutomationFault('Tindakan automation tidak dikenal.');
-  if (!['view','claim','outbox-claim','outbox-finish','source','source-budget','discovery','finish','command','lead-ingest','flight-ingest','usage','lead-stage','daily-summary'].includes(input.action))
+  if (!['view','claim','outbox-claim','outbox-finish','source','source-budget','discovery','finish','command','lead-ingest','flight-ingest','flight-email','usage','lead-stage','daily-summary'].includes(input.action))
     log(state,module ?? (input.action.startsWith('lead')?'leads':'flights'),input.action,now,{id:input.id ?? null});
   state.commands=state.commands.filter(command=>command.at>now-7*86400000).slice(-5000);
   state.snapshots=state.snapshots.filter(row=>row.observedAt>now-180*86400000).slice(-20000);
@@ -412,6 +415,7 @@ export function automationView(state,now) {
     sixHours:copy.leads.filter(l=>now-l.publishedAt<=6*3600000).length,
     ...Object.fromEntries(leadStates.map(status=>[status,copy.leads.filter(lead=>lead.status===status).length]))};
   copy.now=now;
+  copy.flightEmail=flightEmailStatus(state,now);
   return copy;
 }
 export function formatLead(lead,now) {

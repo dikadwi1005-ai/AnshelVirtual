@@ -56,7 +56,9 @@
     <section id="flights-view" hidden>
       <div class="workspace-grid">
         <section><h2>Monitoring tiket</h2><div id="watch-list"></div>
+          <p id="flight-email-state" aria-live="polite"></p>
           <div class="toolbar"><button id="stop-all">Stop semua monitoring</button><label>Monitoring untuk histori<select id="history-watch"></select></label></div>
+          <div id="flight-email-history"></div>
           <h2>Kalender harga teramati</h2><p class="hint">Harga total IDR dari observasi yang berhasil. Tanggal kosong belum memiliki penawaran terverifikasi.</p><div id="price-calendar" class="calendar"></div>
           <h2>Perubahan harga</h2><label>Penerbangan dan kondisi tarif untuk grafik<select id="history-fare"></select></label><div id="price-chart" class="price-chart" aria-label="Grafik harga satu penerbangan dengan tarif setara"></div>
           <div class="table-wrap"><table><thead><tr><th>Tanggal terbang</th><th>Provider / penerbangan</th><th>Perubahan</th><th>Bagasi</th><th>Diperiksa · WIB</th></tr></thead><tbody id="price-history"></tbody></table></div>

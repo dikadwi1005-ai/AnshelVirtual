@@ -46,6 +46,19 @@ function renderLeads() {
   }).join(''):'<p class="empty">Belum ada lead yang sesuai. Postingan hanya masuk setelah waktu publikasi asli dan analisis kebutuhan lolos.</p>';
 }
 function renderFlights() {
+  const mail=state.flightEmail;
+  $('flight-email-state').textContent=mail ? [
+    mail.connected?'Gmail Connected':'Gmail Not Connected',
+    mail.connection==='oauth_authorization_required'?'OAuth Authorization Required':'',
+    {waiting_for_first_alert:'Waiting for First Alert',alert_received:'Alert Received',
+      unsupported_format:'Unsupported Email Format'}[mail.status],
+    mail.parserVerified?'Parser Verified untuk alert yang tersimpan':'',
+    'Email harga diproses '+mail.counts.processed+', Google Flights '+mail.counts['google-flights']+
+      ', Traveloka '+mail.counts.traveloka+', duplikat '+mail.counts.duplicates+', parser error '+mail.counts.parserErrors,
+    'Email terakhir '+when(mail.lastReceivedAt),
+    'Last Successful Processing '+when(mail.lastProcessedAt),
+    'Telegram Delivery Status '+(mail.delivery ?? 'Belum ada pengiriman')
+  ].filter(Boolean).join(' · ') : 'Gmail Not Connected · OAuth Authorization Required';
   const watches=state.watches.filter(w=>w.status!=='deleted');
   $('watch-list').innerHTML=watches.length?watches.map(watch=>{
     const latest=state.offers.filter(offer=>offer.watchId===watch.id && offer.revision===watch.revision &&
@@ -69,6 +82,14 @@ function renderFlights() {
 }
 function renderHistory() {
   const id=$('history-watch').value,watch=state.watches.find(w=>w.id===id);
+  const alerts=(state.flightEmail?.history ?? []).filter(alert=>alert.watchIds.includes(id)).slice(-15).reverse();
+  $('flight-email-history').replaceChildren(...alerts.map(alert=>{
+    const line=document.createElement('p');
+    const price=new Intl.NumberFormat('id-ID',{style:'currency',currency:alert.currency}).format(alert.total);
+    line.textContent=(alert.provider==='google-flights'?'Google Flights':'Traveloka')+' · '+
+      (alert.date ?? 'Semua tanggal (harga minimum rute)')+' · '+price+' · '+when(alert.receivedAt)+' WIB';
+    return line;
+  }));
   if (!watch) {for(const key of ['price-calendar','price-chart','price-history','flight-offers']) $(key).replaceChildren();return;}
   const offers=state.offers.filter(offer=>offer.watchId===id && offer.revision===watch.revision &&
     offer.available && watch.dates.includes(offer.date));

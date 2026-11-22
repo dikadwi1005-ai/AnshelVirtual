@@ -1,0 +1,371 @@
+{
+  "name": "Anshel · Gmail Flight Alerts · Alya",
+  "nodes": [
+    {
+      "id": "flight-mail-1",
+      "name": "Setiap 15 menit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "flight-mail-label",
+      "name": "Cari ID label Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "flight-mail-pick-label",
+      "name": "Pilih Anshel/FlightAlerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst label = response.statusCode === 200 && Array.isArray(response.body?.labels)\n  ? response.body.labels.find(row => row.name === 'Anshel/FlightAlerts' && row.type === 'user' && /^Label_\\d+$/.test(row.id))\n  : null;\nreturn [{json:{labelId:label?.id ?? '', hasLabel:Boolean(label)}}];"
+      }
+    },
+    {
+      "id": "flight-mail-guard-label",
+      "name": "Label tersedia",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "gmail-label-present",
+              "leftValue": "={{ $json.hasLabel }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "flight-mail-2",
+      "name": "Cari label Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "labelIds",
+              "value": "={{ $json.labelId }}"
+            },
+            {
+              "name": "q",
+              "value": "newer_than:2d {from:(@google.com) from:(@traveloka.com)}"
+            },
+            {
+              "name": "maxResults",
+              "value": "50"
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "flight-mail-3",
+      "name": "Status polling",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -200
+      ],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst ok = response.statusCode === 200 && response.body && !response.body.nextPageToken;\nreturn [{json:{poll:ok ? 'connected' : 'error'}}];"
+      }
+    },
+    {
+      "id": "flight-mail-4",
+      "name": "ID email berlabel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nif (response.statusCode !== 200 || !Array.isArray(response.body?.messages)) return [];\nreturn response.body.messages.filter(row => /^[a-f0-9]{8,64}$/i.test(row.id)).map(row => ({json:{id:row.id}}));"
+      }
+    },
+    {
+      "id": "flight-mail-5",
+      "name": "Baca email terfilter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        0
+      ],
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "url": "={{ 'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + $json.id + '?format=full' }}"
+      }
+    },
+    {
+      "id": "flight-mail-6",
+      "name": "Ambil hanya metadata dan isi alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const result = [];\nconst labelId = $('Pilih Anshel/FlightAlerts').first().json.labelId;\nfor (const item of $input.all()) {\n  if (item.json.statusCode !== 200) continue;\n  const message = item.json.body;\n  const payload = message?.payload;\n  if (!payload || !Array.isArray(payload.headers) || !message.labelIds?.includes(labelId)) continue;\n  const headers = payload.headers.filter(row => ['from','subject','authentication-results'].includes(row.name.toLowerCase()));\n  const from = headers.find(row => row.name.toLowerCase() === 'from')?.value ?? '';\n  const subject = headers.find(row => row.name.toLowerCase() === 'subject')?.value ?? '';\n  if (!(/@google\\.com>?\\s*$/i.test(from) && /google.?flights|price track|tracked flight|harga penerbangan/i.test(subject) ||\n     /@(?:[\\w-]+\\.)*traveloka\\.com>?\\s*$/i.test(from) && /price alert|notifikasi harga|pantauan harga/i.test(subject))) continue;\n  let remaining = 45000;\n  function select(part, depth = 0) {\n    if (depth > 5 || part.filename) return {};\n    const mimeType = part.mimeType;\n    if (mimeType?.startsWith('multipart/')) return {mimeType, parts:(part.parts ?? []).slice(0,12).map(child => select(child, depth+1))};\n    const data = part.body?.data;\n    if (!['text/plain','text/html'].includes(mimeType) || typeof data !== 'string' || data.length > remaining) return {};\n    remaining -= data.length;\n    return {mimeType,body:{data}};\n  }\n  result.push({json:{replay:true,message:{id:message.id,internalDate:message.internalDate,labelIds:message.labelIds,payload:{...select(payload),headers}}}});\n}\nreturn result;"
+      }
+    },
+    {
+      "id": "flight-mail-7",
+      "name": "Catat autentikasi Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        -200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/automation/gmail-flight-alert",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 45000
+        }
+      }
+    },
+    {
+      "id": "flight-mail-8",
+      "name": "Intake Flight Tracker Alya",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/automation/gmail-flight-alert",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Setiap 15 menit": {
+      "main": [
+        [
+          {
+            "node": "Cari ID label Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cari label Gmail": {
+      "main": [
+        [
+          {
+            "node": "Status polling",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ID email berlabel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ID email berlabel": {
+      "main": [
+        [
+          {
+            "node": "Baca email terfilter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baca email terfilter": {
+      "main": [
+        [
+          {
+            "node": "Ambil hanya metadata dan isi alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status polling": {
+      "main": [
+        [
+          {
+            "node": "Catat autentikasi Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil hanya metadata dan isi alert": {
+      "main": [
+        [
+          {
+            "node": "Intake Flight Tracker Alya",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cari ID label Gmail": {
+      "main": [
+        [
+          {
+            "node": "Pilih Anshel/FlightAlerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pilih Anshel/FlightAlerts": {
+      "main": [
+        [
+          {
+            "node": "Label tersedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label tersedia": {
+      "main": [
+        [
+          {
+            "node": "Cari label Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status polling",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "executionTimeout": 150
+  },
+  "active": false
+}

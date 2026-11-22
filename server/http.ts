@@ -9,7 +9,7 @@ import { telegram } from './telegram.ts';
 import { createDialogue } from './dialogue.ts';
 import { validPresence } from './office-presence.ts';
 import { AutomationFault } from './automation-domain.ts';
-import { officeAutomationWork, ownerAutomationAction, runOfficeAutomation, finishLeadAnalysis, ingestPriceAlert } from './automation-service.ts';
+import { officeAutomationWork, ownerAutomationAction, runOfficeAutomation, finishLeadAnalysis, ingestPriceAlert, ingestGmailFlightAlert } from './automation-service.ts';
 import { handleAutomationCallback } from './automation-commands.ts';
 import { createNationCity } from './nation-city.ts';
 import { ownerAutomation, runAutomation } from './studio-schedule.ts';
@@ -160,6 +160,7 @@ export function officeHandler(store, env = process.env) {
           }
           if (path.endsWith('/lead-result')) return respond(await finishLeadAnalysis(store,input.job,input.response));
           if (path.endsWith('/price-alert')) return respond(await ingestPriceAlert(store,env,input));
+          if (path==='/api/integrations/automation/gmail-flight-alert') return respond(await ingestGmailFlightAlert(store,env,input));
           if (path.endsWith('/callback')) return respond(await handleAutomationCallback(store,env,input));
         }
         if (!authed) throw new Fault(401,'Masuk sebagai Dika untuk melanjutkan.');

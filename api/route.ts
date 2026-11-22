@@ -9,7 +9,7 @@ import { validPresence } from '../server/office-presence.ts';
 import { createNationCity } from '../server/nation-city.ts';
 import { notifyAutomation, ownerAutomation, runAutomation } from '../server/studio-schedule.ts';
 import { AutomationFault } from '../server/automation-domain.ts';
-import { officeAutomationWork, ownerAutomationAction, runOfficeAutomation, finishLeadAnalysis, ingestPriceAlert } from '../server/automation-service.ts';
+import { officeAutomationWork, ownerAutomationAction, runOfficeAutomation, finishLeadAnalysis, ingestPriceAlert, ingestGmailFlightAlert } from '../server/automation-service.ts';
 import { handleAutomationCallback } from '../server/automation-commands.ts';
 import { setupAutomationScheduler, configureAutomationCallbacks, prepareAlyaCallbackWorkflow, callbackSecret } from '../server/automation-n8n.ts';
 
@@ -111,6 +111,8 @@ async function route(request, injectedStore = null, env = process.env) {
       }
       if (path==='/api/integrations/automation/price-alert')
         return respond(await ingestPriceAlert(office,env,await readJson(request)));
+      if (path==='/api/integrations/automation/gmail-flight-alert')
+        return respond(await ingestGmailFlightAlert(office,env,await readJson(request)));
       if (path==='/api/integrations/automation/callback')
         return respond(await handleAutomationCallback(office,env,await readJson(request)));
       if (path==='/api/integrations/studio-tick') {
