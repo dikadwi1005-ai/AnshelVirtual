@@ -20,6 +20,18 @@ Batas: 20 watch, 50 antrean manual, 150 penawaran per batch, log 500, histori sn
 
 ## Konfigurasi sumber yang diperlukan
 
+### Aktivasi sumber aktual
+
+1. [Google Alerts](https://www.google.com/alerts) — buat alert untuk kueri seperti `"butuh jasa pembuatan website" OR "cari developer aplikasi"`. Di **Show options**, pilih notifikasi sesegera mungkin, bahasa Indonesia, dan **RSS feed** jika tersedia di akun. Simpan URL ikon RSS yang berawalan `https://www.google.com/alerts/feeds/` sebagai `GOOGLE_ALERTS_FEED_URL`. Simpan URL sebagai rahasia. Periksa halaman asli sebelum memasukkan kandidat melalui dashboard. Waktu di feed adalah waktu alert.
+2. [Brave Search API](https://api-dashboard.search.brave.com/) — buat key Search setelah memastikan kredit bulanan, atribusi, hak simpan, dan pengaturan batas biaya sesuai akun. Simpan key sebagai `BRAVE_SEARCH_API_KEY` dan set `BRAVE_SEARCH_ALLOWED=true` hanya setelah ketentuan tersebut terpenuhi. Batas aplikasi adalah 600 pencarian per bulan WIB, maksimum 20 per hari dan jeda minimum satu jam. Gunakan juga batas di dashboard Brave karena penggunaan dari aplikasi lain tidak tercatat di sini. [Dokumentasi pengaturan batas Brave](https://api-dashboard.search.brave.com/documentation/resources/help-feedback).
+3. [Skyscanner Travel API](https://developers.skyscanner.net/docs/getting-started/authentication) — ajukan akses partner dan minta konfirmasi tertulis untuk polling otomatis, histori tarif, notifikasi Telegram dan cakupan SUB–BTH di pasar ID. [Akses Live standar mensyaratkan setiap pencarian dipicu pengguna](https://developers.skyscanner.net/docs/getting-started/usage-guidelines). Jika partner menyetujui penggunaan ini tanpa biaya, set `SKYSCANNER_API_KEY`, `SKYSCANNER_MONITORING_ALLOWED=true`, `SKYSCANNER_STORAGE_ALLOWED=true`, `SKYSCANNER_DAILY_LIMIT` dan `SKYSCANNER_MONTHLY_LIMIT` sesuai kuota tertulis. Satu tanggal memakai reservasi dua panggilan untuk create dan satu kemungkinan poll, dengan jeda minimum satu jam antarreservasi.
+4. [Google Flights SUB–BTH](https://www.google.com/travel/flights/flights-from-surabaya-to-batam.html) — untuk alert resmi tanpa tanggal, pilih rute SUB–BTH, aktifkan **Track prices**, lalu pilih **Any dates**. Google mengirim email untuk penurunan minimum yang signifikan dan pembaruan berkala. Ini pilihan terpisah yang belum terhubung ke Telegram. [Cara kerja Google Flights Price Tracking](https://support.google.com/travel/answer/6235879).
+5. Untuk Traveloka dan tiket.com, aktifkan alert di akun pemilik sesuai akses yang tersedia. Gunakan hanya email alert yang sah dari mailbox yang diotorisasi. Sebelum mengaktifkan intake, konfirmasi ketentuan penerusan/pemrosesan dengan provider dan gunakan contoh pesan yang telah disamarkan untuk memetakan rute, tanggal, harga, identitas pesan, dan autentikasi pengirim. Integrasi tepercaya harus memverifikasi DKIM asli sebelum membentuk payload. [Traveloka Price Alerts](https://www.traveloka.com/id-id/flights/price-alerts) · [tiket.com Price Alert](https://www.tiket.com/id-id/stories/tips/mencari-promo-tiket-pesawat-2026).
+
+Amadeus menutup portal Self-Service pada 17 Juli 2026. Duffel mengenakan biaya Excess Search untuk rasio pencarian terhadap pemesanan yang terlalu tinggi. Aviasales Flight Search mensyaratkan pencarian yang dipicu pengguna, sementara Data API mengambil harga cache dan perlu validasi cakupan SUB–BTH. [Amadeus Enterprise](https://developers.amadeus.com/) · [Duffel Excess Search](https://help.duffel.com/hc/en-gb/articles/4412912264466-What-is-Excess-Search) · [Aturan Search API Aviasales](https://support.travelpayouts.com/hc/en-us/articles/34788165535250-Search-API-usage-rules) · [Dokumentasi Data API Aviasales](https://support.travelpayouts.com/hc/en-us/articles/203956163-Aviasales-Data-API).
+
+### Ringkasan adapter
+
 | Sumber | Adapter | Batas faktual |
 |---|---|---|
 | Manual | Siap, publikasi asli harus diperiksa pemilik | Bukan pencarian otomatis |
@@ -29,11 +41,12 @@ Batas: 20 watch, 50 antrean manual, 150 penawaran per batch, log 500, histori sn
 | Facebook groups | Tidak memakai Groups API lama | Perlu feed berizin atau impor manual, tidak scraping grup |
 | Traveloka | Intake alert autentik melalui n8n | Perlu email/akses partner yang diizinkan; tidak mendukung rolling otomatis |
 | tiket.com | Intake alert autentik melalui n8n | Perlu email/akses partner yang diizinkan; tidak mendukung rolling otomatis |
-| Amadeus | API Production resmi | `AMADEUS_API_KEY`, `AMADEUS_API_SECRET`, `FLIGHT_API_DAILY_LIMIT` positif sesuai kuota yang diizinkan |
+| Amadeus | Self-Service dihentikan | Adapter lama tidak digunakan |
+| Skyscanner | API partner, nonaktif secara bawaan | Key, izin penggunaan rolling dan histori, serta batas kuota harian dan bulanan |
 
-Gemini memakai reference credential n8n yang sudah ada; alternatif backend opsional `GEMINI_API_KEY`, `GEMINI_AUTOMATION_MODEL`. `LEAD_AI_DAILY_LIMIT` default 12 membatasi panggilan. `FLIGHT_API_DAILY_LIMIT` default 0: API harga tidak diaktifkan tanpa kuota eksplisit; tidak mendaftarkan layanan berbayar.
+Gemini memakai reference credential n8n yang sudah ada; alternatif backend opsional `GEMINI_API_KEY`, `GEMINI_AUTOMATION_MODEL`. `LEAD_AI_DAILY_LIMIT` default 12 membatasi panggilan.
 
-Amadeus memeriksa satu tanggal per tick per watch yang dipilih, round-robin, maksimal 50 hasil. Bila dibatasi 50, hasil tidak dianggap lengkap untuk menyimpulkan penerbangan hilang. Satu watch rolling 30 hari memerlukan hingga 30 tick untuk satu putaran; interval 15 menit adalah interval job, bukan jaminan setiap tanggal diperiksa tiap 15 menit. Banyak watch dibagi antar-tick. Tampilkan waktu pemeriksaan setiap observasi; ini periodic, bukan real-time. Cakupan maskapai bergantung provider.
+Skyscanner memeriksa satu tanggal per reservasi. Scheduler tetap berjalan tiap 15 menit, sementara frekuensi observasi tiap tanggal bergantung pada kuota, jeda sumber, dan jumlah watch. Hasil parsial tidak digunakan untuk menandai tarif hilang. Notifikasi perubahan memerlukan dua observasi dengan kondisi tarif yang sebanding.
 
 Intake email `/api/integrations/automation/price-alert` hanya aktif dengan `FLIGHT_ALERT_INTAKE_ENABLED=true`, token n8n, provider traveloka/tiket, messageId unik, sender domain benar dan hasil DKIM pass dari integration terpercaya. Payload memuat ID/revision watch specific serta penawaran yang dinormalisasi. Tidak ada koneksi inbox atau parser email provider yang diklaim aktif: template email asli dan izin mailbox/forwarding masih diperlukan. Satu flag intake tidak menjamin mailbox telah terhubung. Alert hanya mencatat perubahan yang dilaporkan provider.
 

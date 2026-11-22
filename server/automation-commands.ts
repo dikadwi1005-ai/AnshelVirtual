@@ -155,7 +155,7 @@ export async function handleAutomationMessage(store,env,data,fetchImpl=fetch,res
           w.status+' · '+(w.mode==='rolling'?'rolling '+w.windowDays+' hari':w.mode)+'\n'+
           (w.lastAt?'Diperiksa '+new Date(w.lastAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'}):'Belum diperiksa provider.')).join('\n\n') ||
           'Belum ada monitoring. Coba “Alya, pantau Surabaya ke Batam”.')+
-          '\n'+Object.entries(state.sources).filter(([id])=>['traveloka','tiket','amadeus'].includes(id))
+          '\n'+Object.entries(state.sources).filter(([id])=>['traveloka','tiket','amadeus','skyscanner'].includes(id))
             .map(([id,item])=>id+' · '+item.state+' · '+(item.error ?? '')).join('\n');
       } else {
         const result=await store.automation(parsed);
