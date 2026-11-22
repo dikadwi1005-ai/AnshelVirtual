@@ -1,7 +1,8 @@
 import { AutomationFault, formatLead, flightDates, validateLeadPublication } from './automation-domain.ts';
-import { analyzeLead, automationCapabilities } from './automation-providers.ts';
+import { analyzeLead } from './automation-providers.ts';
 import { configuredOfficeBots, officeGroupConfig, sendOfficeBotMessage } from './telegram-office.ts';
 import { flightKeyboard, leadKeyboard } from './automation-service.ts';
+import { searchFlightClaw } from './automation-flightclaw.ts';
 
 const leadSlash=/^\/(leads|cariklien|leadstatus|leadon|leadoff|leadconfig|leadreport|leadkeywords)(?:@\w+)?\b/i;
 const flightSlash=/^\/(pantautiket|tiket|cektiket|gantirute|gantitanggal|rentangtiket|budgettiket|stoptiket|pausetiket|lanjuttiket|historitiket|tiketstatus|tiketmurah)(?:@\w+)?\b/i;
@@ -165,25 +166,16 @@ export async function handleAutomationMessage(store,env,data,fetchImpl=fetch,res
             .map(([id,item])=>id+' · '+item.state+' · '+(item.error ?? '')).join('\n');
       } else if (parsed.control==='check') {
         const watch=state.watches.find(w=>w.id===parsed.id);
-        const skyscanner=automationCapabilities(env).flights.find(source=>source.id==='skyscanner');
-        const canSchedule=watch.status==='active' && skyscanner.configured &&
-          watch.providers.some(provider=>['connected','skyscanner'].includes(provider));
-        if (canSchedule) await store.automation(parsed);
         const alert=(state.flightEmail?.history ?? []).filter(row=>row.watchIds.includes(watch.id))
           .sort((a,b)=>b.receivedAt-a.receivedAt)[0];
         const from=watch.route.from,to=watch.route.to;
-        const url=from==='SUB' && to==='BTH'
-          ? 'https://www.google.com/travel/flights/flights-from-surabaya-to-batam.html'
-          : 'https://www.google.com/travel/flights?q='+encodeURIComponent('Flights from '+from+' to '+to);
+        const date=dateIn(data.text,state.now) ?? watch.date;
         const price=alert && new Intl.NumberFormat('id-ID',{style:'currency',currency:alert.currency}).format(alert.total);
         const timestamp=alert && new Date(alert.receivedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'});
-        message=['Pak, cek harga '+from+' → '+to+'.',
-          canSchedule?'Cek API diminta untuk siklus berikutnya dan mengikuti kuota.':
-            'Belum ada hasil cek harga langsung dari Anshel untuk monitoring ini.',
+        message=date?await searchFlightClaw(store,env,watch,date,fetchImpl,state.now):['Pak, tanggal berangkat '+from+' → '+to+' kapan?',
           alert?'Alert email terakhir: '+price+' · '+(alert.date ?? 'Semua tanggal')+' · '+timestamp+' WIB.':
             'Belum ada alert email tersimpan untuk monitoring ini.',
-          'Gmail hanya memproses alert yang dikirim provider. Untuk harga sekarang, buka Google Flights.'].join('\n');
-        keyboard={inline_keyboard:[[{text:'Cek harga sekarang di Google Flights',url}],...flightKeyboard(watch).inline_keyboard]};
+          'Kirim /cektiket YYYY-MM-DD '+watch.id+' untuk melihat harga langsung di Telegram.'].join('\n');
       } else {
         const result=await store.automation(parsed);
         const watch=result.watch ?? state.watches.find(w=>w.id===parsed.id);

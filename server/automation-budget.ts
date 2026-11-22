@@ -3,7 +3,7 @@ import { AutomationFault, wibDate } from './automation-domain.ts';
 // Reservations are persisted in the existing transaction before every external request.
 // Failed requests still consume a reservation; provider billing may count those requests.
 export function reserveSourceBudget(state,input,now) {
-  if (!['brave','google-alerts','freelancer','skyscanner'].includes(input.provider))
+  if (!['brave','google-alerts','freelancer','skyscanner','flightclaw'].includes(input.provider))
     throw new AutomationFault('Provider kuota tidak dikenal.');
   const {daily,monthly,gapMinutes,cost=1}=input;
   if (![daily,monthly,gapMinutes,cost].every(Number.isSafeInteger) || daily<0 || monthly<0 ||
