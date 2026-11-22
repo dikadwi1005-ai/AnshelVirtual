@@ -58,6 +58,12 @@ export async function setupAutomationScheduler(env,{activate=false}={},fetchImpl
   if (existing[0]) {
     const current=await request('workflows/'+existing[0].id);
     backup=current;
+    const matching=workflow.nodes.every(expected=>current.nodes.some(actual=>actual.name===expected.name &&
+      actual.type===expected.type && JSON.stringify(actual.parameters)===JSON.stringify(expected.parameters) &&
+      actual.credentials?.httpHeaderAuth?.id===expected.credentials?.httpHeaderAuth?.id)) &&
+      current.nodes.length===workflow.nodes.length && JSON.stringify(current.connections)===JSON.stringify(workflow.connections);
+    // Existing verified schedules need no write scope, deactivation or republishing.
+    if (current.active && matching) return {id:current.id,active:true,changed:false,verified:true};
     if (current.active && !activate) return {id:current.id,active:true,changed:false};
     if (current.active) await request('workflows/'+current.id+'/deactivate','POST');
     saved=await request('workflows/'+current.id,'PUT',workflow);
@@ -90,6 +96,8 @@ export async function configureAutomationCallbacks(env,fetchImpl=fetch) {
   const expected=office+'/api/telegram-automation/marketing';
   if (current.result.url && current.result.url!==expected)
     throw new AutomationFault('Bot Jihan sudah mempunyai webhook. Integrasikan callback di workflow itu sebelum mengganti webhook.',409);
+  if (current.result.url===expected && current.result.allowed_updates?.includes('callback_query'))
+    return {division:'marketing',callbackConfigured:true,changed:false};
   const response=await fetchImpl(api+'/setWebhook',{method:'POST',headers:{'Content-Type':'application/json'},
     signal:AbortSignal.timeout(5000),body:JSON.stringify({url:expected,allowed_updates:['callback_query'],
       secret_token:callbackSecret(env,'marketing'),drop_pending_updates:false})});

@@ -344,3 +344,19 @@ test('rolling window changes do not report departing dates as flight price chang
     assert.equal(f.store.automation().snapshots.length,2);
   } finally {f.store.close();}
 });
+
+test('verified Published scheduler is read-only and idempotent with a read-only n8n key',async()=>{
+  const hdr={httpHeaderAuth:{id:'existing-n8n',name:'Existing N8N'}},gem={httpHeaderAuth:{id:'existing-gemini',name:'Existing Gemini'}};
+  const model='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+  const current={...automationWorkflow(hdr,gem,model),id:'live-auto',active:true};
+  current.nodes=current.nodes.map(node=>({...node,id:'ui-generated-'+node.id}));
+  const group={id:'group',nodes:[{parameters:{url:'https://anshel-virtual.vercel.app/api/integrations/office-group/ai/prepare'},credentials:hdr},
+    {parameters:{url:model},credentials:gem}]};
+  const calls=[];
+  const fake=async(url,opt)=>{calls.push(opt.method);assert.equal(opt.method,'GET');
+    return response(url.endsWith('workflows?limit=100')?{data:[{id:'group'},{id:'live-auto',name:current.name}]}:
+      url.endsWith('workflows/group')?group:current);};
+  const result=await setupAutomationScheduler({N8N_MONITOR_BASE_URL:'https://n8n-s75gjxx8g8lx.jkt6.sumopod.my.id',N8N_MONITOR_API_KEY:'fixture',N8N_MONITOR_WORKFLOW_ID:'group'},
+    {activate:true},fake);
+  assert.equal(result.verified,true);assert.equal(result.changed,false);assert.equal(calls.length,3);
+});
