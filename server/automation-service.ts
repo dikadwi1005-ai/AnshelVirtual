@@ -1,6 +1,7 @@
 import { AutomationFault, formatFlight, formatLead, validateLeadAnalysis, validateLeadPublication } from './automation-domain.ts';
-import { analyzeLead, automationCapabilities, discoverLeads, fetchFlightOffers, geminiAnalysis, leadAnalysisRequest } from './automation-providers.ts';
+import { analyzeLead, automationCapabilities, fetchFlightOffers, geminiAnalysis, leadAnalysisRequest } from './automation-providers.ts';
 import { configuredOfficeBots, sendOfficeBotMessage } from './telegram-office.ts';
+import { discoverBudgetedLeads } from './automation-lead-sources.ts';
 
 const ownerActions=new Set(['view','lead-config','lead-status','lead-candidate','watch-save','watch-route','watch-control']);
 export async function ownerAutomationAction(store,input,env) {
@@ -51,12 +52,16 @@ async function leadTick(store,env,fetchImpl) {
     const snapshot=await store.automation();
     const manual=(snapshot.candidates ?? []).filter(item=>!validateLeadPublication(item,Date.now(),job.config.maxAgeHours))
       .sort((a,b)=>b.publishedAt-a.publishedAt)[0];
-    const found=manual?{source:'manual',candidates:[manual]}:await discoverLeads(job.config,env,fetchImpl);
+    const found=manual?{source:'manual',candidates:[manual]}:await discoverBudgetedLeads(job.config,env,
+      (provider,plan)=>store.automation({action:'source-budget',provider,...plan}),fetchImpl);
     source=found.source;
+    for(const status of found.statuses ?? []) await store.automation({action:'source',...status,
+      checked:status.state==='connected' || status.state==='error',capability:status.source==='freelancer'?'periodic':'discovery'});
     if (found.unverified) await store.automation({action:'discovery',items:found.unverified});
     const candidate=found.candidates.find(post=>post.regenerateId || !snapshot.leads.some(lead=>lead.url===post.url));
     if (!candidate) {
-      await store.automation({action:'finish',module:'leads',...job,source,capability:found.unverified?'discovery':'periodic'});
+      await store.automation({action:'finish',module:'leads',...job,source,deferred:found.deferred,nextAt:found.nextAt,
+        error:found.error,capability:found.unverified?'discovery':'periodic'});
       return {mode:'idle',source,unverified:found.unverified?.length ?? 0};
     }
     if (!await store.automation({action:'usage',provider:'gemini',limit:Number(env.LEAD_AI_DAILY_LIMIT ?? 12)}))
@@ -78,12 +83,19 @@ async function leadTick(store,env,fetchImpl) {
 async function flightTick(store,env,fetchImpl) {
   const job=await store.automation({action:'claim',module:'flights'});
   if (!job) return null;
-  const source='amadeus';
+  const source='skyscanner';
   try {
-    const cap=Number(env.FLIGHT_API_DAILY_LIMIT ?? 0);
-    if (!await store.automation({action:'usage',provider:source,limit:cap}))
-      throw new AutomationFault('Provider belum diaktifkan atau kuota harian API tercapai.',503);
-    const data=await fetchFlightOffers(job.config,env,fetchImpl);
+    const capability=automationCapabilities(env).flights.find(row=>row.id===source);
+    if(!capability.configured) {
+      await store.automation({action:'finish',module:'flights',...job,source,deferred:true,nextAt:Date.now()+3600000,capability:'not-configured'});
+      return {mode:'blocked',reason:capability.reason};
+    }
+    const data=await fetchFlightOffers(job.config,env,fetchImpl,Date.now(),
+      (provider,plan)=>store.automation({action:'source-budget',provider,...plan}));
+    if(data.deferred) {
+      await store.automation({action:'finish',module:'flights',...job,source,deferred:true,nextAt:data.nextAt});
+      return {mode:'deferred',reason:data.reason,nextAt:data.nextAt};
+    }
     const result=await store.automation({action:'flight-ingest',...job,...data});
     await store.automation({action:'finish',module:'flights',...job,source,capability:'periodic'});
     return result;

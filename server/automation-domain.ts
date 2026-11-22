@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { reserveSourceBudget } from './automation-budget.ts';
 
 export class AutomationFault extends Error {
   status: number;
@@ -86,7 +87,7 @@ export function flightWatch(input,now) {
   requireValue(['all','down','up','budget','amount','percent','daily'].includes(notification),'Mode notifikasi tidak valid.');
   const providers=input.providers ?? ['connected'];
   requireValue(Array.isArray(providers) && providers.length>0 && providers.length<=4 &&
-    providers.every(value=>['connected','traveloka','tiket','amadeus','manual'].includes(value)),'Provider tidak valid.');
+    providers.every(value=>['connected','traveloka','tiket','amadeus','skyscanner','manual'].includes(value)),'Provider tidak valid.');
   const airlines=input.airlines ?? [];
   requireValue(Array.isArray(airlines) && airlines.length<=10 && airlines.every(value=>/^[A-Z0-9]{2}$/.test(value)),'Kode maskapai tidak valid.');
   const threshold=Number(input.threshold ?? 0);
@@ -214,6 +215,8 @@ export function automationOperation(current,input,now=Date.now()) {
     target.pending=input.candidate;
     target.lease.until=now+120000;
     result={ok:true};
+  } else if (input.action==='source-budget') {
+    result=reserveSourceBudget(state,input,now);
   } else if (input.action==='usage') {
     state.usage ??= {};
     const day=wibDate(now);
@@ -225,7 +228,8 @@ export function automationOperation(current,input,now=Date.now()) {
     for (const key of Object.keys(state.usage)) if (key.slice(0,10)<wibDate(now-7*86400000)) delete state.usage[key];
   } else if (input.action==='claim') {
     const candidates=module==='leads'?(state.leadSettings.enabled?[state.leadSettings]:[]):
-      state.watches.filter(w=>w.status==='active' && (!input.id || input.id===w.id));
+      state.watches.filter(w=>w.status==='active' && (!input.id || input.id===w.id))
+        .sort((a,b)=>(a.lastAt ?? 0)-(b.lastAt ?? 0) || a.nextAt-b.nextAt);
     result=null;
     for (const target of candidates) {
       if (module!=='leads' && !flightDates(target,now).length) {
@@ -266,7 +270,7 @@ export function automationOperation(current,input,now=Date.now()) {
     lead.activities.push({at:now,status:'comment-regenerated'});result={ok:true};
   } else if (input.action==='flight-ingest') {
     const watch=fenced(state,'flights',input,now);
-    requireValue(['traveloka','tiket','amadeus','manual'].includes(input.provider),'Provider tidak valid.');
+    requireValue(['traveloka','tiket','amadeus','skyscanner','manual'].includes(input.provider),'Provider tidak valid.');
     requireValue(watch.providers.includes('connected') || watch.providers.includes(input.provider),'Provider di luar konfigurasi monitoring.');
     const alertKey=input.messageId?'price-alert:'+input.provider+':'+input.messageId:null;
     if (alertKey && state.commands.some(command=>command.key===alertKey)) return {state,result:{duplicate:true}};
@@ -329,14 +333,16 @@ export function automationOperation(current,input,now=Date.now()) {
     result={observations:offers.length,priceChanges:batch.length};
   } else if (input.action==='finish') {
     const target=fenced(state,module,input,now);
-    target.lastAt=now;target.lease=null;
+    if(!input.deferred) target.lastAt=now;
+    target.lease=null;
     if (module==='leads' && target.pending && !input.error) {
       state.candidates=(state.candidates ?? []).filter(item=>item.url!==target.pending.url);
       target.pending=null;
     }
     const source=String(input.source ?? 'automation').slice(0,70);
-    state.sources[source]={state:input.error?'error':'connected',lastAt:now,
+    state.sources[source]={state:input.deferred?'quota_wait':input.error?'error':'connected',lastAt:input.deferred?(state.sources[source]?.lastAt ?? null):now,
       error:input.error?String(input.error).slice(0,400):null,capability:input.capability ?? 'periodic'};
+    if (input.deferred && Number.isSafeInteger(input.nextAt)) target.nextAt=Math.max(now+60000,input.nextAt);
     if (input.error) {
       target.failures=(target.failures ?? 0)+1;
       target.nextAt=now+Math.min(24*3600000,target.intervalMinutes*60000*2**Math.min(target.failures-1,6));
@@ -348,7 +354,7 @@ export function automationOperation(current,input,now=Date.now()) {
   } else if (input.action==='source') {
     requireValue(text(input.source,70),'Source tidak valid.');
     state.sources[input.source]={state:input.state,error:String(input.reason ?? '').slice(0,400),
-      capability:input.capability,lastAt:input.checked===true?now:null};result={ok:true};
+      capability:input.capability,lastAt:input.checked===true?now:(state.sources[input.source]?.lastAt ?? null)};result={ok:true};
   } else if (input.action==='discovery') {
     requireValue(Array.isArray(input.items) && input.items.length<=20,'Discovery terlalu besar.');
     state.discovery=input.items.filter(item=>officialUrl(item.url)).map(item=>({url:officialUrl(item.url),
@@ -388,7 +394,7 @@ export function automationOperation(current,input,now=Date.now()) {
     result=!prior;
     if (!prior) state.commands.push({key:input.key,at:now});
   } else throw new AutomationFault('Tindakan automation tidak dikenal.');
-  if (!['view','claim','outbox-claim','outbox-finish','source','finish','command','lead-ingest','flight-ingest','usage','lead-stage','daily-summary'].includes(input.action))
+  if (!['view','claim','outbox-claim','outbox-finish','source','source-budget','discovery','finish','command','lead-ingest','flight-ingest','usage','lead-stage','daily-summary'].includes(input.action))
     log(state,module ?? (input.action.startsWith('lead')?'leads':'flights'),input.action,now,{id:input.id ?? null});
   state.commands=state.commands.filter(command=>command.at>now-7*86400000).slice(-5000);
   state.snapshots=state.snapshots.filter(row=>row.observedAt>now-180*86400000).slice(-20000);

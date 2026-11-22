@@ -1,6 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { AutomationFault, flightDates, validateLeadPublication, officialUrl } from './automation-domain.ts';
+import { AutomationFault, validateLeadPublication, officialUrl } from './automation-domain.ts';
 
 export async function publicEndpoint(value) {
   let url;
@@ -39,20 +39,24 @@ export function automationCapabilities(env) {
       {id:'manual',mode:'manual',configured:true,reason:'Input pemilik dengan bukti waktu publikasi asli.'},
       {id:'approved-feed',mode:'periodic',configured:authorized,
         reason:authorized?'Feed JSON berizin dikonfigurasi; tunggu pemeriksaan.':'LEAD_SOURCE_URL dan izin LEAD_SOURCE_ALLOWED belum tersedia.'},
-      {id:'brave',mode:'discovery',configured:Boolean(env.BRAVE_SEARCH_API_KEY),
-        reason:'Tanggal hasil pencarian dapat berupa waktu pembaruan. Verifikasi publikasi asli tetap wajib.'},
+      {id:'brave',mode:'discovery',configured:Boolean(env.BRAVE_SEARCH_API_KEY && env.BRAVE_SEARCH_ALLOWED==='true'),
+        reason:'Perlu key dan konfirmasi kuota gratis/hak simpan BRAVE_SEARCH_ALLOWED. Tanggal hasil bukan publikasi asli.'},
       {id:'google-alerts',mode:'discovery',configured:Boolean(env.GOOGLE_ALERTS_FEED_URL),
         reason:'RSS Alerts hanya discovery. Waktu alert bukan waktu publikasi asli.'},
       {id:'facebook-groups',mode:'unavailable',configured:false,
         reason:'Akses Groups API lama dihentikan. Impor manual atau feed berizin diperlukan.'},
+      {id:'freelancer',mode:'periodic',configured:env.FREELANCER_API_PERMISSION_CONFIRMED==='true' && env.FREELANCER_RETENTION_PERMISSION_CONFIRMED==='true',
+        reason:'Memerlukan izin automation tertulis dan izin retensi/Telegram. Endpoint publik bukan bukti izin polling.'},
     ],
     flights:[
       {id:'traveloka',mode:'email-alert',configured:env.FLIGHT_ALERT_INTAKE_ENABLED==='true',rolling:false,
         reason:'Memerlukan penerusan Price Alert terpilih. Hanya perubahan yang dilaporkan provider.'},
       {id:'tiket',mode:'email-alert',configured:env.FLIGHT_ALERT_INTAKE_ENABLED==='true',rolling:false,
         reason:'Memerlukan akses partner atau penerusan email yang diverifikasi. Alert belum menjamin semua tanggal tercakup.'},
-      {id:'amadeus',mode:'periodic',configured:Boolean(env.AMADEUS_API_KEY && env.AMADEUS_API_SECRET),rolling:true,
-        reason:'API Production memerlukan akun yang berizin. Satu tanggal per tick dengan batas pemakaian eksplisit.'},
+      {id:'amadeus',mode:'retired',configured:false,rolling:false,
+        reason:'Self-Service dihentikan 17 Juli 2026. Endpoint lama tidak dipanggil.'},
+      {id:'skyscanner',mode:'periodic',configured:Boolean(env.SKYSCANNER_API_KEY && env.SKYSCANNER_MONITORING_ALLOWED==='true' && env.SKYSCANNER_STORAGE_ALLOWED==='true' && Number(env.SKYSCANNER_MONTHLY_LIMIT)>0),rolling:true,
+        reason:'Perlu akses partner, izin monitoring/penyimpanan histori serta kuota. Tidak ada paket gratis yang dijamin.'},
       {id:'manual',mode:'manual',configured:true,rolling:false,reason:'Observasi manual pemilik. Tidak memeriksa harga otomatis.'},
     ],
     gemini:env.GEMINI_API_KEY?'configured':'n8n-credential-required',
@@ -81,7 +85,9 @@ export async function discoverLeads(config,env,fetchImpl=fetch,now=Date.now()) {
     const unverified=[...xml.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/gi)].slice(0,20).flatMap(match=>{
       const link=/<link\b[^>]*href=["']([^"']+)["']/i.exec(match[1])?.[1]?.replaceAll('&amp;','&');
       if(!link)return [];
-      const target=new URL(link);const original=target.hostname==='www.google.com'?target.searchParams.get('url') ?? target.searchParams.get('q'):link;
+      const target=URL.parse(link);
+      if (!target) return [];
+      const original=target.hostname==='www.google.com'?target.searchParams.get('url') ?? target.searchParams.get('q'):link;
       const href=officialUrl(original);if(!href)return [];
       return [{url:href,title:(/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(match[1])?.[1] ?? '').replace(/<[^>]*>/g,'').slice(0,250),
         reason:'Tanggal RSS adalah waktu alert; publikasi asli belum terverifikasi.'}];
@@ -124,39 +130,7 @@ export function geminiAnalysis(data) {
   try { return JSON.parse(data.candidates[0].content.parts.map(part=>part.text ?? '').join('')); }
   catch { throw new AutomationFault('JSON analisis Gemini tidak valid.',503); }
 }
-export async function fetchFlightOffers(watch,env,fetchImpl=fetch,now=Date.now()) {
-  if (!env.AMADEUS_API_KEY || !env.AMADEUS_API_SECRET ||
-      !watch.providers.some(id=>['amadeus','connected'].includes(id)))
-    throw new AutomationFault('Provider harga API belum terhubung. Traveloka/tiket memerlukan Price Alert atau akses partner.',503);
-  const cap=Number(env.FLIGHT_API_DAILY_LIMIT ?? 0);
-  if (!Number.isSafeInteger(cap) || cap<1) throw new AutomationFault('Tetapkan FLIGHT_API_DAILY_LIMIT sesuai kuota yang diizinkan.',503);
-  const token=await jsonResponse(await fetchImpl('https://api.amadeus.com/v1/security/oauth2/token',{
-    method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:AbortSignal.timeout(5000),
-    body:new URLSearchParams({grant_type:'client_credentials',client_id:env.AMADEUS_API_KEY,client_secret:env.AMADEUS_API_SECRET}),redirect:'error'}));
-  if (typeof token.access_token!=='string') throw new AutomationFault('Token Amadeus tidak tersedia.',503);
-  const days=flightDates(watch,now), day=days[(watch.cursor ?? 0)%days.length];
-  const url=new URL('https://api.amadeus.com/v2/shopping/flight-offers');
-  url.search=new URLSearchParams({originLocationCode:watch.route.from,destinationLocationCode:watch.route.to,
-    departureDate:day,adults:String(watch.passengers),travelClass:watch.cabin,currencyCode:'IDR',max:'50',
-    ...(watch.returnDate?{returnDate:watch.returnDate}:{}),
-    ...(watch.nonstop?{nonStop:'true'}:{}),...(watch.airlines.length?{includedAirlineCodes:watch.airlines.join(',')}:{})}).toString();
-  const data=await jsonResponse(await fetchImpl(url,{headers:{Authorization:'Bearer '+token.access_token},
-    redirect:'error',signal:AbortSignal.timeout(7000)}));
-  if (!Array.isArray(data.data)) throw new AutomationFault('Respons penawaran Amadeus tidak valid.',503);
-  const offers=data.data.map(item=>{
-    const outbound=item.itineraries?.[0]?.segments,returning=item.itineraries?.[1]?.segments;
-    const fares=item.travelerPricings?.[0]?.fareDetailsBySegment ?? [],fare=fares[0];
-    if (!outbound?.length || !fare || !item.price?.grandTotal) return null;
-    const total=Number(item.price.grandTotal);
-    const baggage=fare.includedCheckedBags;
-    return {from:watch.route.from,to:watch.route.to,date:day,flight:outbound.map(s=>s.carrierCode+s.number).join('/'),
-      airline:outbound[0].carrierCode,airlineCode:outbound[0].carrierCode,
-      departure:outbound[0].departure.at,arrival:outbound.at(-1).arrival.at,cabin:watch.cabin,
-      baggage:baggage?JSON.stringify(baggage):'Bagasi belum diketahui',baggageIncluded:Boolean(baggage?.quantity>0 || baggage?.weight>0),
-      passengers:watch.passengers,fare:fares.map(f=>[f.fareBasis,f.brandedFare,f.class].join(':')).join('/'),
-      currency:'IDR',total,mandatoryFeesIncluded:true,stops:outbound.length-1,trip:watch.trip,
-      returnDate:watch.returnDate,returnFlight:returning?.map(s=>s.carrierCode+s.number).join('/')};
-  }).filter(Boolean);
-  // A result capped at 50 is incomplete and cannot prove that other flights disappeared.
-  return {provider:'amadeus',offers,dates:[day],complete:data.data.length<50};
+export async function fetchFlightOffers(watch,env,fetchImpl=fetch,now=Date.now(),reserve) {
+  const {fetchSkyscannerOffers}=await import('./automation-skyscanner.ts');
+  return fetchSkyscannerOffers(watch,env,reserve,fetchImpl,now);
 }
