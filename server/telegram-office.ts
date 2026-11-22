@@ -4,7 +4,7 @@ import { officeIndonesiaCalendarContext } from './office-calendar.ts';
 import { observedAvatar } from './office-avatar-status.ts';
 import { officeActivityReply,officeDailySummary,officeSummaryDue,officeQueueDelayAlert,overdueOfficeQueueSummary,workerPulseEvidence } from './office-monitoring.ts';
 import { parseGroupWorkspaceCommand } from './telegram-workspace.ts';
-import {runOfficeReadOnlyDiagnostics} from './office-diagnostics.ts';
+import {gmailFlightHealth, runOfficeReadOnlyDiagnostics} from './office-diagnostics.ts';
 
 const statusLabels={completed:'Selesai',blocked:'Terhambat',failed:'Gagal'};
 // Pilot automation uses the four connected bots only. More workers remain opt-in.
@@ -475,7 +475,8 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
   const updateId=String(data.updateId);
   const novel=await store.reserveOfficeGroupUpdate(updateId);
   if (!novel)return {duplicate:true};
-  if(/^\/(?:diagnosa|diagnosis|cek-sistem)$/i.test(data.text.trim())) {
+  const command=data.text.trim();
+  if(/^\/(?:diagnosa|diagnosis|cek-sistem)$/i.test(command)) {
     const report=await runOfficeReadOnlyDiagnostics(store,env,fetchImpl);
     const connected=configuredOfficeBots(env).configured.includes('operations');
     const sender=connected?'operations':'management';
@@ -483,7 +484,11 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
     return {sent:true,division:sender,technicalOwner:'operations',
       kind:'read-only-diagnosis',n8n:report.n8n.state};
   }
-  if(/^\/(?:kesehatan|health)$/i.test(data.text.trim())) {
+  const healthCommand=/^\/(?:kesehatan|health)$/i.test(command);
+  const issuesCommand=/^\/kendala$/i.test(command);
+  const gmailHealth=(healthCommand || issuesCommand) && typeof store.automation==='function'
+    ?gmailFlightHealth(await Promise.resolve().then(()=>store.automation()).catch(()=>null)):'';
+  if(healthCommand) {
     const state=await store.state(); // An actual successful database round trip.
     const last=typeof store.officeDispatchPulse==='function'
       ?await store.officeDispatchPulse():null;
@@ -505,7 +510,7 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
       (Number(counts.failed)||0)+' gagal, '+(Number(counts.paused)||0)+' dijeda.\n'+
       'Auto Office Telegram: '+dispatcher+' (bukti pemanggilan endpoint, bukan sukses worker).\n'+
       'Gemini, status Published n8n, dan layanan eksternal belum diuji langsung.';
-    await sendOfficeBotMessage(env,sender,text,{fetchImpl});
+    await sendOfficeBotMessage(env,sender,text+(gmailHealth?'\n'+gmailHealth:''),{fetchImpl});
     return {sent:true,division:sender,technicalOwner:'operations',kind:'health-evidence'};
   }
   const taskAction=parseOwnerTaskAction(data.text);
@@ -627,7 +632,8 @@ export async function sendOfficeGroupOwnerMessage(store,env,data,fetchImpl=fetch
     !configured.includes(reply.division)
     ?'management':reply.division;
   const response=inactive?.text || (sender==='management'&&reply.division!=='management'
-    ?'Pegawai tersebut belum terhubung di Telegram. Tanyakan status melalui /monitor.':reply.text);
+    ?'Pegawai tersebut belum terhubung di Telegram. Tanyakan status melalui /monitor.':
+      reply.text+(gmailHealth?'\n'+gmailHealth:''));
   await sendOfficeBotMessage(env,sender,response,{fetchImpl,silent});
   return {sent:true,division:sender,inactiveDivision:inactive?.division||null};
 }

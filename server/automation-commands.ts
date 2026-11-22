@@ -149,7 +149,13 @@ export async function handleAutomationMessage(store,env,data,fetchImpl=fetch,res
           if (parsed.read==='cheapest') rows.sort((a,b)=>a.total-b.total);
           message='Pak, '+(parsed.read==='cheapest'?'penawaran terendah yang tersimpan':'riwayat monitoring')+'.\n'+
             ((parsed.read==='cheapest'?rows.slice(0,8):rows.slice(-8)).map(row=>{const offer=row.offer ?? row;return offer.date+' · '+offer.provider+' · Rp'+offer.total.toLocaleString('id-ID');}).join('\n') ||
-              'Belum ada observasi harga terverifikasi.');
+              'Belum ada observasi tarif penerbangan spesifik.');
+          if (parsed.read==='history') {
+            const alerts=(state.flightEmail?.history ?? []).filter(alert=>alert.watchIds.includes(watch.id)).slice(-5);
+            if (alerts.length) message+='\n\nPrice Alert email\n'+alerts.map(alert=>
+              (alert.date ?? 'Semua tanggal')+' · '+alert.provider+' · '+
+              new Intl.NumberFormat('id-ID',{style:'currency',currency:alert.currency}).format(alert.total)).join('\n');
+          }
           keyboard=flightKeyboard(watch);
         } else message='Pak, monitoring tiket tersimpan.\n'+(watches.map(w=>w.id+'\n'+w.route.from+' → '+w.route.to+' · '+
           w.status+' · '+(w.mode==='rolling'?'rolling '+w.windowDays+' hari':w.mode)+'\n'+
@@ -162,6 +168,7 @@ export async function handleAutomationMessage(store,env,data,fetchImpl=fetch,res
         const watch=result.watch ?? state.watches.find(w=>w.id===parsed.id);
         message='Pak, perubahan monitoring sudah tersimpan.'+(watch?'\n'+watch.id+' · '+watch.route.from+' → '+watch.route.to+
           '\nMode '+watch.mode+(watch.mode==='rolling'?' '+watch.windowDays+' hari':''):'')+
+          (parsed.control==='stop'?'\nPrice Tracking di akun Google Flights atau Traveloka tetap mengikuti pengaturan akunnya.':'')+
           '\nPemeriksaan harga mengikuti provider yang terhubung. /tiketstatus menampilkan kendalanya.';
         if (watch) keyboard=flightKeyboard(watch);
       }
@@ -203,6 +210,7 @@ export async function handleAutomationCallback(store,env,data,fetchImpl=fetch) {
     } else await store.automation({action:'lead-status',id,status:action});
   } else if (['pause','stop','check'].includes(action)) {
     await store.automation({action:'watch-control',id,control:action});
+    if (action==='stop') message+=' Price Tracking di akun Google Flights atau Traveloka tetap mengikuti pengaturan akunnya.';
   } else {
     const prompts={route:'Alya, ganti rute SUB ke BTH ',dates:'Alya, fokus tanggal YYYY-MM-DD ',window:'Alya, pantau 30 hari ',
       budget:'Alya, budget 800 ribu ',history:'/historitiket ',cheapest:'/tiketmurah '};

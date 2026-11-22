@@ -19,6 +19,12 @@ export function isOfficeDiagnosticQuery(text) {
     /\b(?:Anshel|IT|server|sistem|API|n8n|worker|workflow|operasional|endpoint|layanan)\b/i.test(text);
 }
 
+export function gmailFlightHealth(automation) {
+  const mail=automation?.flightEmail;
+  return mail?'Gmail Price Alerts: '+mail.connection+' · '+mail.status+' · Telegram '+
+    (mail.delivery ?? 'menunggu alert')+'.':'';
+}
+
 /** The instance origin comes from trusted Vercel Production environment
  * settings, never from Telegram content. Limit outbound calls to known n8n
  * hosting domains so user text cannot turn monitoring into an SSRF proxy.
@@ -137,6 +143,7 @@ export async function runOfficeReadOnlyDiagnostics(store,env,fetchImpl=fetch) {
       Math.floor((now-automation.lastSchedulerAt)/60000)+' menit sejak tick terakhir':'belum ada tick terverifikasi')+
       '. Lead Hunter '+(automation.leadSettings.enabled?'aktif':'berhenti')+'; tiket aktif '+
       automation.watches.filter(watch=>watch.status==='active').length+'.',
+      gmailFlightHealth(automation),
       ...Object.entries(automation.sources).filter(([,source])=>source.state!=='connected')
         .map(([name,source])=>'Provider '+name+': '+source.state+' · '+(source.error ?? ''))]:[]),
     'Prioritas: 1) '+priority+' 2) '+n8nPriority,

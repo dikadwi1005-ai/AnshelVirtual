@@ -2,6 +2,7 @@ import { AutomationFault, formatFlight, formatLead, validateLeadAnalysis, valida
 import { analyzeLead, automationCapabilities, fetchFlightOffers, geminiAnalysis, leadAnalysisRequest } from './automation-providers.ts';
 import { configuredOfficeBots, sendOfficeBotMessage } from './telegram-office.ts';
 import { discoverBudgetedLeads } from './automation-lead-sources.ts';
+import { formatFlightEmail, parseGmailFlightAlert } from './automation-flight-email.ts';
 
 const ownerActions=new Set(['view','lead-config','lead-status','lead-candidate','watch-save','watch-route','watch-control']);
 export async function ownerAutomationAction(store,input,env) {
@@ -150,6 +151,10 @@ export async function deliverAutomationNotifications(store,env,fetchImpl=fetch) 
         const watch=state.watches.find(row=>row.id===item.owner);
         const changes=state.changes.filter(change=>item.payload.changeIds.includes(change.id));
         message=formatFlight(watch,changes);keyboard=flightKeyboard(watch,changes[0]?.offer);
+      } else if (item.kind==='flight-email') {
+        const watch=state.watches.find(row=>row.id===item.owner);
+        message=formatFlightEmail(item.payload.alert);
+        keyboard=flightKeyboard(watch,item.payload.alert);
       } else message='Pak, Bima mencatat kendala automation.\n'+item.payload.source+'\n'+item.payload.message;
       await sendOfficeBotMessage(env,division,message,{fetchImpl,replyMarkup:keyboard});
       await store.automation({action:'outbox-finish',id:item.id,ok:true});sent++;
@@ -192,4 +197,18 @@ export async function ingestPriceAlert(store,env,input) {
     await store.automation({action:'finish',module:'flights',...claim,source:input.provider,error:'Format alert ditolak.'}).catch(()=>{});
     throw error;
   }
+}
+
+export async function ingestGmailFlightAlert(store,env,input,fetchImpl=fetch) {
+  if (input.test === true || input.message?.payload?.headers?.some?.(header =>
+    header?.name?.toLowerCase()==='subject' && /^\s*\[test\]/i.test(header.value))) {
+    throw new AutomationFault('Fixture TEST tidak diterima di intake Gmail.',400);
+  }
+  if (input.poll==='connected' || input.poll==='error') {
+    return store.automation({action:'flight-email',poll:input.poll});
+  }
+  const outcome=parseGmailFlightAlert(input.message,Date.now());
+  const result=await store.automation({action:'flight-email',...outcome,replay:input.replay===true});
+  if (result.status==='queued') await deliverAutomationNotifications(store,env,fetchImpl);
+  return result;
 }
