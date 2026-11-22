@@ -1,5 +1,5 @@
 import { AutomationFault, formatLead, flightDates, validateLeadPublication } from './automation-domain.ts';
-import { analyzeLead } from './automation-providers.ts';
+import { analyzeLead, automationCapabilities } from './automation-providers.ts';
 import { configuredOfficeBots, officeGroupConfig, sendOfficeBotMessage } from './telegram-office.ts';
 import { flightKeyboard, leadKeyboard } from './automation-service.ts';
 
@@ -163,6 +163,27 @@ export async function handleAutomationMessage(store,env,data,fetchImpl=fetch,res
           'Belum ada monitoring. Coba “Alya, pantau Surabaya ke Batam”.')+
           '\n'+Object.entries(state.sources).filter(([id])=>['traveloka','tiket','amadeus','skyscanner'].includes(id))
             .map(([id,item])=>id+' · '+item.state+' · '+(item.error ?? '')).join('\n');
+      } else if (parsed.control==='check') {
+        const watch=state.watches.find(w=>w.id===parsed.id);
+        const skyscanner=automationCapabilities(env).flights.find(source=>source.id==='skyscanner');
+        const canSchedule=watch.status==='active' && skyscanner.configured &&
+          watch.providers.some(provider=>['connected','skyscanner'].includes(provider));
+        if (canSchedule) await store.automation(parsed);
+        const alert=(state.flightEmail?.history ?? []).filter(row=>row.watchIds.includes(watch.id))
+          .sort((a,b)=>b.receivedAt-a.receivedAt)[0];
+        const from=watch.route.from,to=watch.route.to;
+        const url=from==='SUB' && to==='BTH'
+          ? 'https://www.google.com/travel/flights/flights-from-surabaya-to-batam.html'
+          : 'https://www.google.com/travel/flights?q='+encodeURIComponent('Flights from '+from+' to '+to);
+        const price=alert && new Intl.NumberFormat('id-ID',{style:'currency',currency:alert.currency}).format(alert.total);
+        const timestamp=alert && new Date(alert.receivedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'});
+        message=['Pak, cek harga '+from+' → '+to+'.',
+          canSchedule?'Cek API diminta untuk siklus berikutnya dan mengikuti kuota.':
+            'Belum ada hasil cek harga langsung dari Anshel untuk monitoring ini.',
+          alert?'Alert email terakhir: '+price+' · '+(alert.date ?? 'Semua tanggal')+' · '+timestamp+' WIB.':
+            'Belum ada alert email tersimpan untuk monitoring ini.',
+          'Gmail hanya memproses alert yang dikirim provider. Untuk harga sekarang, buka Google Flights.'].join('\n');
+        keyboard={inline_keyboard:[[{text:'Cek harga sekarang di Google Flights',url}],...flightKeyboard(watch).inline_keyboard]};
       } else {
         const result=await store.automation(parsed);
         const watch=result.watch ?? state.watches.find(w=>w.id===parsed.id);
@@ -208,7 +229,9 @@ export async function handleAutomationCallback(store,env,data,fetchImpl=fetch) {
           (state.leadSettings.enabled?'':' Aktifkan /leadon untuk menjalankan antrean.');
       }
     } else await store.automation({action:'lead-status',id,status:action});
-  } else if (['pause','stop','check'].includes(action)) {
+  } else if (action==='check') {
+    return handleAutomationMessage(store,env,{...data,text:'/cektiket '+id,isBot:false},fetchImpl,true);
+  } else if (['pause','stop'].includes(action)) {
     await store.automation({action:'watch-control',id,control:action});
     if (action==='stop') message+=' Price Tracking di akun Google Flights atau Traveloka tetap mengikuti pengaturan akunnya.';
   } else {
