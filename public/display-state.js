@@ -3,6 +3,8 @@ export const displayModes={
 };
 
 export function displayState(office,division) {
+  const job=office?.automationWork?.[division];
+  if (job?.until>office.now) return {mode:'running',kind:job.kind};
   const plan=office?.people?.[division];
   const task=plan?.task;
   if (!task) return {mode:'idle',kind:null};

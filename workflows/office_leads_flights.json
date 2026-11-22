@@ -1,0 +1,184 @@
+{
+  "name": "Anshel · Lead Hunter + Flight Tracker · 24 jam",
+  "nodes": [
+    {
+      "id": "avt-auto-clock",
+      "name": "Tiap 15 menit · 24 jam WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "avt-auto-manual",
+      "name": "Pemeriksaan manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "avt-auto-tick",
+      "name": "Antrean, rolling, provider dan outbox",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {},
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/automation/tick",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 45000
+        }
+      }
+    },
+    {
+      "id": "avt-auto-filter",
+      "name": "Hanya analisis yang berizin",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const task=$input.first().json.leads; if(task?.mode!=='analyze') return []; return [{json:task}];"
+      }
+    },
+    {
+      "id": "avt-auto-gemini",
+      "name": "Gemini · Jihan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {},
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "avt-auto-save",
+      "name": "Validasi dan simpan hasil",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "credentials": {},
+      "parameters": {
+        "method": "POST",
+        "url": "https://anshel-virtual.vercel.app/api/integrations/automation/lead-result",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({job: $('Hanya analisis yang berizin').first().json.job,response: $json.body || $json}) }}",
+        "options": {
+          "timeout": 45000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Tiap 15 menit · 24 jam WIB": {
+      "main": [
+        [
+          {
+            "node": "Antrean, rolling, provider dan outbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pemeriksaan manual": {
+      "main": [
+        [
+          {
+            "node": "Antrean, rolling, provider dan outbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Antrean, rolling, provider dan outbox": {
+      "main": [
+        [
+          {
+            "node": "Hanya analisis yang berizin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hanya analisis yang berizin": {
+      "main": [
+        [
+          {
+            "node": "Gemini · Jihan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini · Jihan": {
+      "main": [
+        [
+          {
+            "node": "Validasi dan simpan hasil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Jakarta",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 150
+  },
+  "active": false
+}

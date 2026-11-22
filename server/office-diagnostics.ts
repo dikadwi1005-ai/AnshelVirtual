@@ -96,6 +96,7 @@ export async function inspectN8nExecutions(env,fetchImpl=fetch) {
 
 export async function runOfficeReadOnlyDiagnostics(store,env,fetchImpl=fetch) {
   const state=await store.state(); // Successful real DB round trip.
+  const automation=typeof store.automation==='function'?await Promise.resolve().then(()=>store.automation()).catch(()=>null):null;
   const [dispatch,n8n]=await Promise.all([
     typeof store.officeDispatchPulse==='function'?store.officeDispatchPulse():null,
     inspectN8nExecutions(env,fetchImpl),
@@ -132,6 +133,12 @@ export async function runOfficeReadOnlyDiagnostics(store,env,fetchImpl=fetch) {
     'Worker: '+pulse.lastSeenText+'. '+pulse.verdict,
     'Auto Office: '+dispatchText+'; ini hanya bukti panggilan endpoint.',
     'n8n: '+n8n.text,
+    ...(automation?['Automation 24 jam: '+(automation.lastSchedulerAt?
+      Math.floor((now-automation.lastSchedulerAt)/60000)+' menit sejak tick terakhir':'belum ada tick terverifikasi')+
+      '. Lead Hunter '+(automation.leadSettings.enabled?'aktif':'berhenti')+'; tiket aktif '+
+      automation.watches.filter(watch=>watch.status==='active').length+'.',
+      ...Object.entries(automation.sources).filter(([,source])=>source.state!=='connected')
+        .map(([name,source])=>'Provider '+name+': '+source.state+' · '+(source.error ?? ''))]:[]),
     'Prioritas: 1) '+priority+' 2) '+n8nPriority,
     'Diagnosis baca-saja: tidak menjalankan ulang, membuka tugas dijeda, atau memperbaiki layanan otomatis.',
   ].join('\n');

@@ -11,6 +11,7 @@ import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
 import { evaluateOwnerGroupUpdate,ownerMessageDailyLimit,ownerMessageMinimumGapMs } from './telegram-owner-limits.ts';
 import {emptyGroupWorkspace,applyGroupWorkspaceCommand} from './telegram-workspace.ts';
+import { automationOperation } from './automation-domain.ts';
 import { Fault, validateWorkerTaskId } from './store.ts';
 
 // All timestamps remain Unix milliseconds to preserve existing SQLite API contracts.
@@ -75,6 +76,21 @@ export function createCloudStore(connectionString = process.env.DATABASE_URL, no
   }
 
   return {
+    async automationActivity() {
+      const row=await one("SELECT payload->'leadSettings' AS lead, payload->'watches' AS watches FROM anshel.automation_state WHERE id=1");
+      return {leadSettings:row?.lead ?? null,watches:row?.watches ?? []};
+    },
+    async automation(input=undefined) {
+      return transaction(async client=>{
+        await query('SELECT pg_advisory_xact_lock(17293128)',[],client);
+        const row=await one('SELECT payload FROM anshel.automation_state WHERE id=1',[],client);
+        const outcome=automationOperation(row?.payload,input,now());
+        if (input && input.action!=='view')
+          await query('INSERT INTO anshel.automation_state(id,payload,updated_at) VALUES(1,$1,$2) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at',
+            [JSON.stringify(outcome.state),now()],client);
+        return outcome.result;
+      });
+    },
     async studioReplay(input) {
       const apply=async client=>{
         const outcome=replayOperation(await readSetting(replayKey,[],client),input,now());

@@ -18,6 +18,7 @@
   ],
   "functions": {
     "api/route.ts": {
+      "maxDuration": 60,
       "includeFiles": "{server/**,public/catalog.js,public/behavior.js}"
     }
   },

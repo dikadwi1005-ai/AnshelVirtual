@@ -8,6 +8,10 @@ import { Fault } from '../server/store.ts';
 import { validPresence } from '../server/office-presence.ts';
 import { createNationCity } from '../server/nation-city.ts';
 import { notifyAutomation, ownerAutomation, runAutomation } from '../server/studio-schedule.ts';
+import { AutomationFault } from '../server/automation-domain.ts';
+import { officeAutomationWork, ownerAutomationAction, runOfficeAutomation, finishLeadAnalysis, ingestPriceAlert } from '../server/automation-service.ts';
+import { handleAutomationCallback } from '../server/automation-commands.ts';
+import { setupAutomationScheduler, configureAutomationCallbacks, prepareAlyaCallbackWorkflow, callbackSecret } from '../server/automation-n8n.ts';
 
 // Server-side only. Credentials must be configured in Vercel Environment Variables.
 let store;
@@ -58,6 +62,14 @@ async function route(request, injectedStore = null, env = process.env) {
     const token = /(?:^|;\s*)anshel=([a-f0-9]{64})(?:;|$)/.exec(request.headers.get('cookie') || '')?.[1];
     const authed = !!token && await office.sessionActive(token);
     const bearer = /^Bearer (.+)$/.exec(request.headers.get('authorization') || '')?.[1];
+    if (path==='/api/telegram-automation/marketing' && post) {
+      if (!validSecret(env.N8N_TOKEN) || !equal(request.headers.get('x-telegram-bot-api-secret-token'),callbackSecret(env,'marketing')))
+        throw new Fault(403,'Webhook Telegram ditolak.');
+      const update=await readJson(request),callback=update.callback_query;
+      if (!callback) return respond({ok:true});
+      return respond(await handleAutomationCallback(office,env,{chatId:callback.message?.chat?.id,userId:callback.from?.id,
+        callbackId:callback.id,data:callback.data}));
+    }
 
     if (path === '/api/session' && request.method === 'GET') return respond({authenticated:authed});
     if (path === '/api/login' && post) {
@@ -89,6 +101,18 @@ async function route(request, injectedStore = null, env = process.env) {
     }
     if (path.startsWith('/api/integrations/') && post) {
       if (!validSecret(env.N8N_TOKEN) || !equal(bearer,env.N8N_TOKEN)) throw new Fault(401,'Token n8n ditolak.');
+      if (path==='/api/integrations/automation/tick') {
+        if (Object.keys(await readJson(request)).length) throw new Fault(400,'Tick tidak menerima input.');
+        return respond(await runOfficeAutomation(office,env));
+      }
+      if (path==='/api/integrations/automation/lead-result') {
+        const input=await readJson(request);
+        return respond(await finishLeadAnalysis(office,input.job,input.response));
+      }
+      if (path==='/api/integrations/automation/price-alert')
+        return respond(await ingestPriceAlert(office,env,await readJson(request)));
+      if (path==='/api/integrations/automation/callback')
+        return respond(await handleAutomationCallback(office,env,await readJson(request)));
       if (path==='/api/integrations/studio-tick') {
         if (env.STUDIO_SCHEDULER_ENABLED!=='true') throw new Fault(404,'Scheduler Studio belum aktif.');
         if (Object.keys(await readJson(request)).length) throw new Fault(400,'Pemicu jadwal tidak menerima parameter.');
@@ -158,12 +182,28 @@ async function route(request, injectedStore = null, env = process.env) {
       }
     }
     if (!authed) throw new Fault(401,'Masuk sebagai Dika untuk melanjutkan.');
+    if (path==='/api/automation/callback-setup' && post) {
+      if (Object.keys(await readJson(request)).length) throw new Fault(400,'Konfigurasi callback tidak menerima input.');
+      const jihan=await configureAutomationCallbacks(env);
+      const alya=await prepareAlyaCallbackWorkflow(env);
+      return respond({jihan,alya});
+    }
+    if (path==='/api/automation/scheduler' && post) {
+      const input=await readJson(request);
+      if (Object.keys(input).some(key=>key!=='activate') || typeof input.activate!=='boolean') throw new Fault(400,'Mode aktivasi tidak valid.');
+      const result=await setupAutomationScheduler(env,input);
+      await office.automation({action:'source',source:'n8n-scheduler',state:result.active?'published':'draft',
+        capability:'15-minute',reason:'Workflow '+result.id,checked:true});
+      return respond(result);
+    }
+    if (path==='/api/automation' && (post || request.method==='GET'))
+      return respond(await ownerAutomationAction(office,post?await readJson(request):undefined,env));
     if (path === '/api/logout' && post) {
       await office.deleteSession(token);
       return respond({authenticated:false},200,{'Set-Cookie':'anshel=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'});
     }
     if (path === '/api/state' && request.method === 'GET') return respond({
-      ...await office.state(), dialogueEnabled:getDialogue().enabled, dialogueStatus:getDialogue().status,
+      ...await officeAutomationWork(office,await office.state()), dialogueEnabled:getDialogue().enabled, dialogueStatus:getDialogue().status,
     });
     if (path === '/api/dialogue' && post) return respond(await getDialogue().generate(await readJson(request)));
     if (path==='/api/studio/replay' && (post || request.method==='GET'))
@@ -205,7 +245,7 @@ async function route(request, injectedStore = null, env = process.env) {
     }
     throw new Fault(404,'Rute tidak ditemukan.');
   } catch (error) {
-    if (error instanceof Fault) return respond({error:error.message},error.status);
+    if (error instanceof Fault || error instanceof AutomationFault) return respond({error:error.message},error.status);
     console.error('Anshel cloud API:',error);
     return respond({error:'Layanan cloud belum siap. Periksa konfigurasi database di Vercel.'},503);
   }

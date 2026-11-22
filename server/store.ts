@@ -11,6 +11,7 @@ import { employeePlans } from '../public/behavior.js';
 import { canDispatch, defaults, phase, validSchedule, scheduledDraftDay, scheduledDraftDailyLimit } from './schedule.ts';
 import { evaluateOwnerGroupUpdate,ownerMessageDailyLimit,ownerMessageMinimumGapMs } from './telegram-owner-limits.ts';
 import {emptyGroupWorkspace,applyGroupWorkspaceCommand} from './telegram-workspace.ts';
+import { automationOperation } from './automation-domain.ts';
 
 export class Fault extends Error {
   status: number;
@@ -87,6 +88,17 @@ export function createStore(path: string, now = Date.now) {
   };
 
   return {
+    automationActivity() {
+      const value=readSetting('automation_v1',null);
+      return {leadSettings:value?.leadSettings ?? null,watches:value?.watches ?? []};
+    },
+    automation(input=undefined) {
+      return transaction(()=>{
+        const outcome=automationOperation(readSetting('automation_v1',null),input,now());
+        if (input && input.action!=='view') writeSetting('automation_v1',outcome.state);
+        return outcome.result;
+      });
+    },
     studioReplay(input) {
       const apply=()=>{
         const outcome=replayOperation(readSetting(replayKey,[]),input,now());

@@ -15,6 +15,7 @@ import {loadTelegramMedia,questionForMedia,attachMediaToGeminiRequest} from './t
 import {isJihanNewsQuery,readBciftBlogTitles,addJihanNewsGrounding,
   verifyJihanNews,formatJihanNews} from './bcift-news.ts';
 import { workerPulseEvidence,overdueOfficeQueueSummary } from './office-monitoring.ts';
+import { handleAutomationCallback, handleAutomationMessage } from './automation-commands.ts';
 
 const persona={
   management:'Alya: manajer yang cekatan, hangat, punya inisiatif koordinasi. Bahasa santai rapi dan berpikir soal prioritas, bukan gaya laporan birokrasi.',
@@ -306,6 +307,10 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
   const {chatId,userId}=officeGroupConfig(env);
   if(String(data?.chatId)!==chatId || String(data?.userId)!==userId || data?.isBot!==false)
     throw new Fault(403,'Pesan bukan dari pemilik dalam grup yang diizinkan.');
+  if (data.callbackId) {
+    const result=await handleAutomationCallback(store,env,data,fetchImpl);
+    return {mode:'handled',...result};
+  }
   if(!validId(data.updateId) || typeof data.text!=='string' || data.text.length>1500 ||
     (!data.text.trim()&&!['photo','voice','audio','document','video'].includes(data.mediaType)))
     throw new Fault(400,'Pesan Telegram tidak valid.');
@@ -317,6 +322,10 @@ export async function prepareOfficeNaturalChat(store,env,data,fetchImpl=fetch) {
     return {mode:'handled',...done,mediaReason:media?.reason||'not-supported'};
   }
   const question=hasMedia?questionForMedia(data):data.text;
+  if (!hasMedia) {
+    const automation=await handleAutomationMessage(store,env,data,fetchImpl);
+    if (automation) return automation;
+  }
   const meetingContinue=/^\/rapat\s+lanjut$/i.test(question.trim());
   const naturalTask=!hasMedia?parseOwnerNaturalTask(question,env):null;
   const jihanResearch=naturalTask?.division==='marketing' && isJihanNewsQuery(question);
