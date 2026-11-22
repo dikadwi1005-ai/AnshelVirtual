@@ -206,6 +206,20 @@ const telegramData={chatId:telegramEnv.TELEGRAM_CHAT_ID,userId:telegramEnv.TELEG
 const response=value=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
 const recorder=()=>{const sent=[];return {sent,fetch:async (url,options)=>{sent.push({url:String(url),body:JSON.parse(options.body)});return response({ok:true,result:{message_id:100}});}};};
 
+test('Alya check command and button explain email polling and link to live prices',async()=>{
+  const {store}=fixture(),r=recorder();
+  try {
+    const {watch}=store.automation({action:'watch-save',config:{}});
+    await handleAutomationMessage(store,telegramEnv,{...telegramData,text:'/cektiket'},r.fetch);
+    await handleAutomationCallback(store,telegramEnv,{...telegramData,callbackId:'test_check',data:'avt:f:'+watch.id+':check'},r.fetch);
+    const messages=r.sent.filter(row=>row.url.endsWith('/sendMessage'));
+    assert.equal(messages.length,2);
+    assert.equal(messages[0].body.text,messages[1].body.text);
+    assert.match(messages[0].body.text,/Belum ada alert email/);
+    assert.match(messages[0].body.reply_markup.inline_keyboard[0][0].url,/flights-from-surabaya-to-batam/);
+  } finally {store.close();}
+});
+
 test('Telegram Jihan command reads real leads; owner and duplicate guards work',async()=>{
   const {store}=fixture(),r=recorder();
   try {
